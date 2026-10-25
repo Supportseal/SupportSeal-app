@@ -9,7 +9,7 @@ external telemetry (FR-HOST-01).
 ## Quick start
 
 ```bash
-git clone https://github.com/pietervw/SupportSeal-app.git
+git clone https://github.com/Supportseal/SupportSeal-app.git
 cd supportseal
 cp .env.example .env        # then edit (see the reference below)
 docker compose up -d

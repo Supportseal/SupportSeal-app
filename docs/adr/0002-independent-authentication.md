@@ -1,6 +1,6 @@
 # ADR 0002 — Independent authentication
 
-Status: Accepted. Library chosen: [better-auth](https://better-auth.com) (validated during implementation, initially tracked as [pietervw/SupportSeal-app#5](https://github.com/pietervw/SupportSeal-app/issues/5))
+Status: Accepted. Library chosen: [better-auth](https://better-auth.com) (validated during implementation, initially tracked as [Supportseal/SupportSeal-app#4](https://github.com/Supportseal/SupportSeal-app/issues/4))
 Date: 2026-09-25
 
 ## Decision

@@ -1,6 +1,6 @@
 # ADR 0004 — Provider-neutral email boundary
 
-Status: Accepted boundary; first hosted provider chosen 2026-09-26, then superseded by SendGrid on 2026-10-06 (comparison and decisions in [pietervw/SupportSeal-app#4](https://github.com/pietervw/SupportSeal-app/issues/4))
+Status: Accepted boundary; first hosted provider chosen 2026-09-26, then superseded by SendGrid on 2026-10-06 (comparison and decisions in [Supportseal/SupportSeal-app#3](https://github.com/Supportseal/SupportSeal-app/issues/3))
 Date: 2026-09-25
 
 ## Decision

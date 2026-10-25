@@ -17,7 +17,7 @@ groundwork is in place.
 Requires Node.js **22–24** (Node 22 recommended; see `.nvmrc`) and npm.
 
 ```bash
-git clone https://github.com/pietervw/SupportSeal-app.git
+git clone https://github.com/Supportseal/SupportSeal-app.git
 cd supportseal
 cp .env.example .env
 npm install          # also runs prisma generate

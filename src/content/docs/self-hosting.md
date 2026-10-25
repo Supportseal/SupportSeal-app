@@ -4,12 +4,12 @@ One app container, one PostgreSQL database, no external service requirements.
 A self-hosted installation serves **exactly one Workspace** with unlimited
 Products and agents, and never needs Stripe, a hosted API or external telemetry.
 The complete guide, including backups and maintenance scripts, is
-[docs/self-hosting.md on GitHub](https://github.com/pietervw/SupportSeal-app/blob/main/docs/self-hosting.md).
+[docs/self-hosting.md on GitHub](https://github.com/Supportseal/SupportSeal-app/blob/main/docs/self-hosting.md).
 
 ## Quick start
 
 ```bash
-git clone https://github.com/pietervw/SupportSeal-app.git
+git clone https://github.com/Supportseal/SupportSeal-app.git
 cd supportseal
 cp .env.example .env        # then edit (see below)
 docker compose up -d

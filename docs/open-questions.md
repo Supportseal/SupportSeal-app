@@ -38,11 +38,11 @@ design review list.
 | D11 | Archive before delete | **Default:** a Product must be archived before it can be deleted (Admins only, typed-name confirmation). Conversation deletion needs only a confirmation dialog | Two deliberate steps for the most destructive action | `design/product-settings.md` |
 | D2a | Replying in an archived Product's Conversations | **Default:** read-only until the Product is unarchived (notes, tags and status still work) | Customer replies would bounce and the widget no longer loads, so replies could not continue | `design/conversation-view.md`, `support-inbox.md`, `product-settings.md` |
 | D9a | Which part of the page URL | **Default:** origin plus path; query string and fragment stripped; developers may send a full URL via `context()` | Query strings often carry tokens or emails (FR-SEC-02) | `design/chat-widget.md`, `conversation-view.md` |
-| D13 | Generated inbound address and `inboundEmailVerified` semantics | **Default:** every new Product gets an auto-generated `product_<random>@<inbound domain>` address (unique, allocated at create) and `inboundEmailVerified` is stamped at the same moment — the platform issued the address, so no customer proof is needed. Inbound routing only accepts verified addresses (issue [#169](https://github.com/pietervw/SupportSeal-app/issues/169)); any future non-generated address stays null until proven. "Receiving" status still derives from inbound deliveries (issue [#45](https://github.com/pietervw/SupportSeal-app/issues/45)) | Keeps the checklist's "first inbound email received" proof honest and gives the flag a real job without a provider flow (`design/onboarding.md` open point) | `design/product-settings.md`, `design/onboarding.md` |
+| D13 | Generated inbound address and `inboundEmailVerified` semantics | **Default:** every new Product gets an auto-generated `product_<random>@<inbound domain>` address (unique, allocated at create) and `inboundEmailVerified` is stamped at the same moment — the platform issued the address, so no customer proof is needed. Inbound routing only accepts verified addresses (issue [#10](https://github.com/Supportseal/SupportSeal-app/issues/10)); any future non-generated address stays null until proven. "Receiving" status still derives from inbound deliveries (issue [#6](https://github.com/Supportseal/SupportSeal-app/issues/6)) | Keeps the checklist's "first inbound email received" proof honest and gives the flag a real job without a provider flow (`design/onboarding.md` open point) | `design/product-settings.md`, `design/onboarding.md` |
 
 ## Inbox ordering and close-advance (issue #199, 2026-10-19)
 
-Raised by [issue #199](https://github.com/pietervw/SupportSeal-app/issues/199):
+Raised by [issue #11](https://github.com/Supportseal/SupportSeal-app/issues/11):
 the inbox listed newest-activity-first and closing an open thread left the
 agent on the finished conversation. Working defaults the maintainer can
 override:
@@ -54,7 +54,7 @@ override:
 
 ## Keyed contact-form endpoint (issue #154, 2026-10-13)
 
-Raised by [issue #154](https://github.com/pietervw/SupportSeal-app/issues/154)
+Raised by [issue #9](https://github.com/Supportseal/SupportSeal-app/issues/9)
 (CheckID feedback): the widget API is browser/cookie/Origin based, so a
 website's server could not hand a contact-form submission to a Product with
 a key — the site's workaround (a contact form that emails the Product's
@@ -73,7 +73,7 @@ contact email. These are working defaults, not resolved policy approvals.
 
 ## Ticket numbers (issue #141, 2026-10-11)
 
-Decided by the maintainer (2026-10-10, [#141](https://github.com/pietervw/SupportSeal-app/issues/141)): a persistent, monotonic per-Workspace number on every Conversation, shown in the widget thread, inbox and outbound email subjects, never used for threading. Implementation defaults the maintainer can override:
+Decided by the maintainer (2026-10-10, [#8](https://github.com/Supportseal/SupportSeal-app/issues/8)): a persistent, monotonic per-Workspace number on every Conversation, shown in the widget thread, inbox and outbound email subjects, never used for threading. Implementation defaults the maintainer can override:
 
 - **Allocation.** A counter on the Workspace row (`nextTicketNumber`) is incremented inside the Conversation-creating transaction; the row lock serialises concurrent creators on any Postgres, with no sequence object per Workspace and no external service. `UNIQUE (workspaceId, ticketNumber)` is the backstop. A rolled-back creation (for example a duplicate inbound webhook) releases its number; a committed Conversation's number is never reused, even after deletion.
 - **Format.** `SS-<n>` with no zero padding (`TICKET_PREFIX` in `src/lib/ticket.ts`; display only, so changing it never touches stored data). Self-hosters who rebrand currently edit that constant; making it configurable is a follow-up, not decided here.
@@ -98,8 +98,8 @@ questions".
 | # | Question | **Default** (if any) |
 | --- | --- | --- |
 | M1 | Serve marketing only in hosted mode, or behind its own flag? | **Default:** hosted mode only; self-hosted `/` unchanged |
-| M2 | Hosted tier shape: `usage.ts` gives Pro unlimited Conversations and no agent limits, unlike volume-based paid tiers, and the original plan of one agent on Free | **Resolved (maintainer, 2026-09-26, issue [#15](https://github.com/pietervw/SupportSeal-app/issues/15)):** Free $0 — 100 new Conversations/month, 1 agent; Pro $39/month — 1,000 new Conversations/month, unlimited agents and Products; never advertised as unlimited Conversations. Recorded in `src/config/pricing.ts` (single source), FR-USE-02, marketing copy and SF-12 |
-| M3 | Privacy/Terms pages before public hosted sign-up | None: launch-order decision. Drafts live on the marketing site (`/legal/*` in [supportseal-marketing](https://github.com/supportseal-marketing), [#14](https://github.com/pietervw/SupportSeal-app/issues/14)), marked draft and noindex, and are linked from nothing public until the maintainer marks them operative there after legal review |
+| M2 | Hosted tier shape: `usage.ts` gives Pro unlimited Conversations and no agent limits, unlike volume-based paid tiers, and the original plan of one agent on Free | **Resolved (maintainer, 2026-09-26, issue [#15](https://github.com/Supportseal/SupportSeal-app/issues/15)):** Free $0 — 100 new Conversations/month, 1 agent; Pro $39/month — 1,000 new Conversations/month, unlimited agents and Products; never advertised as unlimited Conversations. Recorded in `src/config/pricing.ts` (single source), FR-USE-02, marketing copy and SF-12 |
+| M3 | Privacy/Terms pages before public hosted sign-up | None: launch-order decision. Drafts live on the marketing site (`/legal/*` in [supportseal-marketing](https://github.com/supportseal-marketing), [#14](https://github.com/Supportseal/SupportSeal-app/issues/14)), marked draft and noindex, and are linked from nothing public until the maintainer marks them operative there after legal review |
 | M4 | Changelog: GitHub Releases or a site page | **Default:** GitHub Releases, link hidden until the first release |
 | M5 | Run the real widget on the marketing site (dogfooding) | None |
 | M6 | Demo seed is required for all screenshots | None: scheduling |
@@ -242,7 +242,7 @@ public `GET /api/widget/config` after the response.
 
 | # | Question | Working position |
 | --- | --- | --- |
-| IQ1 | What is stored? | **Resolved (maintainer, 2026-10-19, [#192](https://github.com/pietervw/SupportSeal-app/issues/192)):** Product, hostname, outcome (`LOADED`/`REJECTED`) and last-seen time. No visitor data (no IP, user agent, cookie, referrer path). Requests admitted only by the signed test token (hosted test page) record nothing. |
+| IQ1 | What is stored? | **Resolved (maintainer, 2026-10-19, [#16](https://github.com/Supportseal/SupportSeal-app/issues/16)):** Product, hostname, outcome (`LOADED`/`REJECTED`) and last-seen time. No visitor data (no IP, user agent, cookie, referrer path). Requests admitted only by the signed test token (hosted test page) record nothing. |
 | IQ2 | Cap on distinct hostnames | **Default:** 50 per Product and outcome. A full `LOADED` list keeps its rows (spoofed subdomains of a wildcard entry cannot evict a real host); a full `REJECTED` list replaces its stalest row. Override: `HOST_SIGNAL_CAP` in `src/lib/install-signals.ts`. |
 | IQ3 | Rejected hostnames | **Default:** stored for real, unarchived keys only; rate-limited to 10 new hostnames per Product per minute per instance; TTL 30 days; shown with Allow (admin-only, through `patchProduct`, so the apex/`www.` sibling option applies). |
 | IQ4 | Retention of loaded hostnames | **Default (not in the issue):** 90 days without a load, so junk from a wildcard entry ages out while a low-traffic site stays visible for a quarter. Override: `LOADED_TTL_MS`. Pruning is lazy, inside the write path; there is no scheduler. |
@@ -335,7 +335,7 @@ host layout is decided the same day: **single origin** — marketing,
 dashboard, widget and API all on `https://supportseal.app` (runbook: the
 internal hosted-deployment notes; `app.supportseal.app` stays
 reserved for a future split). Issue
-[#23](https://github.com/pietervw/SupportSeal-app/issues/23) resolves via the
+[#5](https://github.com/Supportseal/SupportSeal-app/issues/5) resolves via the
 `NEXT_PUBLIC_APP_URL` deployment value — `trustedOrigins` is dynamic.
 
 **Update (maintainer, 2026-10-06):** the single origin is split before the app
@@ -352,28 +352,28 @@ hosted-deployment notes).
 ## 7. Tracking of deferred specs
 
 **Resolved (maintainer, 2026-09-25):** deferred specs are tracked as GitHub issues
-on [pietervw/SupportSeal-app](https://github.com/pietervw/SupportSeal-app); each
+on [Supportseal/SupportSeal-app](https://github.com/Supportseal/SupportSeal-app); each
 issue links back to its owning document:
 
 | Spec | Owning document | Issue |
 | --- | --- | --- |
-| Auth library | [ADR-0002](adr/0002-independent-authentication.md) | [#5](https://github.com/pietervw/SupportSeal-app/issues/5) |
-| Realtime delivery spike | [ADR-0003](adr/0003-realtime-delivery.md) | [#2](https://github.com/pietervw/SupportSeal-app/issues/2) |
-| Email provider | [ADR-0004](adr/0004-email-boundary.md) | [#4](https://github.com/pietervw/SupportSeal-app/issues/4) |
-| Deployment host | [architecture.md](architecture.md) | [#3](https://github.com/pietervw/SupportSeal-app/issues/3) |
-| Test framework | pinned in `package.json` / CI | [#7](https://github.com/pietervw/SupportSeal-app/issues/7) |
-| Free-tier limits | pricing configuration (centralised in the application) — decided in [#15](https://github.com/pietervw/SupportSeal-app/issues/15), recorded in `src/config/pricing.ts` | [#6](https://github.com/pietervw/SupportSeal-app/issues/6) | |
+| Auth library | [ADR-0002](adr/0002-independent-authentication.md) | [#4](https://github.com/Supportseal/SupportSeal-app/issues/4) |
+| Realtime delivery spike | [ADR-0003](adr/0003-realtime-delivery.md) | [#2](https://github.com/Supportseal/SupportSeal-app/issues/2) |
+| Email provider | [ADR-0004](adr/0004-email-boundary.md) | internal decision record |
+| Deployment host | [architecture.md](architecture.md) | internal decision record |
+| Test framework | pinned in `package.json` / CI | [#13](https://github.com/Supportseal/SupportSeal-app/issues/13) |
+| Free-tier limits | pricing configuration (centralised in the application) — decided in [#15](https://github.com/Supportseal/SupportSeal-app/issues/15), recorded in `src/config/pricing.ts` | [#12](https://github.com/Supportseal/SupportSeal-app/issues/12) | |
 
 ## 8. First email provider
 
 ADR-0004 requires comparing hosted provider candidates for inbound
 parsing, signatures, attachment limits, deliverability, local testing and
 cost before selecting the first provider. Tracked as
-[#4](https://github.com/pietervw/SupportSeal-app/issues/4).
+internal decision record.
 
 **Resolved (maintainer, 2026-10-06):** SendGrid. The first provider, chosen on
 2026-09-26, was replaced on 2026-10-06; the provider comparison and the
-migration record are in [#4](https://github.com/pietervw/SupportSeal-app/issues/4).
+migration record are in internal decision record.
 The adapter boundary stays provider-neutral per
 [ADR-0004](adr/0004-email-boundary.md), and the SendGrid adapter lives in
 `src/lib/email/providers/sendgrid.ts`. Self-hosted deployments remain

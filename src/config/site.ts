@@ -7,6 +7,6 @@ export const siteConfig = {
   version: "0.1.0",
   url: appConfig.url,
   /** No docs site yet: the self-hosting guide on GitHub. */
-  selfHostingGuideUrl: "https://github.com/pietervw/SupportSeal-app/blob/main/docs/self-hosting.md",
-  widgetIntegrationGuideUrl: "https://github.com/pietervw/SupportSeal-app/blob/main/docs/widget-integration.md",
+  selfHostingGuideUrl: "https://github.com/Supportseal/SupportSeal-app/blob/main/docs/self-hosting.md",
+  widgetIntegrationGuideUrl: "https://github.com/Supportseal/SupportSeal-app/blob/main/docs/widget-integration.md",
 };

@@ -3,8 +3,7 @@
 Status: design for a later build; no implementation in this change. Based on
 `origin/main` at `7f732e9`. This is the deferred presence half of
 [PRD Later](../PRD.md#later-and-outside-scope), following diagnostics.
-Product branding ([PR #37](https://github.com/pietervw/SupportSeal-app/pull/37),
-[design/branding.md](branding.md) on main) explicitly leaves this work
+Product branding ([design/branding.md](branding.md) on main) explicitly leaves this work
 separate. That merged design is a reference, not a dependency.
 
 Choices labelled **Default** are working choices the maintainer can override, not

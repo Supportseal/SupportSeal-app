@@ -68,10 +68,9 @@ docs/open-questions.md — never guess an answer to an open question.
   `src/generated/prisma` (gitignored). CI: `.github/workflows/ci.yml`;
   dev scripts in `scripts/` (`dev-db.mjs`, `seed-dev.ts`).
 - Decided from the direction docs: realtime delivery (ADR-0003 accepted;
-  [issue #2](https://github.com/pietervw/SupportSeal-app/issues/2)) and the
+  [issue #2](https://github.com/Supportseal/SupportSeal-app/issues/2)) and the
   hosted-tier host — the existing self-hosted deployment fleet for now, a
-  dedicated VPS once paying customers arrive ([issue
-  #3](https://github.com/pietervw/SupportSeal-app/issues/3)).
+  dedicated VPS once paying customers arrive (internal decision record; see docs/architecture.md).
 - Document map: docs/PRD.md (why/scope) and docs/FRD.md (observable V1
   behaviour, stable requirement IDs) are canonical; docs/open-questions.md
   records decisions taken and maintainer-overridable defaults.
@@ -105,7 +104,7 @@ docs/open-questions.md — never guess an answer to an open question.
   app; groundwork committed) — full guide in [docs/self-hosting.md](docs/self-hosting.md).
   The hosted tier runs on the existing self-hosted deployment fleet for now,
   moving to a dedicated VPS once paying customers arrive (decision and
-  comparison in [issue #3](https://github.com/pietervw/SupportSeal-app/issues/3)).
+  comparison in the internal decision record (docs/architecture.md).
   Self-hosted mode must never require Stripe, the hosted API or external
   telemetry (FR-HOST-01).
 
@@ -114,7 +113,7 @@ docs/open-questions.md — never guess an answer to an open question.
 - The PRD/FRD are canonical; when another document conflicts with them,
   resolve it explicitly via docs/open-questions.md instead of silently
   picking a side.
-- Deferred specs live as GitHub issues on pietervw/SupportSeal-app
+- Deferred specs live as GitHub issues on Supportseal/SupportSeal-app
   (docs/open-questions.md has the pointers).
 
 ## Definition of done

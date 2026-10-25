@@ -10,7 +10,7 @@ neutrals everywhere in the SupportSeal app.
 [supportseal.app](https://supportseal.app) — the name stays SupportSeal after
 a rename shortlist; `supportseal.com` is investor-held and not pursued. Host
 layout (apex vs `app.` subdomain) is decided at deployment
-([issue #23](https://github.com/pietervw/SupportSeal-app/issues/23)).
+([issue #5](https://github.com/Supportseal/SupportSeal-app/issues/5)).
 
 **UI kit baseline:** `src/components` and `src/styles/tokens.css` (paths relative to `src/`). Tokens live in `styles/tokens.css`
 (light on `:root`, dark on `.dark`) and are mapped to Tailwind in

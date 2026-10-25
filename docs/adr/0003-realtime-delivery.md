@@ -1,6 +1,6 @@
 # ADR 0003 — Durable messages and event-stream delivery
 
-Status: Accepted 2026-09-26 — validated by the two-process reverse-proxy spike; measurements, findings and the accepted follow-ups are recorded in [pietervw/SupportSeal-app#2](https://github.com/pietervw/SupportSeal-app/issues/2#issuecomment-5847092915)
+Status: Accepted 2026-09-26 — validated by the two-process reverse-proxy spike; measurements, findings and the accepted follow-ups are recorded in [Supportseal/SupportSeal-app#2](https://github.com/Supportseal/SupportSeal-app/issues/2#issuecomment-5847092915)
 Date: 2026-09-25
 
 ## Decision
@@ -22,6 +22,6 @@ The spike proved ordered resume, at-least-once delivery (clients dedupe by messa
 - The in-process bus is one global emitter; each connection's listener receives every Workspace's events and discards the others (O(connections) per event; Node's listener cap is raised to 200 and only warns beyond it).
 - Each connection runs its own 10 s `findMany` signature poll, so idle load is `connections / 10 s` queries, and each browser tab holds two connections (list pane + conversation view, #118).
 
-This is acceptable for a handful of tenants and is the known limit for hundreds. The planned fix keeps these guarantees and changes only the shape: per-Workspace event routing and a single process-level poller fanned out per Workspace, specified in [#122](https://github.com/pietervw/SupportSeal-app/issues/122). `LISTEN`/`NOTIFY` remains a separate decision.
+This is acceptable for a handful of tenants and is the known limit for hundreds. The planned fix keeps these guarantees and changes only the shape: per-Workspace event routing and a single process-level poller fanned out per Workspace, specified in [#7](https://github.com/Supportseal/SupportSeal-app/issues/7). `LISTEN`/`NOTIFY` remains a separate decision.
 
 Client side (`src/lib/inbox-stream-client.ts`): the stream sends `heartbeat` as a named event every 15 s; the client reconnects after 45 s of silence, or with jittered exponential backoff (1 s to 30 s) when the browser gives up, and refetches once the stream is back, because events may have been missed while it was down.

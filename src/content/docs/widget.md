@@ -105,7 +105,7 @@ Workspace admins can read keys over the API: sign in with
 `POST /api/auth/sign-in/email` (saving the session cookie), then request
 `GET /api/products` or `GET /api/products/PRODUCT_ID`. Each Product comes back
 with its `widgetKey` and `formKey`. Non-admins and other Workspaces get `403` or `404`. See the
-[widget integration guide](https://github.com/pietervw/SupportSeal-app/blob/main/docs/widget-integration.md#get-the-widget-key-without-the-dashboard)
+[widget integration guide](https://github.com/Supportseal/SupportSeal-app/blob/main/docs/widget-integration.md#get-the-widget-key-without-the-dashboard)
 for a curl example.
 
 ## Identify signed-in visitors (optional)
@@ -129,5 +129,5 @@ anonymous chat.
   Probe `www.example.com` and `example.com` separately: they are distinct
   entries, and `*.example.com` does not cover the apex.
 - **Key abused or spamming:** see the
-  [widget abuse model](https://github.com/pietervw/SupportSeal-app/blob/main/docs/widget-integration.md#widget-abuse-model) —
+  [widget abuse model](https://github.com/Supportseal/SupportSeal-app/blob/main/docs/widget-integration.md#widget-abuse-model) —
   narrow the allowlist, or archive the Product and create a new one.
