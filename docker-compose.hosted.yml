@@ -1,0 +1,89 @@
+# Hosted (Coolify) deployment shape: one-shot migrate + app, built from this
+# repository. Postgres is NOT included — the managed tier uses Neon; its
+# direct (non-pooled) URL arrives via DATABASE_URL.
+# Self-hosters use docker-compose.yml instead (it bundles Postgres).
+# Public (non-secret) hosted values are baked in here; the secrets
+# (DATABASE_URL, BETTER_AUTH_SECRET, INBOUND_WEBHOOK_SECRET, SENDGRID_API_KEY)
+# are configured in the deployment environment, not in this file.
+services:
+  migrate:
+    build:
+      context: .
+      target: migrate
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    restart: "no"
+
+  app:
+    build:
+      context: .
+      target: runner
+      args:
+        NEXT_PUBLIC_APP_URL: https://dashboard.supportseal.app
+        NEXT_PUBLIC_APP_NAME: SupportSeal
+        # Client-bundle links to the marketing site are inlined at build time.
+        NEXT_PUBLIC_MARKETING_URL: https://supportseal.app
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+      NEXT_PUBLIC_APP_URL: https://dashboard.supportseal.app
+      NEXT_PUBLIC_MARKETING_URL: https://supportseal.app
+      NEXT_PUBLIC_APP_NAME: SupportSeal
+      HOSTED_MODE: "1"
+      INBOUND_WEBHOOK_SECRET: ${INBOUND_WEBHOOK_SECRET}
+      # Mail stays on the apex (MX + SendGrid domain authentication are on supportseal.app).
+      # Without this, reply addresses and the managed sender would fall back
+      # to the app URL's host, dashboard.supportseal.app, which has no MX.
+      INBOUND_EMAIL_DOMAIN: ${INBOUND_EMAIL_DOMAIN:-supportseal.app}
+      OUTBOUND_EMAIL_LOCAL: ${OUTBOUND_EMAIL_LOCAL:-no-reply}
+      # Hosted outbound mail: dedicated SendGrid key (Mail Send scope only).
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
+    expose:
+      - "3000"
+    volumes:
+      - supportseal-uploads:/app/.dev-data/uploads
+    labels:
+      # Routing is owned by this compose (Coolify Cloud's API cannot set
+      # service domains); Traefik is Coolify's proxy on the shared box.
+      - traefik.enable=true
+      # Pin Traefik to the shared Coolify network. Connect To Predefined
+      # Network puts the app there for Postgres; Traefik is already on it.
+      # Do not use ${COOLIFY_RESOURCE_UUID} here — Coolify does not
+      # interpolate that into compose labels (it lands as a literal).
+      - traefik.docker.network=coolify
+      # Dashboard host. The apex (supportseal.app + www) is the separate
+      # marketing deployment.
+      - traefik.http.routers.supportseal-web.rule=Host(`dashboard.supportseal.app`)
+      - traefik.http.routers.supportseal-web.entrypoints=http
+      - traefik.http.routers.supportseal-web.middlewares=supportseal-https
+      - traefik.http.routers.supportseal-web.service=supportseal-app
+      - traefik.http.middlewares.supportseal-https.redirectscheme.scheme=https
+      - traefik.http.routers.supportseal-app.rule=Host(`dashboard.supportseal.app`)
+      - traefik.http.routers.supportseal-app.entrypoints=https
+      - traefik.http.routers.supportseal-app.tls=true
+      - traefik.http.routers.supportseal-app.tls.certresolver=letsencrypt
+      - traefik.http.routers.supportseal-app.service=supportseal-app
+      # Legacy apex paths stay on the app. Installed snippets load
+      # https://supportseal.app/widget.js; the loader frames /widget and loads
+      # /widget-diagnostics.js from that same origin and only accepts
+      # messages from it, so a redirect would break the widget. /api/* keeps
+      # existing webhooks (SendGrid Inbound Parse) working. priority=1000 beats
+      # the marketing site's apex routers.
+      - traefik.http.routers.supportseal-legacy-web.rule=Host(`supportseal.app`) && (Path(`/widget.js`) || Path(`/widget`) || Path(`/widget-diagnostics.js`) || PathPrefix(`/api/`))
+      - traefik.http.routers.supportseal-legacy-web.priority=1000
+      - traefik.http.routers.supportseal-legacy-web.entrypoints=http
+      - traefik.http.routers.supportseal-legacy-web.middlewares=supportseal-https
+      - traefik.http.routers.supportseal-legacy-web.service=supportseal-app
+      - traefik.http.routers.supportseal-legacy-app.rule=Host(`supportseal.app`) && (Path(`/widget.js`) || Path(`/widget`) || Path(`/widget-diagnostics.js`) || PathPrefix(`/api/`))
+      - traefik.http.routers.supportseal-legacy-app.priority=1000
+      - traefik.http.routers.supportseal-legacy-app.entrypoints=https
+      - traefik.http.routers.supportseal-legacy-app.tls=true
+      - traefik.http.routers.supportseal-legacy-app.tls.certresolver=letsencrypt
+      - traefik.http.routers.supportseal-legacy-app.service=supportseal-app
+      - traefik.http.services.supportseal-app.loadbalancer.server.port=3000
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  supportseal-uploads:

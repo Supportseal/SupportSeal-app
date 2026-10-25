@@ -1,0 +1,871 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SupportSeal Workspace API",
+    "version": "1.0.0",
+    "summary": "Create, edit and read Products (and their widget and form keys) with a Workspace API token.",
+    "description": "The token-authenticated JSON API of a SupportSeal Workspace. It is identical on the hosted tier and on a self-hosted installation; only the base URL differs.\n\nTokens are created by a Workspace admin in the dashboard (**Settings → API tokens**) and shown once; they cannot be created through this API. A token acts for its whole Workspace and can never reach another one.\n\nHuman guides: [quickstart](api-quickstart.md), [API tokens](api-tokens.md), [widget integration](widget-integration.md).\n\nEvery response, success or error, is sent with `Cache-Control: private, no-store`. Every error has the same envelope (`ErrorResponse`); branch on `error.code`, never on `error.message`.\n\nThe error codes and statuses in this file are checked against `API_ERROR_STATUS` in `src/lib/api-errors.ts` by `src/lib/__tests__/openapi-drift.test.ts`; update the spec in the same change as the code.",
+    "license": {
+      "name": "AGPL-3.0-only",
+      "identifier": "AGPL-3.0-only"
+    }
+  },
+  "servers": [
+    {
+      "url": "{baseUrl}",
+      "description": "Hosted tier (default) or your own installation's public URL, without a trailing slash.",
+      "variables": {
+        "baseUrl": {
+          "default": "https://dashboard.supportseal.app",
+          "description": "https://dashboard.supportseal.app for the hosted tier; for a self-hosted installation, its NEXT_PUBLIC_APP_URL (for example https://support.example.com)."
+        }
+      }
+    }
+  ],
+  "tags": [
+    {
+      "name": "Products",
+      "description": "A Product is one site or app you support. Each has its own widget key, domain allowlist and branding; all conversations share one inbox."
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/products": {
+      "get": {
+        "operationId": "listProducts",
+        "tags": [
+          "Products"
+        ],
+        "summary": "List the Workspace's Products",
+        "description": "Returns every Product of the token's Workspace (archived ones included, `archived: true`), oldest first. Needs the `products:write` scope (it implies read). Also accepts the dashboard session cookie of a Workspace admin; a request that carries an `Authorization` header is judged on the token alone.",
+        "x-required-scope": "products:read (granted by products:write)",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The Products.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductList"
+                },
+                "example": {
+                  "products": [
+                    {
+                      "id": "3f6c0a52-0b1e-4c52-9d1c-5f0e7a8f1c11",
+                      "name": "Acme App",
+                      "archived": false,
+                      "primaryColor": "#7367f0",
+                      "domains": [
+                        "acme.example",
+                        "www.acme.example"
+                      ],
+                      "widgetKey": "pk_AbCdEfGhIjKlMnOpQrStUvWxYz012345",
+                      "formKey": "fk_ZyXwVuTsRqPoNmLkJiHgFeDcBa987654"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createProduct",
+        "tags": [
+          "Products"
+        ],
+        "summary": "Create a Product",
+        "description": "Creates a Product in the token's Workspace with a generated widget key and inbound support address. Only `name` is required. Token only: a session cookie is refused with `401 unauthorized`.\n\nNot idempotent and there is no idempotency key. After a timeout, call `GET /api/products` and look for the name before posting again, or you create a duplicate.\n\n`domains` takes at most 100 entries (`400 invalid_request` beyond that).\n\nA Workspace can hold at most 100 Products through this endpoint: once it already has 100 Products (archived ones count), a create answers `409 product_limit_reached` and nothing is created. This is an abuse guard for leaked tokens, not a plan limit; the dashboard has no such cap and the cap applies the same way to self-hosted deployments.",
+        "x-required-scope": "products:write",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProductRequest"
+              },
+              "examples": {
+                "minimal": {
+                  "summary": "Only a name",
+                  "value": {
+                    "name": "Acme App"
+                  }
+                },
+                "withDomains": {
+                  "summary": "Name, colour and domains (www counterparts included)",
+                  "value": {
+                    "name": "Acme App",
+                    "primaryColor": "#7367f0",
+                    "domains": [
+                      "acme.example"
+                    ],
+                    "includeSiblings": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The created Product.",
+            "headers": {
+              "Location": {
+                "description": "Relative URL of the new Product.",
+                "schema": {
+                  "type": "string",
+                  "examples": [
+                    "/api/products/3f6c0a52-0b1e-4c52-9d1c-5f0e7a8f1c11"
+                  ]
+                }
+              },
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Product"
+                },
+                "example": {
+                  "id": "3f6c0a52-0b1e-4c52-9d1c-5f0e7a8f1c11",
+                  "name": "Acme App",
+                  "archived": false,
+                  "primaryColor": "#7367f0",
+                  "domains": [
+                    "acme.example",
+                    "www.acme.example"
+                  ],
+                  "widgetKey": "pk_AbCdEfGhIjKlMnOpQrStUvWxYz012345",
+                  "formKey": "fk_ZyXwVuTsRqPoNmLkJiHgFeDcBa987654"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/InsufficientScope"
+          },
+          "409": {
+            "$ref": "#/components/responses/ProductLimitReached"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/products/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "The Product id (`id` in a Product).",
+          "schema": {
+            "type": "string"
+          },
+          "example": "3f6c0a52-0b1e-4c52-9d1c-5f0e7a8f1c11"
+        }
+      ],
+      "get": {
+        "operationId": "getProduct",
+        "tags": [
+          "Products"
+        ],
+        "summary": "Read one Product",
+        "description": "Returns one Product, including its `widgetKey`. An id that does not exist and an id that belongs to another Workspace both answer `404 not_found`. Also accepts the dashboard session cookie of a Workspace admin.",
+        "x-required-scope": "products:read (granted by products:write)",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The Product.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Product"
+                },
+                "example": {
+                  "id": "3f6c0a52-0b1e-4c52-9d1c-5f0e7a8f1c11",
+                  "name": "Acme App",
+                  "archived": false,
+                  "primaryColor": "#7367f0",
+                  "domains": [
+                    "acme.example",
+                    "www.acme.example"
+                  ],
+                  "widgetKey": "pk_AbCdEfGhIjKlMnOpQrStUvWxYz012345",
+                  "formKey": "fk_ZyXwVuTsRqPoNmLkJiHgFeDcBa987654"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateProduct",
+        "tags": [
+          "Products"
+        ],
+        "summary": "Edit a Product's name, colour or domains",
+        "description": "Edits, never replaces: `addDomains` adds hostnames, `removeDomains` removes them, omitted fields stay as they are. All changes in one request apply together or not at all. The response is the whole Product after the change.\n\nA body that changes nothing (empty, only empty lists, or `includeSiblings` alone) is refused with `400 invalid_request`. A domain to add that is already allowed, or one to remove that is not allowed, answers `409 conflict` and applies nothing; that makes a retry after a timeout safe (a `409` on retry means the first attempt succeeded). The `409` check is best-effort under concurrent requests: two simultaneous requests adding the same domain can both succeed, and the data stays consistent. Each list takes at most 100 domains (`400 invalid_request` beyond that). A domain in both lists answers `400 invalid_request` (field `removeDomains`). Token only: a session cookie is refused with `401 unauthorized`.",
+        "x-required-scope": "products:write",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchProductRequest"
+              },
+              "examples": {
+                "addDomains": {
+                  "summary": "Allow a hostname and its www counterpart",
+                  "value": {
+                    "addDomains": [
+                      "acme.example"
+                    ],
+                    "includeSiblings": true
+                  }
+                },
+                "swapDomain": {
+                  "summary": "Replace one hostname with another in one request",
+                  "value": {
+                    "addDomains": [
+                      "app.acme.example"
+                    ],
+                    "removeDomains": [
+                      "www.acme.example"
+                    ]
+                  }
+                },
+                "rename": {
+                  "summary": "Change name and colour",
+                  "value": {
+                    "name": "Acme",
+                    "primaryColor": "#16a34a"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The Product after the change.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Product"
+                },
+                "example": {
+                  "id": "3f6c0a52-0b1e-4c52-9d1c-5f0e7a8f1c11",
+                  "name": "Acme App",
+                  "archived": false,
+                  "primaryColor": "#7367f0",
+                  "domains": [
+                    "acme.example",
+                    "www.acme.example"
+                  ],
+                  "widgetKey": "pk_AbCdEfGhIjKlMnOpQrStUvWxYz012345",
+                  "formKey": "fk_ZyXwVuTsRqPoNmLkJiHgFeDcBa987654"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/InsufficientScope"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "A Workspace API token (`ss_live_` followed by 43 characters), created in the dashboard under Settings → API tokens and shown once. Every dashboard-created token has the `products:write` scope, which also grants reading. A request that sends an `Authorization` header is judged on the token alone and never falls back to a session cookie. Unknown, malformed, revoked and expired tokens are indistinguishable by design."
+      },
+      "sessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "better-auth.session_token",
+        "description": "Reads only: the dashboard session cookie of a Workspace admin (sign in with `POST /api/auth/sign-in/email`). Its name is `better-auth.session_token`, or `__Secure-better-auth.session_token` when the deployment is served over HTTPS (as the hosted tier is). Writes never accept it."
+      }
+    },
+    "headers": {
+      "CacheControl": {
+        "description": "Always `private, no-store`: responses depend on the caller's credential.",
+        "schema": {
+          "type": "string",
+          "const": "private, no-store"
+        }
+      },
+      "WWWAuthenticate": {
+        "description": "`Bearer`. Sent when the request carried a bad token or a write came without one; absent on a session-cookie read that is not signed in.",
+        "schema": {
+          "type": "string",
+          "const": "Bearer"
+        }
+      },
+      "RetryAfter": {
+        "description": "Seconds to wait before retrying (the rate-limit window, 60).",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "examples": [
+            "60"
+          ]
+        }
+      }
+    },
+    "schemas": {
+      "Product": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "archived",
+          "primaryColor",
+          "domains",
+          "widgetKey",
+          "formKey"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Product id; use it in `/api/products/{id}`."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "Archived Products keep their conversations and still appear in `GET` responses, but their `widgetKey` stops working: the widget stops loading and `GET /api/widget/config` answers `404 {\"error\":\"not_found\"}`."
+          },
+          "primaryColor": {
+            "type": "string",
+            "pattern": "^#[0-9a-f]{6}$",
+            "description": "Lower-case `#rrggbb`."
+          },
+          "domains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Exact hostnames (or `*.` wildcards) the widget may load on, lower-cased. The order is not guaranteed."
+          },
+          "widgetKey": {
+            "type": "string",
+            "pattern": "^pk_[A-Za-z0-9_-]+$",
+            "description": "The public widget key (`pk_…`) for the install snippet's `data-key`. Public by design; not a secret. Probe it with `GET /api/widget/config?key=<widgetKey>&host=<hostname>` (not part of this API): `200` when the hostname is allowed, `403 {\"error\":\"origin_not_allowed\"}` when it is not, `404 {\"error\":\"not_found\"}` for an unknown key, a key not starting with `pk_`, or the key of an archived Product."
+          },
+          "formKey": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^fk_[A-Za-z0-9_-]+$",
+            "description": "The form key (`fk_…`) for the contact-form endpoint: a server-side form handler sends it as the `x-ss-form-key` header on `POST /api/widget/form` (not part of this API) to turn a submission into a Conversation. Unlike `widgetKey` it is not embedded in page HTML; keep it on your server. Returned to any token of the Workspace, like the dashboard shows it to Workspace members. `null` for a Product created before form keys existed; a Workspace admin generates one from the Product's Developer tab (it cannot be generated through this API). Products created through this API always have one. Rotating it in the dashboard rejects the old key immediately."
+          }
+        }
+      },
+      "ProductList": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "products"
+        ],
+        "properties": {
+          "products": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Product"
+            }
+          }
+        }
+      },
+      "CreateProductRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "1 to 60 characters after trimming."
+          },
+          "primaryColor": {
+            "type": "string",
+            "description": "`#rgb` or `#rrggbb` (any case). Defaults to `#2563eb`."
+          },
+          "domains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Hostnames or URLs (reduced to the hostname, lower-cased). `*.example.com` allows subdomains but not `example.com` itself. Repeats are dropped.",
+            "maxItems": 100
+          },
+          "includeSiblings": {
+            "type": "boolean",
+            "description": "Also allow the apex/`www.` counterpart of each domain (`example.com` ↔ `www.example.com`), like the dashboard's checkbox."
+          }
+        }
+      },
+      "PatchProductRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "1 to 60 characters after trimming."
+          },
+          "primaryColor": {
+            "type": "string",
+            "description": "`#rgb` or `#rrggbb` (any case)."
+          },
+          "addDomains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Hostnames or URLs to allow. One that is already allowed answers `409 conflict`; one that is also in `removeDomains` answers `400 invalid_request`.",
+            "maxItems": 100
+          },
+          "removeDomains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Hostnames to remove. One that is not allowed answers `409 conflict`; one that is also in `addDomains` answers `400 invalid_request`.",
+            "maxItems": 100
+          },
+          "includeSiblings": {
+            "type": "boolean",
+            "description": "Also allow the apex/`www.` counterpart of each added domain; one that is already allowed is skipped silently."
+          }
+        },
+        "anyOf": [
+          {
+            "required": [
+              "name"
+            ]
+          },
+          {
+            "required": [
+              "primaryColor"
+            ]
+          },
+          {
+            "required": [
+              "addDomains"
+            ],
+            "properties": {
+              "addDomains": {
+                "minItems": 1
+              }
+            }
+          },
+          {
+            "required": [
+              "removeDomains"
+            ],
+            "properties": {
+              "removeDomains": {
+                "minItems": 1
+              }
+            }
+          }
+        ],
+        "description": "At least one of `name`, `primaryColor`, a non-empty `addDomains` or a non-empty `removeDomains` is required; `includeSiblings` alone, an empty body or only empty lists answer `400 invalid_request`. The same hostname in `addDomains` and `removeDomains` also answers `400 invalid_request` (`\"x\" cannot be both added and removed.`, field `removeDomains`): to replace a hostname, put the old one in `removeDomains` and the new one in `addDomains`; to remove and re-add the same hostname, make two calls."
+      },
+      "ErrorCode": {
+        "type": "string",
+        "enum": [
+          "invalid_request",
+          "unauthorized",
+          "forbidden",
+          "insufficient_scope",
+          "not_found",
+          "conflict",
+          "product_limit_reached",
+          "rate_limited",
+          "internal_error"
+        ],
+        "description": "Stable and machine-readable. `x-error-status` gives the HTTP status of each code.",
+        "x-error-status": {
+          "invalid_request": 400,
+          "unauthorized": 401,
+          "forbidden": 403,
+          "insufficient_scope": 403,
+          "not_found": 404,
+          "conflict": 409,
+          "product_limit_reached": 409,
+          "rate_limited": 429,
+          "internal_error": 500
+        }
+      },
+      "ErrorDetail": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "field",
+          "message"
+        ],
+        "properties": {
+          "field": {
+            "type": "string",
+            "description": "The offending request field, or `body` when the whole body is at fault."
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "code",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "$ref": "#/components/schemas/ErrorCode"
+              },
+              "message": {
+                "type": "string",
+                "description": "For people; may change. Never branch on it."
+              },
+              "details": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ErrorDetail"
+                },
+                "description": "Field-level detail; present on `invalid_request` when a field is at fault (not for invalid JSON or an oversized body) and on a `conflict` that names a field."
+              }
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "InvalidRequest": {
+        "description": "`invalid_request`: the body is not valid JSON, is larger than 64 KiB (enforced while the body is read, so it applies to chunked bodies too; the status is 400, not 413), has an unknown field, a domain list longer than 100 entries, changes nothing (PATCH), has the same domain in `addDomains` and `removeDomains`, or a value fails validation. `details` names the field when one is at fault.",
+        "headers": {
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "error": {
+                "code": "invalid_request",
+                "message": "Product name must be between 1 and 60 characters.",
+                "details": [
+                  {
+                    "field": "name",
+                    "message": "Product name must be between 1 and 60 characters."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "`unauthorized`: the token is missing, malformed, unknown, revoked or expired, or a write came without a token. A session-cookie read that is not signed in gets this too. Fix: send a valid `Authorization: Bearer <token>`.",
+        "headers": {
+          "WWW-Authenticate": {
+            "$ref": "#/components/headers/WWWAuthenticate"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "error": {
+                "code": "unauthorized",
+                "message": "Missing, malformed, unknown, revoked or expired API token."
+              }
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "`forbidden` (session-cookie reads only) or `insufficient_scope`: the session is not a Workspace admin or has no Workspace, or the token lacks the needed scope.",
+        "headers": {
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "error": {
+                "code": "forbidden",
+                "message": "Workspace admin access is required."
+              }
+            }
+          }
+        }
+      },
+      "InsufficientScope": {
+        "description": "`insufficient_scope`: the token is valid but lacks the `products:write` scope. That is the only scope, and tokens created in the dashboard already carry it, so this means an older or modified deployment: create a fresh token.",
+        "headers": {
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "error": {
+                "code": "insufficient_scope",
+                "message": "This API token does not have the products:write scope."
+              }
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "`not_found`: the id does not exist or belongs to another Workspace. The two cannot be told apart.",
+        "headers": {
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "error": {
+                "code": "not_found",
+                "message": "Product not found."
+              }
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "`conflict`: `addDomains` names a domain the Product already allows, or `removeDomains` names one it does not. Nothing was applied. Detection is best-effort under concurrent requests: two simultaneous `PATCH`es adding the same domain can both succeed, and the data stays consistent (a domain is stored once per Product).",
+        "headers": {
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "error": {
+                "code": "conflict",
+                "message": "That domain is already configured for this Product.",
+                "details": [
+                  {
+                    "field": "addDomains",
+                    "message": "That domain is already configured for this Product."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "ProductLimitReached": {
+        "description": "`product_limit_reached`: the Workspace already has 100 Products (archived ones count), the most the API will create. Nothing was created. Remove or reuse a Product, or create further Products in the dashboard, which has no cap. Retrying the same request will not succeed.",
+        "headers": {
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "error": {
+                "code": "product_limit_reached",
+                "message": "A Workspace can hold at most 100 Products through the API."
+              }
+            }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "`rate_limited`: this IP failed token authentication too often in the last minute (20 failures), or this token made more than 30 writes in the last minute. Wait `Retry-After` seconds.",
+        "headers": {
+          "Retry-After": {
+            "$ref": "#/components/headers/RetryAfter"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "error": {
+                "code": "rate_limited",
+                "message": "Too many write requests for this API token. Retry later."
+              }
+            }
+          }
+        }
+      },
+      "InternalError": {
+        "description": "`internal_error`: the server could not complete the request: an unexpected failure (the message is generic, \"Unexpected server error.\", and the detail is only in the server log) or, on `POST`, no free inbound address could be allocated. Retry with backoff.",
+        "headers": {
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "error": {
+                "code": "internal_error",
+                "message": "Unexpected server error."
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,11 @@
+-- Visitor sessions bind to the full embedding origin (scheme + host + port)
+-- instead of the hostname alone. Cookies and storage partition keys ignore
+-- ports, so a hostname-only binding leaked a session into an embed served
+-- from a different port of the same host (issue #61).
+--
+-- Cutover semantics: legacy rows keep their bare-hostname or NULL values.
+-- `sessionOriginMatches` compares stored values against a normalized
+-- scheme://host[:port], so legacy values never match and those visitors
+-- simply start a fresh session on their next boot — a one-time reset, no
+-- backfill needed.
+ALTER TABLE "chat_visitors" RENAME COLUMN "originHostname" TO "origin";

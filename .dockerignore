@@ -1,0 +1,12 @@
+node_modules
+.next
+.dev-data
+.env
+.env*.local
+coverage
+playwright-report
+test-results
+.git
+.github
+*.md
+!README.md

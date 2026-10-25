@@ -1,0 +1,645 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// --- Authentication (better-auth, ADR-0002) -------------------------------
+
+model User {
+  id            String    @id
+  name          String
+  email         String    @unique
+  emailVerified Boolean
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  memberships Membership[]
+  sessions    Session[]
+  accounts    Account[]
+  invitesSent Invite[]    @relation("InviteSentBy")
+  messages    Message[]   @relation("MessageAuthor")
+  diagnosticsEnabledFor Product[] @relation("DiagnosticsEnabledBy")
+  apiTokensCreated ApiToken[] @relation("ApiTokenCreatedBy")
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@map("accounts")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("verifications")
+}
+
+// --- Workspace (tenant boundary) ------------------------------------------
+
+enum WorkspaceAvailability {
+  LIVE
+  AWAY
+}
+
+enum WorkspacePlan {
+  FREE
+  PRO
+}
+
+enum UsageNotificationLevel {
+  APPROACHING
+  EXCEEDED
+}
+
+model Workspace {
+  id             String               @id @default(uuid())
+  name           String
+  plan           WorkspacePlan        @default(FREE)
+  /// Stripe customer linked to this Workspace (issue #202): the key billing
+  /// state is synced by. Webhooks are triggers only; they fetch the
+  /// customer's subscriptions from Stripe and write the current state here.
+  /// Linked on the first sync via the workspaceId metadata stamped on the
+  /// subscription at checkout. Unique = one customer per Workspace.
+  stripeCustomerId     String? @unique
+  /// Latest Checkout Session started for this Workspace (issue #202), until
+  /// the customer is linked. Lets a read resolve the customer when the
+  /// webhook that would have linked it was lost. Cleared on link.
+  stripeCheckoutSessionId String?
+  /// The customer's current entitling subscription (issue #202); null when
+  /// none. Informational: sync is keyed by stripeCustomerId.
+  stripeSubscriptionId String? @unique
+  availability   WorkspaceAvailability @default(LIVE)
+  /// Next Conversation ticket number to hand out (issue #141). Allocated by
+  /// incrementing this row inside the Conversation-creating transaction: the
+  /// row lock serialises concurrent creators, and the counter never moves
+  /// backwards, so a number is never reused even after its Conversation is
+  /// deleted.
+  nextTicketNumber Int                @default(1)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  memberships Membership[]
+  invites     Invite[]
+  products    Product[]
+  contacts    Contact[]
+  conversations Conversation[]
+  tags        Tag[]
+  savedReplies SavedReply[]
+  attachments Attachment[]
+  emailDeliveries EmailDelivery[]
+  usageNotifications UsageNotification[]
+  diagnosticSnapshots DiagnosticSnapshot[]
+  apiTokens   ApiToken[]
+
+  @@map("workspaces")
+}
+
+enum MembershipRole {
+  ADMIN
+  AGENT
+}
+
+model Membership {
+  id          String         @id @default(uuid())
+  userId      String
+  workspaceId String
+  role        MembershipRole
+  createdAt   DateTime       @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  readReceipts MessageReadReceipt[]
+
+  @@unique([userId, workspaceId])
+  @@unique([userId])
+  @@index([workspaceId])
+  @@map("memberships")
+}
+
+model Invite {
+  id          String         @id @default(uuid())
+  workspaceId String
+  email       String
+  role        MembershipRole
+  tokenHash   String         @unique
+  invitedById String
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  createdAt   DateTime       @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  invitedBy User      @relation("InviteSentBy", fields: [invitedById], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@map("invites")
+}
+
+// --- Product ---------------------------------------------------------------
+
+model Product {
+  id                   String    @id @default(uuid())
+  workspaceId          String
+  name                 String
+  primaryColor         String    @default("#7367f0")
+  widgetPublicKey      String    @unique
+  /// Keyed contact-form endpoint (issue #154): per-Product public form key
+  /// (`fk_…`) presented by server-side form handlers — no cookie or Origin
+  /// dependency, unlike the widget key. Nullable for Products created
+  /// before this column; rotateProductFormKey allocates one on demand.
+  formPublicKey        String?   @unique
+  inboundEmail         String?   @unique
+  inboundEmailVerified DateTime?
+  /// The customer's own public support address (e.g. support@acme.com) that
+  /// forwards into `inboundEmail`. Optional and display/guard-only: shown to
+  /// visitors and used by the mail-loop guard (never a send target, never a
+  /// Reply-To). docs/design/product-settings.md "Support email".
+  supportEmail         String?
+  archivedAt           DateTime?
+  /// Browser diagnostics (docs/design/diagnostics.md): null = off. A
+  /// timestamp rather than a boolean records when disclosure duties began.
+  diagnosticsEnabledAt   DateTime?
+  diagnosticsEnabledById String?
+  /// Unanswered-request escalation (docs/design/escalation.md): email the
+  /// Workspace admins when a new Conversation has had no agent reply for
+  /// `escalationAfterMinutes`.
+  escalationEnabled      Boolean   @default(true)
+  escalationAfterMinutes Int       @default(20)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  domains   ProductDomain[]
+  mailDomain ProductMailDomain?
+  conversations Conversation[]
+  chatVisitors ChatVisitor[]
+  attachments Attachment[]
+  emailDeliveries EmailDelivery[]
+  diagnosticSnapshots DiagnosticSnapshot[]
+  savedReplyProducts SavedReplyProduct[]
+  widgetHostSignals WidgetHostSignal[]
+  diagnosticsEnabledBy User? @relation("DiagnosticsEnabledBy", fields: [diagnosticsEnabledById], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@map("products")
+}
+
+// --- Chat visitors (FR-CHAT-02) --------------------------------------------
+
+model ChatVisitor {
+  id             String    @id @default(uuid())
+  productId      String
+  tokenHash      String    @unique
+  origin         String?
+  email          String?
+  name           String?
+  externalUserId String?
+  conversationId String?
+  createdConversationAt DateTime?
+  createdAt      DateTime  @default(now())
+  lastSeenAt     DateTime  @default(now())
+  devContext     Json?
+
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  @@index([productId])
+  @@map("chat_visitors")
+}
+
+enum WidgetHostOutcome {
+  LOADED
+  REJECTED
+}
+
+/// Installation signal (issue #192): the last time a Product's public widget
+/// config was loaded from a hostname (LOADED) or refused for one (REJECTED).
+/// Hostname and timestamp only - never visitor data (no IP, user agent,
+/// cookie or referrer path). Written after the response from the public,
+/// unauthenticated config route, so it is capped (50 rows per Product and
+/// outcome), throttled (one update per hour per row) and pruned lazily on
+/// the write path. See docs/open-questions.md.
+model WidgetHostSignal {
+  id         String            @id @default(uuid())
+  productId  String
+  host       String
+  outcome    WidgetHostOutcome
+  lastSeenAt DateTime
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, host, outcome])
+  @@index([productId, outcome, lastSeenAt])
+  @@map("widget_host_signals")
+}
+
+model ProductDomain {
+  id        String   @id @default(uuid())
+  productId String
+  domain    String
+  createdAt DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, domain])
+  @@index([productId])
+  @@map("product_domains")
+}
+
+/// Custom inbound mail domain (docs/design/mail-setup.md): the customer points
+/// MX at the instance's mail host and publishes a TXT ownership token; mail
+/// for a *verified* domain routes to this Product. One domain per Product.
+model ProductMailDomain {
+  id                String    @id @default(uuid())
+  productId         String    @unique
+  domain            String
+  verificationToken String
+  verifiedAt        DateTime?
+  lastCheckedAt     DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([domain])
+  @@map("product_mail_domains")
+}
+
+// SQL-only: migration 20261007090000 also creates a PARTIAL unique index
+// "product_mail_domains_verified_domain_key" ON ("domain") WHERE "verifiedAt"
+// IS NOT NULL — one verified domain globally, the race backstop for
+// verifyMailDomain. Prisma's DSL cannot express partial indexes, so never
+// drop it as "drift" when regenerating migrations.
+
+// --- Contacts and conversations --------------------------------------------
+
+model Contact {
+  id          String    @id @default(uuid())
+  workspaceId String
+  email       String?
+  name        String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  workspace     Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  conversations Conversation[]
+
+  @@unique([workspaceId, email])
+  @@index([workspaceId])
+  @@map("contacts")
+}
+
+enum ConversationChannel {
+  CHAT
+  EMAIL
+}
+
+enum ConversationStatus {
+  OPEN
+  PENDING
+  CLOSED
+}
+
+enum MessageKind {
+  CUSTOMER
+  AGENT
+  NOTE
+}
+
+model Conversation {
+  id                 String              @id @default(uuid())
+  workspaceId        String
+  /// Human-facing per-Workspace reference (SS-123), assigned once at creation
+  /// from Workspace.nextTicketNumber. Never a threading or lookup authority.
+  ticketNumber       Int
+  productId          String
+  contactId          String
+  channel            ConversationChannel
+  status             ConversationStatus  @default(OPEN)
+  subject            String?
+  emailMessageId     String?
+  emailReplyToken    String?             @unique
+  lastMessageAt      DateTime            @default(now())
+  firstAgentReplyAt  DateTime?
+  closedAt           DateTime?
+  /// Set once by the escalation sweep when it claims the Conversation (the
+  /// atomic claim is what makes escalation at-most-once and race-safe).
+  escalatedAt        DateTime?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  workspace Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  product   Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  contact   Contact        @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  messages  Message[]
+  tags      ConversationTag[]
+  chatVisitors ChatVisitor[]
+  diagnosticSnapshots DiagnosticSnapshot[]
+
+  @@unique([workspaceId, ticketNumber])
+  @@index([workspaceId, status, lastMessageAt])
+  @@index([workspaceId, productId])
+  @@index([contactId])
+  @@index([emailMessageId])
+  @@index([productId, createdAt])
+  @@map("conversations")
+}
+
+model Message {
+  id             String      @id @default(uuid())
+  conversationId String
+  kind           MessageKind
+  body           String
+  agentUserId    String?
+  /// Channel this message was written through (issue #128). NULL = unknown:
+  /// rows that predate the column, internal notes, and agent replies whose
+  /// routing decision has not run (or crashed) — never backfilled by guessing.
+  channel        ConversationChannel?
+  createdAt      DateTime    @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  author       User?        @relation("MessageAuthor", fields: [agentUserId], references: [id], onDelete: SetNull)
+  attachments  Attachment[]
+  diagnosticSnapshot DiagnosticSnapshot?
+  readReceipts MessageReadReceipt[]
+
+  @@index([conversationId, createdAt])
+  @@map("messages")
+}
+
+/// Durable per-agent read receipt for a customer Message (FR-INBOX-04).
+/// Absence means unread — including Messages that predate this model — so
+/// the unread count can never skip concurrent or historical messages the way
+/// a timestamp watermark could. Composite PK (membershipId, messageId) makes
+/// repeat marks idempotent; the messageId index keeps the anti-join cheap.
+model MessageReadReceipt {
+  membershipId String
+  messageId    String
+  readAt       DateTime  @default(now())
+
+  membership Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  message    Message    @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@id([membershipId, messageId])
+  @@index([messageId])
+  @@map("message_read_receipts")
+}
+
+/// One redacted browser-diagnostics snapshot per customer Message
+/// (docs/design/diagnostics.md). Owned by the Message; cascades from
+/// Message/Conversation/Product/Workspace. Internal only: never returned to
+/// visitors, email or transcripts; hidden once expired.
+model DiagnosticSnapshot {
+  id                   String   @id @default(uuid())
+  workspaceId          String
+  productId            String
+  conversationId       String
+  messageId            String   @unique
+  schemaVersion        Int
+  environment          Json
+  events               Json
+  errorCount           Int
+  warningCount         Int
+  networkFailureCount  Int
+  droppedCount         Int
+  createdAt            DateTime @default(now())
+  expiresAt            DateTime
+
+  workspace    Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  message      Message      @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, conversationId])
+  @@index([productId, expiresAt])
+  @@map("diagnostic_snapshots")
+}
+
+model Tag {
+  id          String   @id @default(uuid())
+  workspaceId String
+  name        String
+  createdAt   DateTime @default(now())
+
+  workspace     Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  conversations ConversationTag[]
+
+  @@unique([workspaceId, name])
+  @@map("tags")
+}
+
+model ConversationTag {
+  id             String   @id @default(uuid())
+  conversationId String
+  tagId          String
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  tag           Tag           @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, tagId])
+  @@map("conversation_tags")
+}
+
+model Attachment {
+  id             String    @id @default(uuid())
+  workspaceId    String
+  conversationId String?
+  productId      String
+  messageId      String?
+  uploadedByUserId String?
+  visitorId      String?
+  filename       String
+  contentType    String
+  size           Int
+  storageKey     String    @unique
+  createdAt      DateTime  @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  product   Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  message   Message?  @relation(fields: [messageId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@index([conversationId])
+  @@map("attachments")
+}
+
+enum EmailDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum EmailDeliveryStatus {
+  RECEIVED
+  IGNORED
+  SENT
+  FAILED
+  REJECTED
+}
+
+model EmailDelivery {
+  id                String            @id @default(uuid())
+  workspaceId       String
+  productId         String
+  conversationId    String?
+  direction         EmailDirection
+  status            EmailDeliveryStatus
+  providerMessageId String?
+  agentMessageId    String?           @unique
+  /// Completion marker for INBOUND deliveries (issue #102): set in the
+  /// same transaction as the customer Message insert. A RECEIVED row
+  /// without this marker is a crashed attempt that a provider retry must
+  /// recover — "conversation has messages" is not completion proof for
+  /// threaded replies.
+  messageId         String?           @unique
+  fromAddress       String?
+  toAddress         String?
+  subject           String?
+  reason            String?
+  createdAt         DateTime          @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  product   Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([direction, productId, providerMessageId])
+  @@index([conversationId])
+  @@index([productId])
+  @@map("email_deliveries")
+}
+
+model SavedReply {
+  id          String   @id @default(uuid())
+  workspaceId String
+  name        String
+  body        String
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  products  SavedReplyProduct[]
+
+  @@unique([workspaceId, name])
+  @@map("saved_replies")
+}
+
+/// Product availability of a saved reply (issue #200): no rows = Workspace-wide
+/// ("All products"); rows = offered in those Products' conversations. Deleting
+/// a Product removes its availability rows (the app only archives Products).
+model SavedReplyProduct {
+  savedReplyId String
+  productId    String
+
+  savedReply SavedReply @relation(fields: [savedReplyId], references: [id], onDelete: Cascade)
+  product    Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([savedReplyId, productId])
+  @@index([productId])
+  @@map("saved_reply_products")
+}
+
+/// Dedupe key for allowance notifications (Workspace, period, level): one
+/// row per level notified per period; deleted again when a send fails so the
+/// next conversation retries (at-least-once, auditable).
+model UsageNotification {
+  id          String                 @id @default(uuid())
+  workspaceId String
+  period      String
+  level       UsageNotificationLevel
+  createdAt   DateTime               @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, period, level])
+  @@map("usage_notifications")
+}
+
+/// Workspace-scoped API token (issue #187) for scripts and agents that call
+/// the admin JSON API without a dashboard session. Only the SHA-256 of the
+/// token is stored: the plaintext (`ss_live_…`) is shown once at creation and
+/// cannot be recovered. A token authenticates as its Workspace alone, never as
+/// a user.
+model ApiToken {
+  id          String    @id @default(uuid())
+  workspaceId String
+  name        String
+  /// Hex SHA-256 of the full token string. Indexed by the unique constraint.
+  tokenHash   String    @unique
+  /// Last four characters of the token, so admins can tell tokens apart.
+  lastFour    String
+  /// Granted scopes (api-tokens.ts). `products:write` implies Product reads.
+  scopes      String[]
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  /// Refreshed at most hourly per token to avoid a write per request.
+  lastUsedAt  DateTime?
+  createdById String?
+  createdAt   DateTime  @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy User?     @relation("ApiTokenCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@map("api_tokens")
+}
+
+/// Durable Stripe-webhook dedup (issue #202): one row per accepted event id,
+/// replacing the in-memory Set so a redeploy or second instance can never
+/// replay a Stripe retry as a fresh event. The webhook inserts a row BEFORE
+/// processing, stamps completedAt on success, and deletes it again when the
+/// claim owner's processing fails.
+/// workspaceId is informational only (no FK): dedup rows outlive the
+/// Workspace they refer to.
+model ProcessedStripeEvent {
+  eventId     String   @id
+  workspaceId String?
+  receivedAt  DateTime @default(now())
+  /// Set once processing succeeded. Duplicates of a completed event are
+  /// acked without reprocessing; an uncompleted claim is in flight or
+  /// crashed, so its duplicates process again.
+  completedAt DateTime?
+
+  @@index([receivedAt])
+  @@map("processed_stripe_events")
+}

@@ -1,0 +1,61 @@
+{
+ "_comment": "Documented SendGrid Inbound Parse field layout (non-raw mode). Replace with a sanitised live capture once the production hostname is cut over.",
+ "fields": {
+  "headers": {
+   "base64": "UmVjZWl2ZWQ6IGJ5IG14MDA0N3AxbWR3MS5zZW5kZ3JpZC5uZXQgd2l0aCBTTVRQIGlkIGFiYzsgVHVlLCAwNiBPY3QgMjAyNiAwODowMTowMiArMDAwMCAoVVRDKQ0KUmVjZWl2ZWQ6IGZyb20gbWFpbC13bTEtZjQxLmV4YW1wbGUudGVzdCAobWFpbC13bTEtZjQxLmV4YW1wbGUudGVzdCBbMjAzLjAuMTEzLjQxXSkNCglieSBteDAwNDdwMW1kdzEuc2VuZGdyaWQubmV0IChQb3N0Zml4KSB3aXRoIEVTTVRQUyBpZCA0YWJjDQoJZm9yIDxwcm9kdWN0X2FiYzEyM0BpbmJvdW5kLmxvY2FsaG9zdD47IFR1ZSwgMDYgT2N0IDIwMjYgMDg6MDE6MDIgKzAwMDAgKFVUQykNCkZyb206ID0/VVRGLTg/UT9SZW49QzM9QTllX0R1cG9udD89IDxyZW5lZUBjdXN0b21lci5leGFtcGxlPg0KVG86IEFscGhhIFN1cHBvcnQgPHByb2R1Y3RfYWJjMTIzQGluYm91bmQubG9jYWxob3N0Pg0KQ2M6IFNvbWVvbmUgRWxzZSA8b3RoZXJAY3VzdG9tZXIuZXhhbXBsZT4NClN1YmplY3Q6IEZhY3R1cmUgbWFucXVhbnRlDQpNZXNzYWdlLUlEOiA8Q0FGPVh4Kzl3cTFAbWFpbC5jdXN0b21lci5leGFtcGxlPg0KSW4tUmVwbHktVG86IDxlYXJsaWVyLXJvb3RAaW5ib3VuZC5sb2NhbGhvc3Q+DQpSZWZlcmVuY2VzOiA8cm9vdEBtYWlsLmN1c3RvbWVyLmV4YW1wbGU+DQogPGVhcmxpZXItcm9vdEBpbmJvdW5kLmxvY2FsaG9zdD4NCk1JTUUtVmVyc2lvbjogMS4wDQpDb250ZW50LVR5cGU6IG11bHRpcGFydC9taXhlZDsgYm91bmRhcnk9IjAwMDAwMDAwMDAwMGExIg=="
+  },
+  "dkim": {
+   "text": "{@customer.example : pass}"
+  },
+  "to": {
+   "text": "Alpha Support <product_abc123@inbound.localhost>"
+  },
+  "from": {
+   "text": "Ren\u00e9e Dupont <renee@customer.example>"
+  },
+  "subject": {
+   "text": "Facture manquante"
+  },
+  "text": {
+   "base64": "Qm9uam91ciwNCg0KTGEgZmFjdHVyZSBkZSBtYXJzIGVzdCBpbmNvbXBs6HRlIC0gdm9pciBwaehjZSBqb2ludGUuDQo="
+  },
+  "html": {
+   "base64": "PHA+Qm9uam91ciw8L3A+PHA+TGEgZmFjdHVyZSBkZSBtYXJzIGVzdCBpbmNvbXBs6HRlLjwvcD4="
+  },
+  "charsets": {
+   "text": "{\"to\":\"UTF-8\",\"html\":\"iso-8859-1\",\"subject\":\"UTF-8\",\"from\":\"UTF-8\",\"text\":\"iso-8859-1\"}"
+  },
+  "envelope": {
+   "text": "{\"to\":[\"product_abc123@inbound.localhost\"],\"from\":\"renee@customer.example\"}"
+  },
+  "sender_ip": {
+   "text": "203.0.113.41"
+  },
+  "SPF": {
+   "text": "pass"
+  },
+  "spam_score": {
+   "text": "0.012"
+  },
+  "spam_report": {
+   "text": "Spam detection software, running on the system \"mx0047p1mdw1.sendgrid.net\", has not identified this incoming email as spam."
+  },
+  "attachments": {
+   "text": "1"
+  },
+  "content-ids": {
+   "text": "{}"
+  },
+  "attachment-info": {
+   "text": "{\"attachment1\":{\"filename\":\"facture-mars.txt\",\"name\":\"facture-mars.txt\",\"type\":\"text/plain\",\"content-id\":\"f_abc\"}}"
+  }
+ },
+ "files": [
+  {
+   "name": "attachment1",
+   "filename": "facture-mars.txt",
+   "type": "text/plain",
+   "base64": "VG90YWw6IFIgMSAyMDAuMDAK"
+  }
+ ]
+}

@@ -1,0 +1,118 @@
+/* SupportSeal design tokens (docs/design/brand.md).
+   Mint-green brand on cool green-grey neutrals; light on :root, dark on .dark.
+   Tailwind maps these via @theme in globals.css. */
+
+:root {
+  --vx-brand-mint: #3ddc97;
+  --vx-brand-ink: #053b2a;
+  /* Wordmark (brand.md, "Logo contrast"): both tones >= 4.5:1 on the surface. */
+  --vx-logo-lead: #053b2a;
+  --vx-logo-accent: #08765a;
+
+  --vx-primary: #08765a;
+  --vx-primary-dark: #06644c;
+  --vx-primary-light: #3ddc97;
+  --vx-primary-label: #e3f5ed;
+  --vx-primary-contrast: #ffffff;
+
+  --vx-secondary: #5f6f69;
+  --vx-secondary-dark: #4b5a55;
+  --vx-secondary-label: #eef2f0;
+  --vx-secondary-contrast: #ffffff;
+
+  --vx-success: #1e7b34;
+  --vx-success-dark: #186a2c;
+  --vx-success-label: #e5f3e8;
+  --vx-success-contrast: #ffffff;
+
+  --vx-danger: #c42b2b;
+  --vx-danger-dark: #a82424;
+  --vx-danger-label: #fdeaea;
+  --vx-danger-contrast: #ffffff;
+
+  --vx-warning: #8f5500;
+  --vx-warning-dark: #7a4800;
+  --vx-warning-label: #fdf0dc;
+  --vx-warning-contrast: #ffffff;
+
+  --vx-info: #0e6ba0;
+  --vx-info-dark: #0b5a87;
+  --vx-info-label: #e3f0f8;
+  --vx-info-contrast: #ffffff;
+
+  --vx-dark: #15261f;
+  --vx-dark-label: #e4ebe8;
+  --vx-dark-contrast: #ffffff;
+
+  --vx-body-bg: #f5f8f7;
+  --vx-surface: #ffffff;
+  --vx-surface-2: #eff4f2;
+  --vx-heading: #15261f;
+  --vx-body: #43544d;
+  --vx-muted: #5f6f69;
+  --vx-border: #dce5e1;
+  --vx-border-strong: #7a8b85;
+  --vx-hover: #eaf1ee;
+  --vx-focus-ring: rgba(8, 118, 90, 0.28);
+
+  --vx-sidebar-width: 16.25rem;
+  --vx-sidebar-collapsed: 5.25rem;
+  --vx-header-height: 4rem;
+  --vx-radius: 0.375rem;
+  --vx-radius-lg: 0.5rem;
+  --vx-shadow-card: 0 0.25rem 1.125rem rgba(21, 38, 31, 0.08);
+  --vx-shadow-menu: 0 0.25rem 1.5rem rgba(21, 38, 31, 0.16);
+}
+
+.dark {
+  --vx-logo-lead: #e8f0ec;
+  --vx-logo-accent: #3ddc97;
+
+  --vx-primary: #3ddc97;
+  --vx-primary-dark: #62e5ad;
+  --vx-primary-light: #3ddc97;
+  --vx-primary-label: rgba(61, 220, 151, 0.12);
+  --vx-primary-contrast: #04261a;
+
+  --vx-secondary: #8fa19a;
+  --vx-secondary-dark: #a5b4ae;
+  --vx-secondary-label: rgba(143, 161, 154, 0.16);
+  --vx-secondary-contrast: #0e1614;
+
+  --vx-success: #5ad17a;
+  --vx-success-dark: #74da8f;
+  --vx-success-label: rgba(90, 209, 122, 0.16);
+  --vx-success-contrast: #0e1614;
+
+  --vx-danger: #ff8a80;
+  --vx-danger-dark: #ffa39b;
+  --vx-danger-label: rgba(255, 138, 128, 0.16);
+  --vx-danger-contrast: #0e1614;
+
+  --vx-warning: #f2b544;
+  --vx-warning-dark: #f5c466;
+  --vx-warning-label: rgba(242, 181, 68, 0.16);
+  --vx-warning-contrast: #0e1614;
+
+  --vx-info: #5cb8ec;
+  --vx-info-dark: #7cc6f0;
+  --vx-info-label: rgba(92, 184, 236, 0.16);
+  --vx-info-contrast: #0e1614;
+
+  --vx-dark: #e8f0ec;
+  --vx-dark-label: rgba(232, 240, 236, 0.16);
+  --vx-dark-contrast: #0e1614;
+
+  --vx-body-bg: #0e1614;
+  --vx-surface: #16211d;
+  --vx-surface-2: #111a17;
+  --vx-heading: #e8f0ec;
+  --vx-body: #bdcbc5;
+  --vx-muted: #8fa19a;
+  --vx-border: #2a3833;
+  --vx-border-strong: #5d6e68;
+  --vx-hover: #1f2c27;
+  --vx-focus-ring: rgba(61, 220, 151, 0.36);
+  --vx-shadow-card: 0 0.25rem 1.125rem rgba(0, 0, 0, 0.4);
+  --vx-shadow-menu: 0 0.25rem 1.5rem rgba(0, 0, 0, 0.55);
+}

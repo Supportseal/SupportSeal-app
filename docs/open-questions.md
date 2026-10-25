@@ -1,0 +1,396 @@
+# Open questions
+
+Decisions that need the maintainer, with options and source references. In the
+numbered questions, nothing is decided unless it is marked **Resolved**;
+never treat an option as an answer. When a question is resolved, move the
+outcome into the owning document (PRD/FRD/architecture/ADR/design doc) and
+mark the entry **Resolved** with the maintainer's answer and date. Entries marked
+**Default** in "Design decisions" are working choices made on the maintainer's behalf.
+They apply until the maintainer overrides them; an override updates the listed docs.
+
+## Design decisions (2026-09-25)
+
+Questions raised by the V1 design docs (`docs/design/`). Numbers follow the
+design review list.
+
+### Resolved by the maintainer
+
+| # | Question | The maintainer's answer | Recorded in |
+| --- | --- | --- | --- |
+| D1 | Away mode scope | **Resolved:** one Workspace-wide Live/Away setting, not per Product | FR-CHAT-04; `design/app-shell.md`, `chat-widget.md` |
+| D2 | Email to an archived Product | **Resolved:** it bounces | FR-PROD-01; `design/product-settings.md`, `support-inbox.md` |
+| D3 | Reply to a Closed Conversation | **Resolved:** a customer or agent reply reopens the same Conversation; no new Conversation; it is counted once ever for billing (also resolves question 2 below) | FR-INBOX-02, FR-USE-01, architecture.md; `design/support-inbox.md`, `conversation-view.md`, `chat-widget.md` |
+| D6 | Who deletes Conversations and Products | **Resolved:** Admins only | FR-ACC-01; `design/conversation-view.md`, `product-settings.md` |
+| D9 | Page URL capture | **Resolved:** the widget records the page URL automatically | FR-CTX-01/02; `design/chat-widget.md`, `conversation-view.md` |
+| D12 | Branding | **Resolved:** mint green; full palette, tokens and logo direction delegated to the design pass | `design/brand.md` |
+
+### Defaults (the maintainer can override)
+
+| # | Question | **Default** chosen | Why | Recorded in |
+| --- | --- | --- | --- | --- |
+| D1a | Who can toggle Live/Away | **Default:** Admins only; Agents see the status read-only | Workspace-wide change affects every Product; matches Admin ownership of channel settings (FR-ACC-01) | `design/app-shell.md` |
+| D6a | Who manages saved replies | **Default:** Admins create, edit and delete; every role inserts them. A reply is All-products or scoped to one or several Products (issues #139, #200); the composer offers All-products replies plus those whose selection includes the conversation's Product, and admins can save the current draft as a reply from the composer | FR-INBOX-02 says "managed" saved replies; keeps one curated set | `design/app-shell.md`, `conversation-view.md` |
+| D4 | Agent name vs "{Product} Support" | **Default:** customers see "{Product} Support" in the widget and as the email sender name; the dashboard shows which agent replied | Keeps Product identity primary (FR-EMAIL-02) and avoids exposing staff names | `design/chat-widget.md`, `conversation-view.md`, `product-settings.md` |
+| D5 | When a chat reply goes out by email | **Default:** email-started → email. Chat with the visitor's widget connected (stream or heartbeat within 60s) → chat. Visitor not connected and email known → email, also stored in the chat thread. No email → chat only, with a warning. The agent can override when both are possible | Delivers replies where the visitor actually is (FR-EMAIL-02) | `design/conversation-view.md` |
+| D7 | Domains vs allowlist; subdomains | **Default:** one "Allowed domains" list serves as both; exact hostname match; explicit `*.example.com` covers subdomains but not the apex; localhost is a separate switch | Simplest model that satisfies FR-CHAT-01 without surprise access | `design/product-settings.md`, `onboarding.md` |
+| D8 | Hosted test page security | **Default:** an Admin-only, signed, single-Product test token (30 minutes) lets the SupportSeal-hosted test page load that Product's widget. No allowlist entry is added; the token grants only a normal visitor session. Test Conversations get an automatic "test" tag and count for usage normally. Security review required in the widget PR | Avoids a blanket origin exception (FR-CHAT-01, FR-SEC-01) | `design/onboarding.md`, `chat-widget.md` |
+| D10 | Widget size budget | **Default:** loader ≤ 5 KB gzip; panel app ≤ 50 KB gzip JS on first open (excluding images/attachments); both reported in the widget PR | Widget size is a critical performance area | `design/chat-widget.md` |
+| D11 | Archive before delete | **Default:** a Product must be archived before it can be deleted (Admins only, typed-name confirmation). Conversation deletion needs only a confirmation dialog | Two deliberate steps for the most destructive action | `design/product-settings.md` |
+| D2a | Replying in an archived Product's Conversations | **Default:** read-only until the Product is unarchived (notes, tags and status still work) | Customer replies would bounce and the widget no longer loads, so replies could not continue | `design/conversation-view.md`, `support-inbox.md`, `product-settings.md` |
+| D9a | Which part of the page URL | **Default:** origin plus path; query string and fragment stripped; developers may send a full URL via `context()` | Query strings often carry tokens or emails (FR-SEC-02) | `design/chat-widget.md`, `conversation-view.md` |
+| D13 | Generated inbound address and `inboundEmailVerified` semantics | **Default:** every new Product gets an auto-generated `product_<random>@<inbound domain>` address (unique, allocated at create) and `inboundEmailVerified` is stamped at the same moment — the platform issued the address, so no customer proof is needed. Inbound routing only accepts verified addresses (issue [#169](https://github.com/pietervw/SupportSeal-app/issues/169)); any future non-generated address stays null until proven. "Receiving" status still derives from inbound deliveries (issue [#45](https://github.com/pietervw/SupportSeal-app/issues/45)) | Keeps the checklist's "first inbound email received" proof honest and gives the flag a real job without a provider flow (`design/onboarding.md` open point) | `design/product-settings.md`, `design/onboarding.md` |
+
+## Inbox ordering and close-advance (issue #199, 2026-10-19)
+
+Raised by [issue #199](https://github.com/pietervw/SupportSeal-app/issues/199):
+the inbox listed newest-activity-first and closing an open thread left the
+agent on the finished conversation. Working defaults the maintainer can
+override:
+
+| # | Question | **Default** |
+| --- | --- | --- |
+| OQ1 | List ordering | **Default:** every tab (Open/Pending/Closed, search included) lists Conversations by `createdAt` ascending — oldest first, stable: replies never reorder the queue. Alternative considered: `lastMessageAt` ascending. Creation order makes the queue read top-down as a workload. |
+| OQ2 | Close-loads-next | **Default:** closing the conversation open in the conversation view auto-selects the next Conversation in the same tab's order; when the closed one was last, the empty state shows; when the next page of the list cannot be loaded, the conversation still closes and the agent stays on it with a notice (never the empty state). Same behaviour on desk and phone. Closing from the list keeps the current behaviour (no navigation). |
+
+## Keyed contact-form endpoint (issue #154, 2026-10-13)
+
+Raised by [issue #154](https://github.com/pietervw/SupportSeal-app/issues/154)
+(CheckID feedback): the widget API is browser/cookie/Origin based, so a
+website's server could not hand a contact-form submission to a Product with
+a key — the site's workaround (a contact form that emails the Product's
+inbound address) attributes the ticket to the sender and agent replies
+never reach the visitor. The implemented direction: a keyed server-side
+"form submission" endpoint that creates a Conversation with an explicit
+contact email. These are working defaults, not resolved policy approvals.
+
+| # | Question | Working position |
+| --- | --- | --- |
+| KQ1 | Secret or public key semantics? | **Default:** a per-Product *public* form key (`fk_…`, same entropy as the widget key) stored like `widgetPublicKey` and shown in the dashboard. It is meant to stay on the customer's server (unlike the widget key it is not embedded in page HTML), but is treated as public-unguessable because possession authorises posting — the trust model of inbound email's From, not of an origin gate. |
+| KQ2 | Rotation semantics? | **Default:** immediate single-key rotation (Admin-only, refused while archived): the previous key stops authorising submissions at once, no overlap window. A leaked key is cut off immediately; sites accept a brief outage while updating. |
+| KQ3 | Rate limiting? | **Default:** an IP-only in-process bucket (30/min, like the session-mint cap #81) charged before any database access; each accepted post creates a Conversation, and key- or token-keyed buckets are meaningless because the key identifies the Product, not a client. |
+| KQ4 | Channel and contact semantics? | **Default:** conversations open as CHAT with the explicit email upserted as the contact (like the away form); replies follow the normal reply-routing rules (D5). Anyone holding the key can attribute a conversation to any email — identical trust to inbound email; documented in the Developer tab copy. The one exception (PR review): the Product's own support/inbound addresses are rejected with a 400 like the widget email capture — replies to them would re-ingest (mail loop). |
+| KQ5 | Intake atomicity? | **Default (PR review):** the Conversation and its first message are created in one interactive transaction (`createConversationWithFirstMessage`), so a crash mid-intake cannot strand an empty Conversation that usage metering already counted. The contact upsert stays outside that transaction (same as inbound email): a surviving contact row is not an orphan. |
+
+## Ticket numbers (issue #141, 2026-10-11)
+
+Decided by the maintainer (2026-10-10, [#141](https://github.com/pietervw/SupportSeal-app/issues/141)): a persistent, monotonic per-Workspace number on every Conversation, shown in the widget thread, inbox and outbound email subjects, never used for threading. Implementation defaults the maintainer can override:
+
+- **Allocation.** A counter on the Workspace row (`nextTicketNumber`) is incremented inside the Conversation-creating transaction; the row lock serialises concurrent creators on any Postgres, with no sequence object per Workspace and no external service. `UNIQUE (workspaceId, ticketNumber)` is the backstop. A rolled-back creation (for example a duplicate inbound webhook) releases its number; a committed Conversation's number is never reused, even after deletion.
+- **Format.** `SS-<n>` with no zero padding (`TICKET_PREFIX` in `src/lib/ticket.ts`; display only, so changing it never touches stored data). Self-hosters who rebrand currently edit that constant; making it configurable is a follow-up, not decided here.
+- **Wording.** The PRD keeps the interface from saying "ticket", so the widget labels it "Reference SS-123" and the inbox shows the bare `SS-123`.
+- **Email subject.** Outbound subjects become `Re: [SS-123] <subject>`; any `Re:` or `[SS-n]` already on the stored subject is normalised so replies never stack tags. Customers replying through their mail client keep the tag in the subject, but threading is unchanged: `Message-ID` / `In-Reply-To` / `References` or the reply token only.
+- **Backfill.** The migration numbers each Workspace's existing Conversations 1..n by `createdAt` (ties broken by id) and sets the counter past them.
+
+## Workspace API: Products created through the API (2026-10-20)
+
+Raised by the token-authenticated `POST /api/products` ([FR-API-02](FRD.md)): a leaked `products:write` token could create about 43,000 Products a day at the 30 writes/minute limit.
+
+| # | Question | **Resolution** |
+| --- | --- | --- |
+| API1 | Cap Products per Workspace? | **Resolved (maintainer, 2026-10-20, option 2):** an API create is refused with `409 product_limit_reached` once the Workspace already has 100 Products (`MAX_API_PRODUCTS_PER_WORKSPACE` in `src/lib/products.ts`; archived Products count, so archive-and-recreate cannot bypass it). It is an abuse guard for a leaked write token, not a plan limit: the dashboard and onboarding stay unlimited, so PRD "unlimited Products", FR-USE-03 and the M2 resolution (Pro: unlimited Products) remain true. API creates are serialised against each other by a Workspace row lock; dashboard and onboarding creates deliberately take no lock, so a dashboard create racing the last API create can leave the Workspace one over 100 (acceptable for an abuse guard). Self-hosted behaves the same and the cap is a constant, not configuration; making it configurable is a maintainer decision. Alternatives rejected: one cap in the shared create core (contradicts the unlimited promise), rate limit alone (leaves ~43k/day). |
+
+## Marketing site (2026-09-25)
+
+Raised by `docs/design/marketing-site.md` (now in the private `supportseal-marketing` repository) (launch
+readiness, outside V1). Details and context are in that doc's "Open
+questions".
+
+| # | Question | **Default** (if any) |
+| --- | --- | --- |
+| M1 | Serve marketing only in hosted mode, or behind its own flag? | **Default:** hosted mode only; self-hosted `/` unchanged |
+| M2 | Hosted tier shape: `usage.ts` gives Pro unlimited Conversations and no agent limits, unlike volume-based paid tiers, and the original plan of one agent on Free | **Resolved (maintainer, 2026-09-26, issue [#15](https://github.com/pietervw/SupportSeal-app/issues/15)):** Free $0 — 100 new Conversations/month, 1 agent; Pro $39/month — 1,000 new Conversations/month, unlimited agents and Products; never advertised as unlimited Conversations. Recorded in `src/config/pricing.ts` (single source), FR-USE-02, marketing copy and SF-12 |
+| M3 | Privacy/Terms pages before public hosted sign-up | None: launch-order decision. Drafts live on the marketing site (`/legal/*` in [supportseal-marketing](https://github.com/supportseal-marketing), [#14](https://github.com/pietervw/SupportSeal-app/issues/14)), marked draft and noindex, and are linked from nothing public until the maintainer marks them operative there after legal review |
+| M4 | Changelog: GitHub Releases or a site page | **Default:** GitHub Releases, link hidden until the first release |
+| M5 | Run the real widget on the marketing site (dogfooding) | None |
+| M6 | Demo seed is required for all screenshots | None: scheduling |
+| M7 | Commit the screenshot-capture script? | **Default:** not committed; procedure documented in the design doc |
+| M8 | Keep a "Not yet" section on `/features` | **Default:** keep |
+
+## Diagnostics (V2 design, 2026-09-29)
+
+Raised by [design/diagnostics.md](design/diagnostics.md) (V2, not V1).
+Details and the full list of defaults are in that doc's "Decisions and
+defaults" and "Open questions".
+
+| # | Question | **Default** (if any) |
+| --- | --- | --- |
+| Q1 | Notice or consent: is a customer-controlled switch plus a widget notice enough, or is a "wait for consent" mode and/or visitor opt-out needed (legal, GDPR/UK GDPR review)? | **Default:** notice line plus the developer pause hook (`diagnostics(false)` pauses and clears the buffer; `diagnostics(true)` resumes); wording from legal review |
+| Q2 | Retention period for diagnostic snapshots | **Default:** 30 days, fixed until configurable retention lands |
+| Q3 | Capture "warnings" via a narrow `console.warn`/`console.error` wrapper, or drop warnings from the slice? | **Default:** narrow wrapper; primitives as text, an `Error` as `name: message`, anything else as `[object]` |
+| Q4 | Add a scheduled purge job (new infrastructure) or accept hidden-until-purged expired rows? | **Default:** read-time expiry filter plus bounded purge on ingest; no new job |
+
+## Product branding (V2 design, 2026-10-01)
+
+Raised by [design/branding.md](design/branding.md#open-questions). This is a
+design for a later build, not a change to V1 or a record of the maintainer's approval.
+
+| # | Question | Default or unresolved boundary |
+| --- | --- | --- |
+| BQ1 | Logo formats, budgets and no-logo fallback | **Default:** static PNG/JPEG/WebP, 2 MiB input, bounded dimensions, sanitised WebP ≤100 KiB; contained square mark with Product initial/colour fallback |
+| BQ2 | Hosted/self-hosted storage and public vs signed delivery | **Default:** existing local persistent storage and public app route, five-minute cache; CDN/provider unselected, private delivery requires revised design |
+| BQ3 | Launcher corners | **Default:** bottom-right initially, bottom-left optional; no top corners/free offsets |
+| BQ4 | Greeting length, placement and i18n | **Default:** one plain-text value, 240 Unicode code points / three lines / 1,024 UTF-8 bytes, shown before messages in Live/Away; no translation; blank restores V1 behaviour |
+| BQ5 | Image decoder dependency and deployment support | **Unresolved:** later build must propose a maintained decoder and obtain the normal dependency checkpoint before adding it |
+| BQ6 | Crash recovery and failed asset deletion | **Default:** immediate compensating cleanup and observable failures; **unresolved:** concrete recovery procedure/retry ownership before shipping, with explicit approval if new infrastructure is needed |
+
+## Assignment and priority (V2 design, 2026-10-01)
+
+Proposed build contract: [design/assignment-priority.md](design/assignment-priority.md).
+Its “Defaults and open questions” section owns AP-Q1–AP-Q7 and the associated
+acceptance criteria. These are working defaults the maintainer can override, not
+resolved decisions or additions to V1. None blocks the scoped design.
+
+| ID | Question | **Default** |
+| --- | --- | --- |
+| AP-Q1 | Auto-assign on first agent reply? | No; explicit assignment only |
+| AP-Q2 | Notify an assignee whose dashboard is inactive? | No; active-dashboard notices, Mine and private history only |
+| AP-Q3 | Require an explicit priority choice? | No; required stored value defaults to Normal |
+| AP-Q4 | Keep assignee and priority on reopen? | Yes, while the assignee remains a member |
+| AP-Q5 | Allow Agents to reassign anyone's work/change priority? | Yes; same triage rights as Admins |
+| AP-Q6 | Include bulk assignment/priority? | Defer; header controls only in the first slice |
+| AP-Q7 | Default to Priority first sorting? | No; retain Latest activity, offer Priority first |
+
+## Accessibility (V2 design, 2026-10-01)
+
+Raised by [design/accessibility.md](design/accessibility.md). Its `AX-*`
+criteria define the later build; **Defaults** are working choices, not
+recorded approvals or a claim of conformance. The build can proceed with
+WCAG 2.2 AA as its target, standard Tab navigation, opt-in inbox shortcuts
+and the documented manual test matrix. Agent avatars, presence and typing
+indicators remain outside this slice.
+
+| # | Question | Working position |
+| --- | --- | --- |
+| AQ1 | Require an independent audit or published conformance report before a public AA claim? | Undecided. No external audit commissioned or public claim authorised; internal implementation and verification can proceed. |
+| AQ2 | Additional customer-required assistive technology/browser/email-client coverage? | **Default:** the design's NVDA/Firefox, VoiceOver/Safari, TalkBack/Chrome and email-client matrix; record gaps, do not promise untested contractual coverage. |
+| AQ3 | Publish an accessibility statement and dedicated feedback contact? | **Default:** existing support/contact routes; the maintainer decides ownership/contact and any public commitment. No invented address or SLA. |
+
+## Unanswered-request escalation (2026-10-07)
+
+Raised by [design/escalation.md](design/escalation.md) (FR-INBOX-05).
+Defaults the maintainer can override.
+
+| # | Question | **Default** |
+| --- | --- | --- |
+| E1 | Default wait time | **Default:** 20 minutes, one value for chat and email, configurable 5–1440 per Product. Long enough that an agent mid-conversation or finishing a reply does not trigger a false alarm, short enough that a visitor has not given up; email customers tolerate more delay but one shared setting avoids two knobs |
+| E2 | Who is "the product owner"? A Product has no owner field; Workspaces have Admins and Agents (FR-ACC-01) | **Default:** all Workspace Admins, matching the allowance emails (FR-USE-02). A per-Product recipient override is deferred |
+| E3 | On by default? | **Default:** on for every Product, including existing ones, as soon as an outbound mail provider exists; disable per Product |
+| E4 | Scheduling without a worker | **Default:** lazy sweep + in-process timer + optional `CRON_SECRET` endpoint, all backed by an atomic DB claim; no new infrastructure |
+
+## Product analytics (V2 design, 2026-10-01)
+
+Raised by [design/analytics.md](design/analytics.md), the PRD's later product
+analytics slice, separate from hosted marketing Umami. Defaults are working
+choices, not the maintainer's answers; full definitions and acceptance criteria live in
+the design. No V1 usage or billing behaviour changes.
+
+| # | Question | **Default** (if any) |
+| --- | --- | --- |
+| A1 | Staff activity visibility and disclosure | **Default:** Admins see team activity; Agents see their own activity plus operational Workspace/Product summaries. The maintainer owns the policy and release disclosure review. |
+| A2 | Reporting horizon | **Default:** 90 UTC calendar dates, with a 30-day initial view, in both hosting modes; annual history needs further retention/performance design. |
+| A3 | Guaranteed physical purge of expired analytics data | **Default:** read-time expiry plus bounded opportunistic cleanup; inactive installations may retain hidden rows. A guaranteed deadline requires an infrastructure decision. |
+| A4 | Hosted billing audit after source deletion | No new policy decided. Analytics preserves existing usage behaviour and reconciles against current source records; any durable post-deletion billing ledger is separate usage work. |
+
+## Presence (V2 design, 2026-10-01)
+
+Raised by [design/presence.md](design/presence.md), the deferred presence
+half of richer branding and presence; independent of branding PR #37.
+See its [Open questions](design/presence.md#open-questions) for trade-offs.
+These are working defaults, not resolved policy approvals.
+
+| # | Question | **Default** (if any) |
+| --- | --- | --- |
+| PQ1 | Internal staff identity only, or visitor-facing names/photos per Product? | **Default:** team-only membership photos; retain D4 “{Product} Support” and generic public typing. Public identity needs separate consent/alias/visibility rules. |
+| PQ2 | Informational activity, or personal availability/automatic Live/Away? | **Default:** automatic team-only activity; manual Workspace-wide Live/Away stays authoritative. |
+| PQ3 | Visitor typing on by default, Product opt-in or visitor opt-out? | **Default:** on for established chat Conversations; no pre-message/away-form collection or draft contents. Review disclosure and any required consent/opt-out before shipping. |
+| PQ4 | Avatar decoder and recovery for interrupted file/database operations? | **Unresolved:** a concrete dependency and cleanup/retry ownership proposal is required before uploads are built; coordinate with branding where available. No new service/job approved. |
+| PQ5 | Opportunistic deletion or a strict physical presence-data purge deadline? | **Default:** hide expired leases immediately, delete opportunistically in bounded batches; inactive installations/backups may retain expired rows. Strict deadlines need an approved operating procedure. |
+
+## Widget visitor sessions (issue #61, 2026-10-02)
+
+Raised by the sticky-session fix (issue #61): visitor identity follows the
+visitor token; a session is bound to the Product and the exact embedding
+origin (scheme + host + port), `identify()` only enriches the current
+session, and clearing client cookies/storage yields a fresh anonymous
+visitor ([design/chat-widget.md](design/chat-widget.md) "Resume").
+
+| # | Question | Working position |
+| --- | --- | --- |
+| WQ1 | "Start a new conversation" affordance for returning visitors? | **Undecided product decision** (issue #61 work item 4). V1 keeps the design's rule: a visitor message reopens their existing (even Closed) Conversation and there is deliberately no such button; revisit only if visitors ask for it. |
+| WQ2 | Cross-device history for identified users? | **Default:** no. History returns only with a valid visitor token or an explicit sign-in flow (none exists in V1); `identify()` must not resurrect a session on a cleared or different client. |
+
+## Widget panel CSP and the Cloudflare beacon (issue #71, 2026-10-07)
+
+Cloudflare zones with Web Analytics inject the RUM beacon
+(`static.cloudflareinsights.com/beacon.min.js`, reporting to
+`cloudflareinsights.com/cdn-cgi/rum`) into every HTML response — the widget
+panel included. The panel's strict CSP blocked it there, silently dropping
+the host's analytics for the widget context (observed on a widget host with
+Web Analytics enabled).
+
+| # | Question | Working position |
+| --- | --- | --- |
+| BQ1 | Allow the beacon in the panel CSP or leave strict? | **Default:** allow, but only the two Cloudflare-operated origins (`script-src … https://static.cloudflareinsights.com`, `connect-src … https://cloudflareinsights.com`); every other directive stays as narrow as before. Trade-off: host analytics integrity vs a slightly wider script surface in the panel. Origin granularity (not a pinned path) because Cloudflare serves the beacon under versioned paths. Pinned by `src/lib/__tests__/widget-panel-csp.test.ts`; a wider allow must be a conscious decision recorded here. |
+
+## Installation panel (issue #192, 2026-10-21)
+
+A per-Product "Installation" panel (Settings → Products → Widget tab) shows
+where the widget config was last loaded from and which hostnames were
+refused, with an **Allow** button. Approved by the maintainer on 2026-10-19
+with the defaults below; the table is `widget_host_signals`, written from the
+public `GET /api/widget/config` after the response.
+
+| # | Question | Working position |
+| --- | --- | --- |
+| IQ1 | What is stored? | **Resolved (maintainer, 2026-10-19, [#192](https://github.com/pietervw/SupportSeal-app/issues/192)):** Product, hostname, outcome (`LOADED`/`REJECTED`) and last-seen time. No visitor data (no IP, user agent, cookie, referrer path). Requests admitted only by the signed test token (hosted test page) record nothing. |
+| IQ2 | Cap on distinct hostnames | **Default:** 50 per Product and outcome. A full `LOADED` list keeps its rows (spoofed subdomains of a wildcard entry cannot evict a real host); a full `REJECTED` list replaces its stalest row. Override: `HOST_SIGNAL_CAP` in `src/lib/install-signals.ts`. |
+| IQ3 | Rejected hostnames | **Default:** stored for real, unarchived keys only; rate-limited to 10 new hostnames per Product per minute per instance; TTL 30 days; shown with Allow (admin-only, through `patchProduct`, so the apex/`www.` sibling option applies). |
+| IQ4 | Retention of loaded hostnames | **Default (not in the issue):** 90 days without a load, so junk from a wildcard entry ages out while a low-traffic site stays visible for a quarter. Override: `LOADED_TTL_MS`. Pruning is lazy, inside the write path; there is no scheduler. |
+| IQ5 | Write throttle | **Resolved (maintainer, 2026-10-19, #192):** at most one write per (Product, hostname, outcome) per hour — in memory per instance in front of the DB, and again in the DB (`lastSeenAt` must be older than an hour to update). |
+| IQ6 | Hosted vs self-hosted | **Resolved (maintainer, 2026-10-19, #192):** both; in-database only, so FR-HOST-01 (no external telemetry, no Stripe or hosted-API dependency) holds. |
+| IQ7 | Onboarding "Install the widget" | **Default:** done when a `LOADED` signal exists for any active Product in the Workspace **or** the first Conversation exists (the design's "config request arrives from an allowed origin, or item 2 completes"). Previously only the conversation counted. |
+
+Known limits (accepted): the widget key is public and the origin gate trusts the
+declared `host` when no Referer is sent, so anyone with the key can plant a
+`LOADED` row for an *allowlisted* hostname (and so tick the onboarding item) or
+churn the `REJECTED` list with spoofed hostnames, which evicts older refused rows.
+Writes and storage stay bounded (10 new hosts/min/Product/instance, 50 rows), only
+an admin click turns a refused hostname into an allowlist entry, and the signal is
+advisory, never a security boundary. Throttle memory is per instance; the DB-side
+hourly check and the cap hold across instances.
+
+## Widget visual refresh (2026-10-08)
+
+The widget UI/UX overhaul (approved task) asked for light and dark variants,
+which supersedes the design doc's earlier "light-only in V1" line.
+
+| # | Question | Working position |
+| --- | --- | --- |
+| WQ1 | Which signal picks the widget's dark theme? | **Default:** the visitor's `prefers-color-scheme`, inside the panel iframe. It can disagree with a host site that forces light; a per-Product "always light/dark/auto" setting is the override if that matters in practice. |
+| WQ2 | Text colour on the Product colour | **Default:** whichever of black or white has the higher WCAG contrast ratio (previously a 0.35 luminance threshold, which put white text on mid-tone colours such as `#ca8a04` at 2.94:1). |
+
+## 1. V1 scope: marketing site, analytics, legal drafts, demo data
+
+An early planning document attached the marketing site, Umami analytics,
+draft legal documents and a seeded demo environment to V1/launch, while the
+PRD ([PRD.md](PRD.md) "V1 boundary") scoped V1 without them.
+
+**Resolved (maintainer, 2026-09-25):** V1 scope is the PRD's V1 boundary as
+written. The marketing site, Umami analytics, draft legal documents and
+demo data are out of V1. Recorded in [PRD.md](PRD.md) "V1 boundary".
+
+## 2. Billable Conversation lifecycle
+
+**Resolved (maintainer, 2026-09-25, with design answer D3):** option a) is chosen:
+a Conversation counts once ever, in the billing period in which it was
+first opened. A reply to a Closed Conversation reopens it rather than
+creating a new one, and reopening or continuing it in a later period never
+counts again. Recorded in FR-USE-01 ([FRD.md](FRD.md)) and
+[architecture.md](architecture.md). The maintainer stated this in the reopen answer
+("consistent with a billable Conversation being counted once ever"), not as
+a separate answer to this question; it can be re-opened if that reading is
+wrong.
+
+## 3. Multi-Workspace self-hosting
+
+The early planning document said "one deployment effectively represents one
+Workspace"; ADR-0001 previously said "normally has one Workspace"; FR-HOST-01 said "can
+represent one Workspace". The docs now uniformly say a self-hosted deployment
+represents one Workspace in V1, but none states whether additional Workspaces
+are blocked, merely untested, or supported.
+
+**Resolved (maintainer, 2026-09-25):** enforced single-Workspace. A self-hosted
+installation blocks creating additional Workspaces; the schema stays
+multi-Workspace capable. Recorded in FR-HOST-01
+([FRD.md](FRD.md)), [architecture.md](architecture.md) and
+[ADR-0001](adr/0001-shared-codebase-and-tenancy.md).
+
+## 4. UI kit licensing
+
+**Resolved (maintainer, 2026-09-25):** the UI kit has no licensing restrictions.
+Third-party proprietary theme source, assets and components are never copied
+into this AGPL repository. How the kit is used is in [design/](design/).
+
+## 5. AGPLv3 LICENSE file
+
+**Resolved (maintainer, 2026-09-25):** add the AGPLv3 LICENSE now. The standard GNU
+AGPLv3 text (verbatim from the FSF) is at the repository root (`LICENSE`);
+README.md's licence section links it.
+
+## 6. Product name
+
+**Resolved (maintainer, 2026-09-25):** SupportSeal is the real product name. The
+brand is mint green; the palette, tokens and logo direction are in
+[design/brand.md](design/brand.md). The name stays centrally configured
+(`src/config/site.ts` → `brand.name`) rather than
+scattered through code, tables or templates. README.md and AGENTS.md now
+use the name accordingly.
+
+**Update (maintainer, 2026-09-29):** after a rename shortlist (challengers lost
+on trademark or domain availability), the name **stays SupportSeal** and
+the official domain is **supportseal.app** (free at the 2026-09-29 RDAP
+check; the maintainer registers it). `supportseal.com` is held by a domain investor
+(GoDaddy, sale-listed, created 2025-08) and is not pursued for now. The
+host layout is decided the same day: **single origin** — marketing,
+dashboard, widget and API all on `https://supportseal.app` (runbook: the
+internal hosted-deployment notes; `app.supportseal.app` stays
+reserved for a future split). Issue
+[#23](https://github.com/pietervw/SupportSeal-app/issues/23) resolves via the
+`NEXT_PUBLIC_APP_URL` deployment value — `trustedOrigins` is dynamic.
+
+**Update (maintainer, 2026-10-06):** the single origin is split before the app
+repository is open-sourced. The marketing site moves to its own private
+repository (`supportseal-marketing`) and serves `supportseal.app` +
+`www`; the product (dashboard, widget, API, webhooks) moves to
+`https://dashboard.supportseal.app`. Mail stays on the apex
+(`INBOUND_EMAIL_DOMAIN=supportseal.app`). The apex keeps routing
+`/widget.js`, `/widget`, `/widget-diagnostics.js` and `/api/*` to the app
+for installed widget snippets and existing webhooks; former product pages
+on the apex 308-redirect to the dashboard (runbook: the internal
+hosted-deployment notes).
+
+## 7. Tracking of deferred specs
+
+**Resolved (maintainer, 2026-09-25):** deferred specs are tracked as GitHub issues
+on [pietervw/SupportSeal-app](https://github.com/pietervw/SupportSeal-app); each
+issue links back to its owning document:
+
+| Spec | Owning document | Issue |
+| --- | --- | --- |
+| Auth library | [ADR-0002](adr/0002-independent-authentication.md) | [#5](https://github.com/pietervw/SupportSeal-app/issues/5) |
+| Realtime delivery spike | [ADR-0003](adr/0003-realtime-delivery.md) | [#2](https://github.com/pietervw/SupportSeal-app/issues/2) |
+| Email provider | [ADR-0004](adr/0004-email-boundary.md) | [#4](https://github.com/pietervw/SupportSeal-app/issues/4) |
+| Deployment host | [architecture.md](architecture.md) | [#3](https://github.com/pietervw/SupportSeal-app/issues/3) |
+| Test framework | pinned in `package.json` / CI | [#7](https://github.com/pietervw/SupportSeal-app/issues/7) |
+| Free-tier limits | pricing configuration (centralised in the application) — decided in [#15](https://github.com/pietervw/SupportSeal-app/issues/15), recorded in `src/config/pricing.ts` | [#6](https://github.com/pietervw/SupportSeal-app/issues/6) | |
+
+## 8. First email provider
+
+ADR-0004 requires comparing hosted provider candidates for inbound
+parsing, signatures, attachment limits, deliverability, local testing and
+cost before selecting the first provider. Tracked as
+[#4](https://github.com/pietervw/SupportSeal-app/issues/4).
+
+**Resolved (maintainer, 2026-10-06):** SendGrid. The first provider, chosen on
+2026-09-26, was replaced on 2026-10-06; the provider comparison and the
+migration record are in [#4](https://github.com/pietervw/SupportSeal-app/issues/4).
+The adapter boundary stays provider-neutral per
+[ADR-0004](adr/0004-email-boundary.md), and the SendGrid adapter lives in
+`src/lib/email/providers/sendgrid.ts`. Self-hosted deployments remain
+provider-independent ([self-hosting.md](self-hosting.md)). The hosted
+subprocessor row for #14 is "SendGrid (Twilio)".
+
+## V2 sender-domain design
+
+The [verified custom sending domains design](design/sender-domains.md) proposes
+V2 behaviour; it does not change V1 or resolve the maintainer's product decisions.
+Working defaults SD1–SD6 cover one active sender per Product, `support` as the
+local-part, no composer From overrides, 30-day failed-setup retention, explicit
+managed fallback, and required DNS checks with a 24-hour freshness limit.
+See its [defaults and open questions](design/sender-domains.md#defaults-and-open-questions)
+for trade-offs and override points.
+
+**Open before hosted rollout:** maintainer/operator must confirm the SendGrid account
+and plan suitability for multi-tenant customer-domain sending and choose resource
+isolation based on actual provider constraints. No account limit, reputation
+isolation guarantee or pricing/plan restriction is decided by this design.

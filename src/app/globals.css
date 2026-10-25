@@ -1,0 +1,176 @@
+@import "tailwindcss";
+@import "../styles/tokens.css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-brand-mint: var(--vx-brand-mint);
+  --color-brand-ink: var(--vx-brand-ink);
+  --color-logo-lead: var(--vx-logo-lead);
+  --color-logo-accent: var(--vx-logo-accent);
+
+  --color-primary: var(--vx-primary);
+  --color-primary-dark: var(--vx-primary-dark);
+  --color-primary-light: var(--vx-primary-light);
+  --color-primary-label: var(--vx-primary-label);
+  --color-primary-contrast: var(--vx-primary-contrast);
+
+  --color-secondary: var(--vx-secondary);
+  --color-secondary-dark: var(--vx-secondary-dark);
+  --color-secondary-label: var(--vx-secondary-label);
+  --color-secondary-contrast: var(--vx-secondary-contrast);
+
+  --color-success: var(--vx-success);
+  --color-success-dark: var(--vx-success-dark);
+  --color-success-label: var(--vx-success-label);
+  --color-success-contrast: var(--vx-success-contrast);
+
+  --color-danger: var(--vx-danger);
+  --color-danger-dark: var(--vx-danger-dark);
+  --color-danger-label: var(--vx-danger-label);
+  --color-danger-contrast: var(--vx-danger-contrast);
+
+  --color-warning: var(--vx-warning);
+  --color-warning-dark: var(--vx-warning-dark);
+  --color-warning-label: var(--vx-warning-label);
+  --color-warning-contrast: var(--vx-warning-contrast);
+
+  --color-info: var(--vx-info);
+  --color-info-dark: var(--vx-info-dark);
+  --color-info-label: var(--vx-info-label);
+  --color-info-contrast: var(--vx-info-contrast);
+
+  --color-dark: var(--vx-dark);
+  --color-dark-label: var(--vx-dark-label);
+  --color-dark-contrast: var(--vx-dark-contrast);
+
+  --color-body-bg: var(--vx-body-bg);
+  --color-surface: var(--vx-surface);
+  --color-surface-2: var(--vx-surface-2);
+  --color-heading: var(--vx-heading);
+  --color-body: var(--vx-body);
+  --color-muted: var(--vx-muted);
+  --color-border: var(--vx-border);
+  --color-border-strong: var(--vx-border-strong);
+  --color-hover: var(--vx-hover);
+
+  --font-sans: var(--font-public-sans), "Public Sans", ui-sans-serif, system-ui, sans-serif;
+
+  --radius-sm: 0.25rem;
+  --radius-md: var(--vx-radius);
+  --radius-lg: var(--vx-radius-lg);
+  --radius-xl: 0.625rem;
+
+  --shadow-card: var(--vx-shadow-card);
+  --shadow-menu: var(--vx-shadow-menu);
+
+  --spacing-sidebar: var(--vx-sidebar-width);
+  --spacing-sidebar-collapsed: var(--vx-sidebar-collapsed);
+  --spacing-header: var(--vx-header-height);
+}
+
+html {
+  font-size: 15px;
+  /* Sticky headers must not hide anchors or focused elements (WCAG 2.4.11). */
+  scroll-padding-top: calc(var(--vx-header-height) + 1rem);
+}
+
+body {
+  background: var(--vx-body-bg);
+  color: var(--vx-body);
+  font-family: var(--font-sans);
+  min-height: 100%;
+}
+
+@layer base {
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    color: var(--vx-heading);
+    font-weight: 500;
+  }
+}
+
+::selection {
+  background: color-mix(in srgb, var(--vx-primary) 24%, transparent);
+}
+
+*:focus-visible {
+  outline: 2px solid var(--vx-primary);
+  outline-offset: 2px;
+}
+
+input,
+textarea,
+select,
+button {
+  font: inherit;
+}
+
+@layer components {
+  .vx-card {
+    background: var(--vx-surface);
+    border-radius: var(--vx-radius-lg);
+    box-shadow: var(--vx-shadow-card);
+  }
+
+  .vx-slider {
+    appearance: none;
+    height: 0.375rem;
+    border-radius: 999px;
+    background: var(--vx-hover);
+    cursor: pointer;
+  }
+
+  .vx-slider::-webkit-slider-thumb,
+  .vx-range-thumb::-webkit-slider-thumb {
+    appearance: none;
+    width: 1rem;
+    height: 1rem;
+    border-radius: 999px;
+    background: var(--vx-slider-color, var(--vx-primary));
+    border: 2px solid var(--vx-surface);
+    box-shadow: 0 0 0 1px var(--vx-slider-color, var(--vx-primary));
+  }
+
+  .vx-slider::-moz-range-thumb {
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid var(--vx-surface);
+    border-radius: 999px;
+    background: var(--vx-slider-color, var(--vx-primary));
+    box-shadow: 0 0 0 1px var(--vx-slider-color, var(--vx-primary));
+  }
+
+  .vx-range-thumb::-webkit-slider-thumb {
+    pointer-events: auto;
+    margin-top: 0.3rem;
+  }
+
+  .vx-range-thumb {
+    pointer-events: none;
+  }
+
+  .vx-range-thumb::-webkit-slider-runnable-track {
+    background: transparent;
+    height: 0.375rem;
+  }
+
+  .vx-range-thumb::-moz-range-thumb {
+    pointer-events: auto;
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid var(--vx-surface);
+    border-radius: 999px;
+    background: var(--vx-primary);
+    box-shadow: 0 0 0 1px var(--vx-primary);
+  }
+
+  .vx-range-thumb::-moz-range-track {
+    background: transparent;
+    height: 0.375rem;
+  }
+}
