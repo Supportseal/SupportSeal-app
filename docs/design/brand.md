@@ -83,6 +83,9 @@ is never conveyed by colour alone (badge text or icon always accompanies it).
 :root {
   --vx-brand-mint: #3ddc97;
   --vx-brand-ink: #053b2a;
+  --vx-mint-100: #d3f6e6;
+  --vx-ink-soft: #0a4a35;
+  --vx-ink-rule: rgba(211, 246, 230, 0.14);
   --vx-logo-lead: #053b2a;
   --vx-logo-accent: #08765a;
 
@@ -191,6 +194,7 @@ is never conveyed by colour alone (badge text or icon always accompanies it).
 
 Map the new tokens in `app/globals.css` `@theme inline` alongside the
 existing ones: `--color-brand-mint`, `--color-brand-ink`,
+`--color-mint-100`, `--color-ink-soft`, `--color-ink-rule`,
 `--color-logo-lead`, `--color-logo-accent`,
 `--color-border-strong` and `--color-{primary,secondary,success,danger,
 warning,info}-contrast`. Keep the sidebar, header, radius and spacing layout

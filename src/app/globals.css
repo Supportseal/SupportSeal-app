@@ -6,6 +6,9 @@
 @theme inline {
   --color-brand-mint: var(--vx-brand-mint);
   --color-brand-ink: var(--vx-brand-ink);
+  --color-mint-100: var(--vx-mint-100);
+  --color-ink-soft: var(--vx-ink-soft);
+  --color-ink-rule: var(--vx-ink-rule);
   --color-logo-lead: var(--vx-logo-lead);
   --color-logo-accent: var(--vx-logo-accent);
 
