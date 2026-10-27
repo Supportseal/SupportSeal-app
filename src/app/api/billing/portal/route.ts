@@ -48,6 +48,7 @@ export async function POST() {
       await clearStripeCustomerLink(membership.workspaceId, workspace.stripeCustomerId);
       return NextResponse.json({ error: "no_billing_account" }, { status: 409 });
     }
+    console.error("[billing] portal session failed", { workspaceId: membership.workspaceId, error: session.error });
     return NextResponse.json({ error: session.error }, { status: 502 });
   }
   return NextResponse.json({ url: session.url });

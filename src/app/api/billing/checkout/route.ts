@@ -69,6 +69,9 @@ export async function POST(request: NextRequest) {
     session = await startCheckout();
   }
   if ("error" in session) {
+    // Cloudflare replaces an origin 502 with its own HTML page, so the log is
+    // the only place the Stripe message survives.
+    console.error("[billing] checkout session failed", { workspaceId: membership.workspaceId, error: session.error });
     return NextResponse.json({ error: session.error }, { status: 502 });
   }
   // Lets a billing read link the customer if the completion webhook is lost.
