@@ -18,6 +18,12 @@ permissions: {}
 
 jobs:
   review:
+    # Public repo: only Pete's own PRs from branches in this repo may use the
+    # API key. Others' PRs, forks and Dependabot never start a review.
+    # pull_request (not pull_request_target) keeps the secret away from fork code.
+    if: >-
+      github.event.pull_request.user.login == 'pietervw' &&
+      github.event.pull_request.head.repo.full_name == github.repository
     permissions:
       contents: read
       pull-requests: write
