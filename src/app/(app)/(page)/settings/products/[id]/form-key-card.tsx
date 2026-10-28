@@ -79,7 +79,8 @@ export function FormKeyCard({ product }: { product: FormKeyProduct }) {
               </div>
             </div>
             <div className="space-y-2">
-              <div className="overflow-x-auto rounded-md border border-border bg-surface-2 p-3 text-xs leading-relaxed">
+              <div className="relative overflow-x-auto rounded-md border border-ink-rule bg-brand-ink p-3 text-xs leading-relaxed text-mint-100 dark:border-border">
+                <span aria-hidden className="absolute inset-x-0 top-0 h-0.5 bg-brand-mint" />
                 <pre>
                   <code>{curl}</code>
                 </pre>

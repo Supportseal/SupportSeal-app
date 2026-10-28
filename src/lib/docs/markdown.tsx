@@ -58,7 +58,7 @@ export function renderMarkdown(source: string): ReactNode[] {
       for (i++; i < lines.length && !lines[i].startsWith("```"); i++) code.push(lines[i]);
       i++;
       blocks.push(
-        <pre key={key} className="overflow-x-auto rounded-lg border border-border bg-surface-2 p-4 text-sm leading-relaxed text-heading">
+        <pre key={key} className="overflow-x-auto rounded-lg border border-ink-rule bg-brand-ink p-4 text-sm leading-relaxed text-mint-100 dark:border-border">
           <code className="font-mono">{code.join("\n")}</code>
         </pre>,
       );
