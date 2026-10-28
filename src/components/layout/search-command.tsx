@@ -33,7 +33,7 @@ export function SearchCommand({
               className="h-12 w-full bg-transparent text-[0.9375rem] text-heading outline-none placeholder:text-muted"
             />
           </div>
-          <Command.List className="max-h-[min(20rem,calc(100dvh-8rem))] overflow-y-auto p-2">
+          <Command.List className="max-h-[min(20rem,calc(var(--app-viewport-height,100dvh)-8rem))] overflow-y-auto p-2">
             <Command.Empty className="px-3 py-8 text-center text-sm text-muted">
               No pages found.
             </Command.Empty>
