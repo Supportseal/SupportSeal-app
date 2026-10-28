@@ -4,6 +4,7 @@ name: OpenCode review
 # Needs a ZHIPU_API_KEY Actions secret here, and pietervw/.github must be
 # readable from this repo (it holds the reusable workflow and action).
 # Runs on GitHub-hosted runners unless a RUNNER Actions variable says otherwise.
+# Comments never trigger a review (no issue_comment trigger on purpose).
 
 on:
   pull_request:
