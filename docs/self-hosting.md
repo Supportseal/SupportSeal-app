@@ -10,10 +10,15 @@ external telemetry (FR-HOST-01).
 
 ```bash
 git clone https://github.com/Supportseal/SupportSeal-app.git
-cd supportseal
+cd SupportSeal-app
 cp .env.example .env        # then edit (see the reference below)
+sed -i.bak "s/^BETTER_AUTH_SECRET=$/&$(openssl rand -hex 32)/" .env
 docker compose up -d
 ```
+
+The `sed` line fills in `BETTER_AUTH_SECRET`, which production refuses to run
+without: until it is set, every page answers with an error and
+`/api/health` reports `misconfigured`.
 
 `docker compose up` starts three services:
 
@@ -24,7 +29,10 @@ docker compose up -d
 | `app`    | The Next.js standalone build on port 3000 (health: `/api/health`) |
 
 Open `http://<host>:3000`. On a fresh install the root page redirects to
-`/register`; the first account becomes the Workspace Admin. Once the
+`/register`; the first account becomes the Workspace Admin. Create that
+account before you expose port 3000 publicly, and put a reverse proxy in front
+(see [HTTPS / reverse proxy](#https--reverse-proxy)): a directly exposed port
+skips the per-IP rate limits. Once the
 Workspace exists, public registration closes automatically — further users
 join by invitation from Settings → Team.
 
