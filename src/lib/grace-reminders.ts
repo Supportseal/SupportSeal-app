@@ -184,3 +184,13 @@ export function sweepGraceRemindersLazily(): void {
     .then(() => sweepGraceReminders())
     .catch((error: unknown) => console.error("grace reminder sweep failed:", error));
 }
+
+/** Tests: allow the next lazy sweep to run now. */
+export function resetGraceSweepForTest(): void {
+  globalForSweep.__supportsealLastGraceSweepAt = 0;
+}
+
+/** Tests: resolves once every queued lazy sweep has finished. */
+export async function graceSweepSettledForTest(): Promise<void> {
+  await globalForSweep.__supportsealGraceChain;
+}

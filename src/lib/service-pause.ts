@@ -1,4 +1,5 @@
 import { planForWorkspace } from "@/config/pricing";
+import { sweepGraceRemindersLazily } from "@/lib/grace-reminders";
 import { isHostedMode } from "@/lib/hosting";
 import { prisma } from "@/lib/prisma";
 import { computeGraceState } from "@/lib/usage";
@@ -75,8 +76,13 @@ export async function isServicePaused(workspaceId: string): Promise<boolean> {
   const cachedUntil = notPausedUntil.get(workspaceId);
   if (cachedUntil !== undefined && cachedUntil > Date.now()) return false;
   const { paused } = await getServicePause(workspaceId);
-  if (paused) notPausedUntil.delete(workspaceId);
-  else {
+  if (paused) {
+    notPausedUntil.delete(workspaceId);
+    // Refused widget and form traffic never reaches the intake paths that
+    // run the reminder sweep, so run it from here: a chat-only Workspace
+    // whose admins stay away still gets its day-7 "paused" notice.
+    sweepGraceRemindersLazily();
+  } else {
     if (notPausedUntil.size > 10_000) notPausedUntil.clear();
     notPausedUntil.set(workspaceId, Date.now() + NOT_PAUSED_TTL_MS);
   }

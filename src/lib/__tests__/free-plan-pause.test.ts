@@ -4,7 +4,11 @@ import { createTestUser, startTestDb, stopTestDb, type TestDb } from "@/test/int
 import { PLANS } from "@/config/pricing";
 import { addAgentMessage } from "@/lib/conversations";
 import { setTransportForTest } from "@/lib/email/outbound";
-import { sweepGraceReminders } from "@/lib/grace-reminders";
+import {
+  graceSweepSettledForTest,
+  resetGraceSweepForTest,
+  sweepGraceReminders,
+} from "@/lib/grace-reminders";
 import {
   clearServicePauseCacheForTest,
   getServicePause,
@@ -115,7 +119,8 @@ beforeEach(async () => {
   ).id;
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await graceSweepSettledForTest();
   vi.useRealTimers();
   PLANS.free.monthlyConversations = originalLimit;
   process.env.HOSTED_MODE = "";
@@ -215,6 +220,7 @@ describe("pause after grace", () => {
   it("refuses new widget and form messages while paused, and stores nothing", async () => {
     await goOverLimit();
     vi.setSystemTime(daysAfter(8));
+    resetGraceSweepForTest();
     const product = await loadWidgetProduct("pk_pause");
     const { session } = await createVisitorSession(product!, "https://acme.test");
     const before = await db.prisma.conversation.count();
@@ -230,6 +236,11 @@ describe("pause after grace", () => {
     });
     expect(form).toMatchObject({ ok: false, paused: true });
     expect(await db.prisma.conversation.count()).toBe(before);
+
+    // Refused traffic still runs the sweep, so admins of a chat-only
+    // Workspace get the paused notice without opening the dashboard.
+    await graceSweepSettledForTest();
+    expect(sent.map((m) => m.subject)).toEqual(["Acme: chat and replies are paused"]);
   });
 });
 
