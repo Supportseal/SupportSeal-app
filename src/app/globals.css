@@ -54,7 +54,7 @@
   --color-border-strong: var(--vx-border-strong);
   --color-hover: var(--vx-hover);
 
-  --font-sans: var(--font-public-sans), "Public Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-geist), "Geist", ui-sans-serif, system-ui, sans-serif;
 
   --radius-sm: 0.25rem;
   --radius-md: var(--vx-radius);
