@@ -15,7 +15,11 @@ import { LEGAL_DOCUMENTS, legalConfig, legalUrl, publicLegalLinks } from "@/conf
 
 describe("hosted legal policy links (issue #14)", () => {
   afterEach(() => {
-    legalConfig.operative = false;
+    legalConfig.operative = true;
+  });
+
+  it("is operative, in step with the marketing site's policies", () => {
+    expect(legalConfig.operative).toBe(true);
   });
 
   it("points at the policies published on the marketing site", () => {
@@ -30,6 +34,7 @@ describe("hosted legal policy links (issue #14)", () => {
   });
 
   it("keeps inactive policies out of the signup form", () => {
+    legalConfig.operative = false;
     expect(publicLegalLinks()).toEqual([]);
     expect(renderToStaticMarkup(<RegisterForm legalLinks={publicLegalLinks()} />)).not.toContain(
       "data-signup-legal-notice",
@@ -37,7 +42,6 @@ describe("hosted legal policy links (issue #14)", () => {
   });
 
   it("links the signup notice to the marketing site once the policies are operative", () => {
-    legalConfig.operative = true;
     const signup = renderToStaticMarkup(<RegisterForm legalLinks={publicLegalLinks()} />);
     expect(signup).toContain("data-signup-legal-notice");
     expect(signup).toContain('href="https://supportseal.app/legal/terms"');

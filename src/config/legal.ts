@@ -10,7 +10,7 @@ import { appConfig } from "@/lib/config";
  * site's own `legalConfig.operative` after legal review.
  */
 export const legalConfig: { operative: boolean } = {
-  operative: false,
+  operative: true,
 };
 
 export const LEGAL_DOCUMENTS = [
