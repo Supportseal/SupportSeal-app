@@ -197,7 +197,7 @@ export function DeveloperTab({ product }: { product: DeveloperProduct }) {
             <code className="rounded bg-surface-2 px-1 font-mono text-xs">SupportSealWidget.context()</code>{" "}
             from your app to attach account details and custom metadata to the conversation.
           </p>
-          <pre className="overflow-x-auto rounded-md border border-border bg-surface-2 p-3 text-xs leading-relaxed">
+          <pre className="overflow-x-auto rounded-md border border-ink-rule bg-brand-ink p-3 text-xs leading-relaxed text-mint-100 dark:border-border">
 {`<script>
   window.SupportSealWidget = window.SupportSealWidget || { q: [] };
   // Async-safety queue — works before the widget loads:
@@ -223,7 +223,7 @@ export function DeveloperTab({ product }: { product: DeveloperProduct }) {
             <code className="rounded bg-surface-2 px-1 font-mono text-xs">identify()</code> again after the next
             sign-in.
           </p>
-          <pre className="overflow-x-auto rounded-md border border-border bg-surface-2 p-3 text-xs leading-relaxed">
+          <pre className="overflow-x-auto rounded-md border border-ink-rule bg-brand-ink p-3 text-xs leading-relaxed text-mint-100 dark:border-border">
 {`async function signOut() {
   // Queue the reset first: if signOut() redirects, the page may unload
   // before code after the await runs. Also works before the widget loads.

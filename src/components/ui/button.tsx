@@ -45,7 +45,7 @@ const buttonVariants = cva(
       { iconOnly: true, size: "lg", class: "w-11" },
       { iconOnly: true, size: "xl", class: "w-[50px]" },
 
-      { variant: "solid", color: "primary", class: "bg-primary text-primary-contrast hover:bg-primary-dark shadow-[0_2px_4px_color-mix(in_srgb,var(--vx-primary)_35%,transparent)] dark:shadow-none" },
+      { variant: "solid", color: "primary", class: "bg-brand-ink text-white hover:bg-ink-soft dark:bg-brand-mint dark:text-brand-ink dark:hover:bg-mint-100" },
       { variant: "solid", color: "secondary", class: "bg-secondary text-secondary-contrast hover:bg-secondary-dark" },
       { variant: "solid", color: "success", class: "bg-success text-success-contrast hover:bg-success-dark shadow-[0_2px_4px_color-mix(in_srgb,var(--vx-success)_35%,transparent)] dark:shadow-none" },
       { variant: "solid", color: "danger", class: "bg-danger text-danger-contrast hover:bg-danger-dark shadow-[0_2px_4px_color-mix(in_srgb,var(--vx-danger)_35%,transparent)] dark:shadow-none" },

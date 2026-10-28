@@ -25,11 +25,18 @@ export function WidgetSnippet({ snippet, widgetKey }: { snippet: string; widgetK
             appear. The key is public — it identifies the Product and grants no privileged access.
           </p>
         </div>
-        <div className="flex items-center gap-2 rounded-md border border-border bg-surface-2 p-3">
+        <div className="relative flex items-center gap-2 overflow-hidden rounded-md border border-ink-rule bg-brand-ink p-3 text-mint-100 dark:border-border">
+          <span aria-hidden className="absolute inset-x-0 top-0 h-0.5 bg-brand-mint" />
           <pre className="min-w-0 flex-1 overflow-x-auto text-xs leading-relaxed">
             <code>{snippet}</code>
           </pre>
-          <Button type="button" variant="outline" size="sm" onClick={() => copy(snippet, "snippet")}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="border-mint-100/30 text-mint-100 hover:border-mint-100 hover:bg-transparent hover:text-white"
+            onClick={() => copy(snippet, "snippet")}
+          >
             {copied === "snippet" ? <IconCheck className="size-4" /> : <IconCopy className="size-4" />}
             {copied === "snippet" ? "Copied" : "Copy"}
           </Button>
