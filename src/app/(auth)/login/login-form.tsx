@@ -11,10 +11,16 @@ import { Label } from "@/components/ui/label";
 import { Logo } from "@/components/layout/logo";
 import { authClient } from "@/lib/auth-client";
 import { brand } from "@/lib/brand";
+import { GitHubButton, OrDivider } from "../github-button";
+import { ACCOUNT_NOT_LINKED, githubErrorMessage } from "../github-errors";
 import { safeNextPath } from "./next-path";
 
-export function LoginForm() {
+export function LoginForm({ githubEnabled = false }: { githubEnabled?: boolean }) {
   const searchParams = useSearchParams();
+  const githubError = githubEnabled ? searchParams.get("error") : null;
+  // GitHub found an existing, unlinked account with the same email: the
+  // password sign-in below proves ownership, then links GitHub to it.
+  const linkAfterSignIn = githubError === ACCOUNT_NOT_LINKED;
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -31,6 +37,16 @@ export function LoginForm() {
       setPending(false);
       return;
     }
+    const destination = safeNextPath(searchParams.get("next"), window.location.origin);
+    if (linkAfterSignIn) {
+      const nextParam = encodeURIComponent(destination);
+      const linked = await authClient.linkSocial({
+        provider: "github",
+        callbackURL: destination,
+        errorCallbackURL: `/login?github_link=failed&next=${nextParam}`,
+      });
+      if (!linked.error) return; // redirecting to GitHub
+    }
     // Full document navigation, never router.push: auth pages render Links
     // to protected routes (the header logo → /inbox), and a logged-out
     // prefetch of a protected route stores the proxy's 307-to-/login in the
@@ -38,7 +54,19 @@ export function LoginForm() {
     // the stale redirect and wedges the router (sign-in appears hung until a
     // manual refresh). A document navigation bypasses that cache and boots
     // the app with the fresh session cookie.
-    window.location.assign(safeNextPath(searchParams.get("next"), window.location.origin));
+    window.location.assign(destination);
+  }
+
+  function signInWithGitHub() {
+    const next = safeNextPath(searchParams.get("next"), window.location.origin);
+    const params = new URLSearchParams();
+    if (searchParams.get("next")) params.set("next", next);
+    const query = params.toString();
+    return authClient.signIn.social({
+      provider: "github",
+      callbackURL: next,
+      errorCallbackURL: `/login${query ? `?${query}` : ""}`,
+    });
   }
 
   return (
@@ -49,6 +77,25 @@ export function LoginForm() {
         </div>
         <h4 className="text-[1.375rem] font-medium text-heading">Welcome to {brand.name}</h4>
         <p className="mt-1 mb-6 text-muted">Sign in to your Workspace</p>
+        {githubError ? (
+          <p className="mb-4 text-sm text-danger" data-github-error={githubError}>
+            {githubErrorMessage(githubError, "login")}
+            {githubError === "signup_disabled" ? (
+              <>
+                {" "}
+                <Link href="/register" className="text-primary underline underline-offset-2">
+                  Create an account
+                </Link>
+              </>
+            ) : null}
+          </p>
+        ) : null}
+        {githubEnabled && !linkAfterSignIn ? (
+          <>
+            <GitHubButton label="Sign in with GitHub" start={signInWithGitHub} />
+            <OrDivider />
+          </>
+        ) : null}
         <form className="space-y-4" method="post" onSubmit={handleSubmit}>
           <div>
             <Label htmlFor="email">Email</Label>
@@ -74,7 +121,7 @@ export function LoginForm() {
           </div>
           {error ? <p className="text-sm text-danger">{error}</p> : null}
           <Button className="w-full" type="submit" disabled={pending}>
-            {pending ? "Signing in…" : "Sign in"}
+            {pending ? "Signing in…" : linkAfterSignIn ? "Sign in and connect GitHub" : "Sign in"}
           </Button>
         </form>
         <p className="mt-6 text-center text-[0.9375rem]">

@@ -3,8 +3,8 @@
 # direct (non-pooled) URL arrives via DATABASE_URL.
 # Self-hosters use docker-compose.yml instead (it bundles Postgres).
 # Public (non-secret) hosted values are baked in here; the secrets
-# (DATABASE_URL, BETTER_AUTH_SECRET, INBOUND_WEBHOOK_SECRET, SENDGRID_API_KEY)
-# are configured in the deployment environment, not in this file.
+# (DATABASE_URL, BETTER_AUTH_SECRET, INBOUND_WEBHOOK_SECRET, SENDGRID_API_KEY,
+# GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET) are configured in the deployment environment, not in this file.
 services:
   migrate:
     build:
@@ -38,6 +38,10 @@ services:
       OUTBOUND_EMAIL_LOCAL: ${OUTBOUND_EMAIL_LOCAL:-no-reply}
       # Hosted outbound mail: dedicated SendGrid key (Mail Send scope only).
       SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
+      # Optional "Sign in with GitHub" (OAuth App callback:
+      # https://dashboard.supportseal.app/api/auth/callback/github).
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
     expose:
       - "3000"
     volumes:

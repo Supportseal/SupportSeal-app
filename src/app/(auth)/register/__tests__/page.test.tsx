@@ -101,4 +101,26 @@ describe("register page", () => {
     state.workspaces = 0;
     await expect(RegisterPage()).rejects.toThrow("redirect:/inbox");
   });
+
+  it("hides GitHub sign-up unless both GitHub credentials are set", async () => {
+    vi.stubEnv("HOSTED_MODE", "1");
+    vi.stubEnv("GITHUB_CLIENT_ID", "id-only");
+    const markup = await render();
+    expect(markup).not.toContain("Sign up with GitHub");
+  });
+
+  it("offers GitHub sign-up with the legal notice and a GitHub error message", async () => {
+    vi.stubEnv("HOSTED_MODE", "1");
+    vi.stubEnv("GITHUB_CLIENT_ID", "id");
+    vi.stubEnv("GITHUB_CLIENT_SECRET", "secret");
+    const markup = renderToStaticMarkup(
+      await RegisterPage({
+        searchParams: Promise.resolve({ plan: "pro", error: "account_not_linked" }),
+      }),
+    );
+    expect(markup).toContain("Sign up with GitHub");
+    expect(markup).toContain("data-signup-legal-notice");
+    expect(markup).toContain("You picked Pro (monthly).");
+    expect(markup).toContain("An account with this email already exists.");
+  });
 });

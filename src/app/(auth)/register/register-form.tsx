@@ -14,6 +14,8 @@ import {
   serializePlanIntent,
   type PlanIntent,
 } from "@/lib/plan-intent";
+import { GitHubButton, OrDivider } from "../github-button";
+import { ACCOUNT_NOT_LINKED, githubErrorMessage } from "../github-errors";
 
 type LegalLink = { slug: string; label: string; href: string };
 
@@ -41,15 +43,41 @@ function SignupLegalNotice({ links }: { links: LegalLink[] }) {
 
 const PLAN_LABELS: Record<PlanIntent["plan"], string> = { pro: "Pro", business: "Business" };
 
+function rememberPlanIntent(planIntent: PlanIntent | null) {
+  if (!planIntent) return;
+  // Picked up when the Workspace is created, which then opens checkout.
+  document.cookie = `${PLAN_INTENT_COOKIE}=${serializePlanIntent(planIntent)}; Path=/; Max-Age=${PLAN_INTENT_MAX_AGE_SECONDS}; SameSite=Lax`;
+}
+
 export function RegisterForm({
   legalLinks = [],
   planIntent = null,
+  githubEnabled = false,
+  githubError = null,
 }: {
   legalLinks?: LegalLink[];
   planIntent?: PlanIntent | null;
+  githubEnabled?: boolean;
+  githubError?: string | null;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+
+  function signUpWithGitHub() {
+    rememberPlanIntent(planIntent);
+    // Back to /register: it sends a signed-in visitor on to checkout (or
+    // onboarding) for the picked plan, and to /inbox otherwise.
+    const here = planIntent
+      ? `/register?plan=${planIntent.plan}&interval=${planIntent.interval}`
+      : "/register";
+    return authClient.signIn.social({
+      provider: "github",
+      requestSignUp: true,
+      callbackURL: here,
+      newUserCallbackURL: "/onboarding",
+      errorCallbackURL: here,
+    });
+  }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -69,10 +97,7 @@ export function RegisterForm({
       setPending(false);
       return;
     }
-    if (planIntent) {
-      // Picked up when the Workspace is created, which then opens checkout.
-      document.cookie = `${PLAN_INTENT_COOKIE}=${serializePlanIntent(planIntent)}; Path=/; Max-Age=${PLAN_INTENT_MAX_AGE_SECONDS}; SameSite=Lax`;
-    }
+    rememberPlanIntent(planIntent);
     // Full document navigation for the same reason as the login form: auth
     // pages prefetch protected routes (logo → /inbox), and a soft navigation
     // to /onboarding can replay a stale logged-out redirect from the client
@@ -93,6 +118,28 @@ export function RegisterForm({
             You picked {PLAN_LABELS[planIntent.plan]} ({planIntent.interval === "year" ? "annual" : "monthly"}).
             Create your account and Workspace, then finish checkout.
           </p>
+        ) : null}
+        {githubError ? (
+          <p className="mb-4 text-sm text-danger" data-github-error={githubError}>
+            {githubErrorMessage(githubError, "register")}
+            {githubError === ACCOUNT_NOT_LINKED ? (
+              <>
+                {" "}
+                <Link
+                  href={`/login?error=${ACCOUNT_NOT_LINKED}`}
+                  className="text-primary underline underline-offset-2"
+                >
+                  Sign in
+                </Link>
+              </>
+            ) : null}
+          </p>
+        ) : null}
+        {githubEnabled ? (
+          <>
+            <GitHubButton label="Sign up with GitHub" start={signUpWithGitHub} />
+            <OrDivider />
+          </>
         ) : null}
         <form className="space-y-4" method="post" onSubmit={handleSubmit}>
           <div>
@@ -116,11 +163,18 @@ export function RegisterForm({
             <p className="mt-1 text-xs text-muted">At least 8 characters.</p>
           </div>
           {error ? <p className="text-sm text-danger">{error}</p> : null}
-          <SignupLegalNotice links={legalLinks} />
+          {githubEnabled ? null : <SignupLegalNotice links={legalLinks} />}
           <Button className="w-full" type="submit" disabled={pending}>
             {pending ? "Creating account…" : "Sign up"}
           </Button>
         </form>
+        {/* With two ways to sign up, the notice sits under both so it
+            plainly covers the GitHub button too. */}
+        {githubEnabled ? (
+          <div className="mt-4">
+            <SignupLegalNotice links={legalLinks} />
+          </div>
+        ) : null}
         <p className="mt-6 text-center text-[0.9375rem]">
           Already have an account?{" "}
           <Link href="/login" className="text-primary">
