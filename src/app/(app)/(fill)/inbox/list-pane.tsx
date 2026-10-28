@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { formatDistanceToNowStrict, isToday, format } from "date-fns";
+import { isToday, format } from "date-fns";
 import { toast } from "sonner";
 import {
-  IconCheck,
+  IconCircleCheck,
   IconMail,
   IconMessageCircle,
   IconSearch,
@@ -14,7 +14,7 @@ import {
 } from "@tabler/icons-react";
 
 import { cn } from "@/lib/cn";
-import { ProductChip, ProductMark } from "@/components/product-identity";
+import { ProductMark } from "@/components/product-identity";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -67,10 +67,14 @@ export function visitorLabel(contact: { id: string; email: string | null; name: 
   return `Visitor ${(contact.id.replace(/[^a-z0-9]/gi, "").slice(-4) || "0000").toUpperCase()}`;
 }
 
+/** Compact list timestamp: "now", "12m", "3h", "Tue", "27 Oct". */
 function relativeTime(iso: string) {
   const date = new Date(iso);
-  if (isToday(date)) return formatDistanceToNowStrict(date);
-  if (Date.now() - date.getTime() < 7 * 24 * 3600 * 1000) return format(date, "EEE");
+  const minutes = Math.floor((Date.now() - date.getTime()) / 60_000);
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes}m`;
+  if (isToday(date)) return `${Math.floor(minutes / 60)}h`;
+  if (minutes < 7 * 24 * 60) return format(date, "EEE");
   return format(date, "d MMM");
 }
 
@@ -349,6 +353,17 @@ export function ListPane() {
   );
 }
 
+/** Up to two initials for the contact avatar; "?" for anonymous visitors. */
+function contactInitials(contact: ConversationItem["contact"]) {
+  const name = contact.name?.trim();
+  if (name) {
+    const parts = name.split(/\s+/u).filter(Boolean);
+    return ((parts[0]?.[0] ?? "") + (parts.length > 1 ? (parts.at(-1)?.[0] ?? "") : "")).toUpperCase();
+  }
+  if (contact.email) return contact.email[0]!.toUpperCase();
+  return "?";
+}
+
 function ConversationRow({
   item,
   selected,
@@ -364,74 +379,92 @@ function ConversationRow({
   const params = new URLSearchParams(searchParams.toString());
   if (query) params.set("q", query);
   const closable = item.status !== "CLOSED";
+  const label = visitorLabel(item.contact);
+  // Email threads lead with their subject; chats lead with the latest message.
+  const headline = item.subject ?? item.preview ?? "No messages yet";
+  const preview = item.subject ? item.preview : null;
+  const ChannelIcon = item.channel === "EMAIL" ? IconMail : IconMessageCircle;
 
   return (
-    <li className="relative">
+    <li className="group relative">
       <Link
         href={`/inbox/${item.id}${params.size ? `?${params.toString()}` : ""}`}
         aria-current={selected ? "true" : undefined}
         className={cn(
-          "block border-b border-border px-4 py-4 transition-colors",
-          !selected && "hover:bg-hover",
-          selected && "bg-primary-label shadow-[inset_3px_0_0_var(--vx-primary)]",
+          "flex gap-3 border-b border-border px-4 py-3.5 transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary",
+          selected
+            ? "bg-primary-label shadow-[inset_3px_0_0_var(--vx-primary)]"
+            : "hover:bg-hover",
         )}
       >
-        <div className={cn("flex items-center gap-2", closable && "pe-9")}>
+        <span className="relative mt-0.5 size-9 shrink-0 self-start" aria-hidden>
+          <span className="flex size-9 items-center justify-center rounded-full bg-secondary-label text-xs font-semibold text-body ring-1 ring-inset ring-border">
+            {contactInitials(item.contact)}
+          </span>
           <ProductMark
             name={item.product.name}
             color={item.product.primaryColor}
-            size="sm"
+            className="absolute -end-1 -bottom-1 size-4 rounded-[0.3125rem] text-[0.5625rem] ring-2 ring-surface"
           />
-          <span className="min-w-0 flex-1 truncate text-sm font-medium text-heading">
-            {visitorLabel(item.contact)}
-          </span>
-          <span className="shrink-0 text-xs tabular-nums text-muted">{formatTicketRef(item.ticketNumber)}</span>
-          <time
-            className="shrink-0 text-xs text-muted"
-            title={new Date(item.lastMessageAt).toLocaleString()}
-            dateTime={item.lastMessageAt}
-          >
-            {relativeTime(item.lastMessageAt)}
-          </time>
-        </div>
-        <p className="mt-2 line-clamp-1 text-sm text-body">{item.subject ?? item.preview ?? "—"}</p>
-        <div className="mt-2.5 flex items-center gap-2 text-xs text-muted">
-          <ProductChip
-            name={item.product.name}
-            color={item.product.primaryColor}
-            className="min-w-0 [&>span:last-child]:truncate"
-          />
-          {item.channel === "EMAIL" ? (
-            <IconMail className="size-3.5" aria-label="Email" />
-          ) : (
-            <IconMessageCircle className="size-3.5" aria-label="Chat" />
-          )}
-          {item.tags.slice(0, 2).map((tag) => (
-            <Badge key={tag.id} variant="light" color="secondary" pill={false} className="px-1.5 py-0 text-[0.6875rem]">
-              {tag.name}
-            </Badge>
-          ))}
-          {item.tags.length > 2 ? <span>+{item.tags.length - 2}</span> : null}
-          {item.status !== "OPEN" ? (
-            <Badge
-              variant="light"
-              color={item.status === "PENDING" ? "warning" : "secondary"}
-              pill={false}
-              className="ms-auto px-1.5 py-0 text-[0.6875rem]"
+        </span>
+
+        <span className="min-w-0 flex-1">
+          <span className="flex items-baseline gap-2">
+            <span className="min-w-0 flex-1 truncate text-sm font-semibold text-heading">{label}</span>
+            <time
+              className="shrink-0 text-xs tabular-nums text-muted"
+              title={new Date(item.lastMessageAt).toLocaleString()}
+              dateTime={item.lastMessageAt}
             >
-              {item.status.toLowerCase()}
-            </Badge>
-          ) : null}
-        </div>
+              {relativeTime(item.lastMessageAt)}
+            </time>
+          </span>
+
+          <span className={cn("mt-0.5 block text-sm text-heading", preview ? "truncate font-medium" : "line-clamp-2 text-body")}>
+            {headline}
+          </span>
+          {preview ? <span className="mt-0.5 block truncate text-sm text-muted">{preview}</span> : null}
+
+          <span className={cn("mt-2 flex min-w-0 items-center gap-1.5 text-xs text-muted", closable && "pe-9")}>
+            <ChannelIcon className="size-3.5 shrink-0" aria-label={item.channel === "EMAIL" ? "Email" : "Chat"} />
+            <span className="min-w-0 truncate">{item.product.name}</span>
+            <span aria-hidden>·</span>
+            <span className="shrink-0 tabular-nums">{formatTicketRef(item.ticketNumber)}</span>
+            {item.tags.slice(0, 2).map((tag) => (
+              <Badge
+                key={tag.id}
+                variant="light"
+                color="secondary"
+                pill={false}
+                className="max-w-24 shrink-0 truncate px-1.5 py-0 text-[0.6875rem]"
+              >
+                {tag.name}
+              </Badge>
+            ))}
+            {item.tags.length > 2 ? <span className="shrink-0">+{item.tags.length - 2}</span> : null}
+            {/* The tabs already say the status; search results mix them. */}
+            {query && item.status !== "OPEN" ? (
+              <Badge
+                variant="light"
+                color={item.status === "PENDING" ? "warning" : "secondary"}
+                pill={false}
+                className="ms-auto shrink-0 px-1.5 py-0 text-[0.6875rem]"
+              >
+                {item.status.toLowerCase()}
+              </Badge>
+            ) : null}
+          </span>
+        </span>
       </Link>
       {closable ? (
-        // A sibling of the link (a button inside an anchor is invalid HTML),
-        // always visible so it works on touch where there is no hover.
+        // A sibling of the link (a button inside an anchor is invalid HTML).
+        // Always shown on touch screens; revealed on hover or focus where a
+        // pointer can hover.
         <button
           type="button"
-          aria-label={`Close conversation with ${visitorLabel(item.contact)}`}
+          aria-label={`Close conversation with ${label}`}
           title="Close conversation"
-          className="absolute end-1.5 top-1.5 flex size-9 items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-heading focus-visible:outline-2 focus-visible:outline-primary"
+          className="absolute end-1.5 bottom-1.5 flex size-9 items-center justify-center rounded-md text-muted transition hover:bg-surface hover:text-success hover:shadow-sm focus-visible:outline-2 focus-visible:outline-primary [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:opacity-100"
           onClick={(event) => {
             // Never let the click reach the row (and open the thread).
             event.preventDefault();
@@ -439,7 +472,7 @@ function ConversationRow({
             onClose(item);
           }}
         >
-          <IconCheck className="size-4" aria-hidden />
+          <IconCircleCheck className="size-[1.125rem]" aria-hidden />
         </button>
       ) : null}
     </li>

@@ -262,8 +262,13 @@ text-muted`):
 - `xl`: thread plus context column (20rem). `lg`: thread only; context in a
   right `Sheet` (w-[22rem]). `< lg`: full-screen page with a back arrow;
   context in a full-height `Sheet`.
-- Composer is sticky at the bottom of the pane, and uses `100dvh` so mobile
-  browser chrome and the on-screen keyboard don't hide it. On `< sm` the
+- Composer is sticky at the bottom of the pane. The fill-mode shell is
+  exactly one visible screen tall (`100dvh`, narrowed to the visual
+  viewport while a phone keyboard is open, plus
+  `interactive-widget=resizes-content`), so mobile browser chrome and the
+  on-screen keyboard don't hide it. The textarea starts at two lines on
+  phones and grows to at most a third of the screen. On `< sm` the header
+  stacks the ticket reference and Product under the contact label. On `< sm` the
   toolbar collapses to icon buttons and the split-send menu stays
   reachable.
 - Bubbles cap at 85% width on `< sm`.

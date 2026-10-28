@@ -10,6 +10,7 @@ import { type SetupChecklist } from "@/components/layout/setup-chip";
 import { Sidebar, type SidebarProduct } from "@/components/layout/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { UnreadTitle } from "@/components/layout/unread-title";
+import { useVisibleViewportHeight } from "@/components/layout/use-visible-viewport-height";
 
 export type ShellUser = { id: string; name: string; email: string };
 
@@ -37,9 +38,19 @@ function Shell({
   children: React.ReactNode;
 }) {
   const { collapsed, mobileOpen, setMobileOpen } = useLayout();
+  const fill = mode === "fill";
+  useVisibleViewportHeight(fill);
 
   return (
-    <div className="min-h-screen bg-body-bg">
+    // Fill mode (the inbox) is exactly one visible screen tall: the header,
+    // any banner and the page share it, so nothing (like the reply box) can
+    // end up below the fold or under a phone keyboard.
+    <div
+      className={cn(
+        "bg-body-bg",
+        fill ? "h-[var(--app-viewport-height,100dvh)] overflow-hidden" : "min-h-screen",
+      )}
+    >
       <UnreadTitle />
       <Sidebar
         products={products}
@@ -50,7 +61,8 @@ function Shell({
       />
       <div
         className={cn(
-          "flex min-h-screen flex-col transition-[margin] duration-200",
+          "flex flex-col transition-[margin] duration-200",
+          fill ? "h-full" : "min-h-screen",
           collapsed ? "lg:ms-sidebar-collapsed" : "lg:ms-sidebar",
         )}
       >
@@ -76,9 +88,7 @@ function Shell({
         <main
           id="main"
           className={cn(
-            mode === "fill"
-              ? "h-[calc(100dvh-var(--vx-header-height))] overflow-hidden"
-              : "flex-1 px-4 py-6 lg:px-6",
+            fill ? "min-h-0 flex-1 overflow-hidden" : "flex-1 px-4 py-6 lg:px-6",
           )}
         >
           {children}
