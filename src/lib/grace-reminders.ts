@@ -2,7 +2,9 @@ import { formatCount, PLANS } from "@/config/pricing";
 import { isHostedMode } from "@/lib/hosting";
 import { prisma } from "@/lib/prisma";
 import { getServicePause } from "@/lib/service-pause";
-import { computeUsage, type UsageSummary } from "@/lib/usage";
+import { computeGraceState, type UsageSummary } from "@/lib/usage";
+
+type GraceUsage = Omit<UsageSummary, "conversationsCountedAllTime">;
 import { billingUrl, emailWorkspaceAdmins, renderNoticeEmail } from "@/lib/usage-notifications";
 
 /**
@@ -33,7 +35,7 @@ const LAZY_SWEEP_INTERVAL_MS = 10 * 60_000;
 export type GraceReminderResult = { sent: number };
 
 /** Which grace day `now` falls on (0 = the day of crossing), or null. */
-export function graceDayFor(usage: UsageSummary, now: Date): number | null {
+export function graceDayFor(usage: GraceUsage, now: Date): number | null {
   if (!usage.overLimit || !usage.graceStartedAt || !usage.plan.pausesAfterGrace) return null;
   const elapsed = now.getTime() - usage.graceStartedAt.getTime();
   if (elapsed < 0) return null;
@@ -50,7 +52,7 @@ function formatCutoff(date: Date): string {
 
 export function graceReminderEmail(input: {
   workspaceName: string;
-  usage: UsageSummary;
+  usage: GraceUsage;
   graceDay: number;
 }): { subject: string; text: string; html: string } {
   const { workspaceName, usage, graceDay } = input;
@@ -102,7 +104,7 @@ export async function maybeSendGraceReminder(input: {
     select: { name: true, plan: true, freePlanPausedAt: true },
   });
   if (!workspace || workspace.plan !== "FREE") return false;
-  const usage = await computeUsage(input.workspaceId, "free", now);
+  const usage = await computeGraceState(input.workspaceId, "free", now);
   const graceDay = graceDayFor(usage, now);
   // Day 0 is the "over your allowance" email sent at the crossing.
   if (graceDay === null || graceDay < 1) return false;
