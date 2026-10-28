@@ -165,6 +165,9 @@ export function ConversationView({
   const [contextOpen, setContextOpen] = useState(false);
   // Set while the closed thread animates out ahead of the next one opening.
   const [leavingId, setLeavingId] = useState<string | null>(null);
+  // The exit state belongs to one conversation: once the view shows another,
+  // drop it so returning (Undo, Back) never replays the exit.
+  if (leavingId !== null && leavingId !== conversation.id) setLeavingId(null);
   const leaving = leavingId === conversation.id;
   const [openSnapshot, setOpenSnapshot] = useState<DiagSnapshotView | null>(null);
   const threadRef = useRef<HTMLDivElement>(null);
@@ -193,7 +196,8 @@ export function ConversationView({
       el.removeEventListener("scroll", onScroll);
       observer.disconnect();
     };
-  }, []);
+    // The thread root is re-keyed per conversation, so follow its element.
+  }, [conversation.id]);
 
   const contactLabel = useMemo(() => visitorLabel(conversation.contact), [conversation.contact]);
 
@@ -391,7 +395,9 @@ export function ConversationView({
       const exited = exiting ? closeExitDelay() : Promise.resolve();
       // Without a known next conversation the agent stays on the closed one.
       const advancePath = target?.kind === "next" ? `/inbox/${target.id}` : target?.kind === "last" ? "/inbox" : null;
-      const result = await setStatusAction({ conversationId: conversation.id, status });
+      const result = await setStatusAction({ conversationId: conversation.id, status }).catch(() => ({
+        error: "Couldn't update the conversation. Check your connection and try again.",
+      }));
       if (result.error) {
         setLeavingId(null);
         toast.error(result.error);

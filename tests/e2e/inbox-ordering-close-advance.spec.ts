@@ -142,6 +142,17 @@ test.describe.serial("inbox is oldest-first and Close advances", () => {
     await expect(agentPage).toHaveURL(new RegExp(`${nextHref?.split("?")[0]}\\?status=PENDING$`, "u"));
     await expect(agentPage.locator(".thread-exit")).toHaveCount(0);
     await expect(agentPage.getByText(pendingMessages[1]).first()).toBeVisible();
+
+    // Undo returns to the closed thread, which must be shown and usable.
+    await agentPage.getByRole("button", { name: "Undo" }).click();
+    await expect(agentPage.getByText(pendingMessages[0]).first()).toBeVisible();
+    await expect(agentPage.locator(".thread-exit")).toHaveCount(0);
+    await expect(agentPage.getByRole("button", { name: "Close", exact: true })).toBeEnabled();
+    // Leave it closed again so later tests start from a clean queue.
+    await close(agentPage);
+    await expect(agentPage.getByText(pendingMessages[1]).first()).toBeVisible();
+    await close(agentPage);
+    await expect(agentPage).toHaveURL(/\/inbox\/?(\?.*)?$/u);
   });
   test("desktop: closing the open thread from its list row opens the next one", async () => {
     const messages2 = ["Row close one: login", "Row close two: billing"];
