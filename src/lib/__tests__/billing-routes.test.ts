@@ -95,6 +95,7 @@ describe("POST /api/billing/checkout double-subscribe guard", () => {
     expect(await response.json()).toEqual({ url: "https://checkout.stripe.test/c/1" });
     expect(writes).toHaveLength(1);
     expect(writes[0].body.get("customer_email")).toBeTruthy();
+    expect(writes[0].body.get("allow_promotion_codes")).toBe("true");
     expect(writes[0].body.has("customer")).toBe(false);
     // the session is persisted so a lost webhook can still be resolved
     const workspace = await db.prisma.workspace.findFirstOrThrow();
