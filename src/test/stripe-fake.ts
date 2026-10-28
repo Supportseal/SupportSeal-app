@@ -1,6 +1,11 @@
 import { vi } from "vitest";
 
-export type FakeSubscription = { id: string; status: string; workspaceId?: string };
+export type FakeSubscription = {
+  id: string;
+  status: string;
+  workspaceId?: string;
+  price?: { id: string; lookup_key?: string | null };
+};
 
 /**
  * In-memory stand-in for the Stripe API surface billing reads: a customer's
@@ -31,6 +36,7 @@ export function fakeStripe() {
       id: s.id,
       status: s.status,
       metadata: s.workspaceId ? { workspaceId: s.workspaceId } : {},
+      items: { data: s.price ? [{ price: s.price }] : [] },
     }));
     return new Response(JSON.stringify({ object: "list", data }), { status: 200 });
   });

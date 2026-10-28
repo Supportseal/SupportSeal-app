@@ -86,6 +86,7 @@ enum WorkspaceAvailability {
 enum WorkspacePlan {
   FREE
   PRO
+  BUSINESS
 }
 
 enum UsageNotificationLevel {

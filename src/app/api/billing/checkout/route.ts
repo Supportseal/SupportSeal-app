@@ -1,10 +1,11 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 
 import { isHostedMode } from "@/lib/hosting";
 import { clearStripeCustomerLink, reconcileWorkspacePlan } from "@/lib/billing";
 import { appConfig } from "@/lib/config";
 import { prisma } from "@/lib/prisma";
 import { createCheckoutSession, isMissingCustomerError, stripeSecret } from "@/lib/stripe";
+import { isBillingInterval, isPaidPlanId, stripePriceId } from "@/lib/stripe-prices";
 import { getSessionUser } from "@/lib/session";
 import { getPrimaryMembership } from "@/lib/workspace";
 
@@ -12,9 +13,10 @@ export const dynamic = "force-dynamic";
 
 /**
  * Hosted-only billing checkout (PR 15). Creates a Stripe Checkout session
- * for the Pro plan. Self-hosted mode has no billing at all (FR-HOST-01).
+ * for `{ plan: "pro" | "business", interval: "month" | "year" }` (defaults
+ * Pro, monthly). Self-hosted mode has no billing at all (FR-HOST-01).
  */
-export async function POST() {
+export async function POST(request: NextRequest) {
   if (!isHostedMode()) {
     return NextResponse.json({ error: "not_available" }, { status: 404 });
   }
@@ -25,16 +27,23 @@ export async function POST() {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
+  const body = (await request.json().catch(() => null)) as { plan?: unknown; interval?: unknown } | null;
+  const plan = body?.plan ?? "pro";
+  const interval = body?.interval ?? "month";
+  if (!isPaidPlanId(plan) || !isBillingInterval(interval)) {
+    return NextResponse.json({ error: "invalid_plan" }, { status: 400 });
+  }
+
   // Lazy re-sync (issue #202): reconcile the plan from Stripe first, so a
   // workspace whose activation webhook was missed is not treated as Free
   // here — and a Workspace that already has a subscription cannot start a
   // second one (it manages the existing one in the customer portal).
-  const plan = await reconcileWorkspacePlan(membership.workspaceId, { fresh: true });
-  if (plan === "PRO") {
+  const currentPlan = await reconcileWorkspacePlan(membership.workspaceId, { fresh: true });
+  if (currentPlan !== "FREE") {
     return NextResponse.json({ error: "already_subscribed" }, { status: 409 });
   }
 
-  const priceId = process.env.STRIPE_PRO_PRICE_ID?.trim();
+  const priceId = stripePriceId(plan, interval);
   if (!stripeSecret() || !priceId) {
     return NextResponse.json({ error: "billing_not_configured" }, { status: 503 });
   }

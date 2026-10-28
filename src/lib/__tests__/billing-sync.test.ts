@@ -4,7 +4,7 @@ import { createTestUser, startTestDb, stopTestDb, type TestDb } from "@/test/int
 import { fakeStripe } from "@/test/stripe-fake";
 import { prisma } from "@/lib/prisma";
 import {
-  planForSubscriptionStatus,
+  isEntitlingStatus,
   reconcileWorkspacePlan,
   resetSubscriptionResyncCacheForTest,
   syncCustomerBilling,
@@ -14,7 +14,7 @@ let db: TestDb;
 let stripe: ReturnType<typeof fakeStripe>;
 
 async function seedWorkspace(
-  plan: "FREE" | "PRO",
+  plan: "FREE" | "PRO" | "BUSINESS",
   stripeCustomerId: string | null,
   stripeSubscriptionId: string | null = null,
   stripeCheckoutSessionId: string | null = null,
@@ -58,18 +58,57 @@ beforeEach(async () => {
   await db.prisma.user.deleteMany();
 });
 
-describe("plan for subscription status (grace period)", () => {
+describe("entitling subscription status (grace period)", () => {
   it.each([
-    ["active", "PRO"],
-    ["trialing", "PRO"],
-    ["past_due", "PRO"],
-    ["incomplete", "PRO"],
-    ["canceled", "FREE"],
-    ["unpaid", "FREE"],
-    ["incomplete_expired", "FREE"],
-    ["paused", "FREE"],
-  ] as const)("%s -> %s", (status, plan) => {
-    expect(planForSubscriptionStatus(status)).toBe(plan);
+    ["active", true],
+    ["trialing", true],
+    ["past_due", true],
+    ["incomplete", true],
+    ["canceled", false],
+    ["unpaid", false],
+    ["incomplete_expired", false],
+    ["paused", false],
+  ] as const)("%s -> %s", (status, entitles) => {
+    expect(isEntitlingStatus(status)).toBe(entitles);
+  });
+});
+
+describe("plan from the subscribed Stripe price", () => {
+  beforeEach(() => {
+    process.env.STRIPE_BUSINESS_MONTHLY_PRICE_ID = "price_biz_m";
+    process.env.STRIPE_PRO_ANNUAL_PRICE_ID = "price_pro_y";
+  });
+
+  it.each([
+    ["Business by configured price id", { id: "price_biz_m" }, "BUSINESS"],
+    ["Business by lookup key when the id is not configured", { id: "price_other", lookup_key: "supportseal_business_annual" }, "BUSINESS"],
+    ["Pro annual by configured price id", { id: "price_pro_y" }, "PRO"],
+    ["Pro by lookup key", { id: "price_other", lookup_key: "supportseal_pro_monthly" }, "PRO"],
+    ["the retired $39 Pro price", { id: "price_old", lookup_key: "supportseal_pro" }, "PRO"],
+    ["an unknown price", { id: "price_unknown" }, "PRO"],
+  ] as const)("%s -> %s", async (_label, price, plan) => {
+    const workspace = await seedWorkspace("FREE", "cus_1");
+    stripe.customers.set("cus_1", [{ id: "sub_1", status: "active", price }]);
+
+    expect(await reconcileWorkspacePlan(workspace.id)).toBe(plan);
+    expect(await state(workspace.id)).toMatchObject({ plan });
+  });
+
+  it("downgrades a Business Workspace to Free when the subscription is canceled", async () => {
+    const workspace = await seedWorkspace("BUSINESS", "cus_1", "sub_1");
+    stripe.customers.set("cus_1", [{ id: "sub_1", status: "canceled", price: { id: "price_biz_m" } }]);
+
+    expect(await reconcileWorkspacePlan(workspace.id, { fresh: true })).toBe("FREE");
+  });
+
+  it("links a first-time Business checkout through the webhook sync", async () => {
+    const workspace = await seedWorkspace("FREE", null);
+    stripe.customers.set("cus_new", [
+      { id: "sub_new", status: "active", workspaceId: workspace.id, price: { id: "price_biz_m" } },
+    ]);
+
+    expect(await syncCustomerBilling("cus_new")).toBe(workspace.id);
+    expect(await state(workspace.id)).toEqual({ plan: "BUSINESS", stripeCustomerId: "cus_new", stripeSubscriptionId: "sub_new" });
   });
 });
 

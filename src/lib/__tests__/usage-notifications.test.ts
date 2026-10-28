@@ -23,7 +23,7 @@ let workspaceId: string;
 let adminEmail: string;
 let now: Date;
 
-async function seedWorkspace(plan: "FREE" | "PRO") {
+async function seedWorkspace(plan: "FREE" | "PRO" | "BUSINESS") {
   const user = await createTestUser(db.prisma, { email: "founder@example.com" });
   const workspace = await db.prisma.workspace.create({
     data: { name: "Acme", plan, memberships: { create: { userId: user.id, role: "ADMIN" } } },
@@ -162,6 +162,13 @@ describe("admin allowance notifications (issue #15, FR-USE-02)", () => {
     } finally {
       PLANS.pro.monthlyConversations = original;
     }
+  });
+
+  it("never notifies a Business Workspace (unlimited Conversations)", async () => {
+    await seedWorkspace("BUSINESS");
+    await openConversations(PLANS.pro.monthlyConversations! + 1);
+    expect(await maybeNotifyAllowance({ workspaceId, now })).toEqual({ status: "none" });
+    expect(sent).toHaveLength(0);
   });
 
   it("skips entirely in self-hosted mode (no hosted allowance)", async () => {

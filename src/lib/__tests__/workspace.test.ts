@@ -200,7 +200,7 @@ describe("invites", () => {
 });
 
 describe("plan agent limits (hosted, issue #15: Free 1 agent, Pro unlimited)", () => {
-  async function seedHostedWorkspace(plan: "FREE" | "PRO") {
+  async function seedHostedWorkspace(plan: "FREE" | "PRO" | "BUSINESS") {
     const admin = await createTestUser(db.prisma, { email: "founder@example.com" });
     const workspace = await db.prisma.workspace.create({
       data: { name: "Acme", plan, memberships: { create: { userId: admin.id, role: "ADMIN" } } },
@@ -263,6 +263,18 @@ describe("plan agent limits (hosted, issue #15: Free 1 agent, Pro unlimited)", (
 
   it("allows invites on Pro (unlimited agents)", async () => {
     const { admin, workspaceId } = await seedHostedWorkspace("PRO");
+    const allowed = await createInvite({
+      workspaceId,
+      actorUserId: admin.id,
+      actorRole: "ADMIN",
+      email: "teammate@example.com",
+      role: "AGENT",
+    });
+    expect(allowed.ok).toBe(true);
+  });
+
+  it("allows invites on Business (unlimited agents)", async () => {
+    const { admin, workspaceId } = await seedHostedWorkspace("BUSINESS");
     const allowed = await createInvite({
       workspaceId,
       actorUserId: admin.id,
