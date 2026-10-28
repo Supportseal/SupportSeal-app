@@ -48,7 +48,12 @@ Copy `.env.example` and fill in at least the required values:
 | `HOSTED_MODE` | no | Leave unset for self-hosting. `1` enables multi-Workspace SaaS modules (billing). Never set this on a self-hosted install. |
 | `TRUSTED_PROXY_HEADER` | no | Header your proxy sets with the real client IP (e.g. `cf-connecting-ip`), used by the per-IP rate limits instead of `X-Forwarded-For`. See [HTTPS / reverse proxy](#https--reverse-proxy) for the precondition. |
 
-Stripe variables are hosted-mode only and are never needed here.
+Stripe variables are hosted-mode only and are never needed here. For
+reference, the hosted tier reads `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`
+and one price id per paid plan and billing interval:
+`STRIPE_PRO_MONTHLY_PRICE_ID`, `STRIPE_PRO_ANNUAL_PRICE_ID`,
+`STRIPE_BUSINESS_MONTHLY_PRICE_ID` and `STRIPE_BUSINESS_ANNUAL_PRICE_ID`.
+`STRIPE_PRO_PRICE_ID` is retired.
 
 ## Email setup
 

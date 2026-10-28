@@ -1,5 +1,7 @@
 import { isHostedMode } from "@/lib/hosting";
+import { type WorkspacePlanValue } from "@/config/pricing";
 import { prisma } from "@/lib/prisma";
+import { planForStripePrice } from "@/lib/stripe-prices";
 import {
   fetchStripeCheckoutSession,
   fetchStripeCustomerSubscriptions,
@@ -19,7 +21,7 @@ import {
  * circuits to the stored plan and never touches the network.
  */
 
-type Plan = "FREE" | "PRO";
+type Plan = WorkspacePlanValue;
 type CustomerBilling = { plan: Plan; subscriptionId: string | null; workspaceId: string | null };
 
 const RESYNC_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -38,28 +40,28 @@ export function resetSubscriptionResyncCacheForTest(): void {
 }
 
 /**
- * Pro is kept through a payment grace period: past_due (renewal failed,
- * Stripe is retrying) and incomplete (first payment pending) still entitle.
- * Only canceled / unpaid (retries exhausted) / incomplete_expired / paused
- * drop to Free.
+ * A paid plan is kept through a payment grace period: past_due (renewal
+ * failed, Stripe is retrying) and incomplete (first payment pending) still
+ * entitle. Only canceled / unpaid (retries exhausted) / incomplete_expired /
+ * paused drop to Free.
  */
-export function planForSubscriptionStatus(status: string): Plan {
+export function isEntitlingStatus(status: string): boolean {
   switch (status) {
     case "active":
     case "trialing":
     case "past_due":
     case "incomplete":
-      return "PRO";
+      return true;
     default:
-      return "FREE";
+      return false;
   }
 }
 
 function deriveBilling(subscriptions: StripeCustomerSubscription[]): CustomerBilling {
   // Stripe lists newest first, so the first entitling one is the current one.
-  const entitling = subscriptions.find((s) => planForSubscriptionStatus(s.status) === "PRO");
+  const entitling = subscriptions.find((s) => isEntitlingStatus(s.status));
   return {
-    plan: entitling ? "PRO" : "FREE",
+    plan: entitling ? planForStripePrice(entitling.price) : "FREE",
     subscriptionId: entitling?.id ?? null,
     workspaceId: (entitling ?? subscriptions.find((s) => s.workspaceId))?.workspaceId ?? null,
   };
@@ -234,7 +236,7 @@ async function syncFromStripe(customerId: string): Promise<string | null> {
     }
     // Only a customer with an entitling subscription is worth linking: a
     // fully canceled one (e.g. deleted in Stripe) must not be resurrected.
-    if (!billing.workspaceId || billing.plan !== "PRO") return null;
+    if (!billing.workspaceId || billing.plan === "FREE") return null;
 
     const claimed = await prisma.workspace.updateMany({
       where: { id: billing.workspaceId, stripeCustomerId: null },

@@ -78,6 +78,8 @@ export type StripeCustomerSubscription = {
   status: string;
   /** workspaceId stamped on the subscription at checkout. */
   workspaceId: string | null;
+  /** Price of the subscription's first item; null when the list omits it. */
+  price: { id: string | null; lookupKey: string | null } | null;
 };
 
 /** Bounded so a black-holed connection can't stall a billing page render. */
@@ -114,14 +116,25 @@ export async function fetchStripeCustomerSubscriptions(
 ): Promise<{ subscriptions: StripeCustomerSubscription[] } | { error: string }> {
   const query = new URLSearchParams({ customer: customerId, status: "all", limit: "20" });
   const list = await stripeGet<{
-    data?: { id?: string; status?: string; metadata?: { workspaceId?: string } }[];
+    data?: {
+      id?: string;
+      status?: string;
+      metadata?: { workspaceId?: string };
+      items?: { data?: { price?: { id?: string; lookup_key?: string | null } }[] };
+    }[];
   }>(`/v1/subscriptions?${query}`);
   if ("error" in list) return list;
   if (!Array.isArray(list.data)) return { error: "stripe-request-failed" };
   const subscriptions: StripeCustomerSubscription[] = [];
   for (const item of list.data) {
     if (!item.id || !item.status) continue;
-    subscriptions.push({ id: item.id, status: item.status, workspaceId: item.metadata?.workspaceId || null });
+    const price = item.items?.data?.[0]?.price;
+    subscriptions.push({
+      id: item.id,
+      status: item.status,
+      workspaceId: item.metadata?.workspaceId || null,
+      price: price ? { id: price.id ?? null, lookupKey: price.lookup_key ?? null } : null,
+    });
   }
   return { subscriptions };
 }

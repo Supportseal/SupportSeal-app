@@ -1,3 +1,4 @@
+import { planForWorkspace } from "@/config/pricing";
 import { AppShell } from "@/components/layout/app-shell";
 import { prisma } from "@/lib/prisma";
 import { listProducts } from "@/lib/products";
@@ -31,7 +32,7 @@ export async function Shell({
     getAvailability(ctx.workspace.id),
     computeChecklist(ctx.workspace.id),
     isHostedMode() && ctx.role === "ADMIN"
-      ? computeUsage(ctx.workspace.id, ctx.workspace.plan === "PRO" ? "pro" : "free")
+      ? computeUsage(ctx.workspace.id, planForWorkspace(ctx.workspace.plan).id)
       : Promise.resolve(null),
   ]);
 

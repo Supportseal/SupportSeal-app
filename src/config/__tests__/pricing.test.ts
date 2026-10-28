@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { PLANS, formatCount } from "@/config/pricing";
+import { PLANS, formatCount, planForWorkspace } from "@/config/pricing";
 
 describe("PLANS (single source shared with src/lib/usage.ts)", () => {
   const originalLimit = process.env.FREE_TIER_CONVERSATION_LIMIT;
@@ -22,11 +22,11 @@ describe("PLANS (single source shared with src/lib/usage.ts)", () => {
     else process.env.USAGE_GRACE_DAYS = originalGrace;
   });
 
-  it("ships the decided tier shape (issue #15: Free $0/100/1 agent, Pro $39/1000/unlimited agents)", () => {
+  it("ships the decided tier shape (issue #15: Free $0/100/1 agent, Pro $19 or $190/1000/unlimited agents, Business $99 or $990/unlimited)", () => {
     expect(PLANS.free).toMatchObject({
       id: "free",
       name: "Free",
-      priceUsd: 0,
+      priceUsd: { month: 0, year: 0 },
       monthlyConversations: 100,
       agents: 1,
       graceDays: 30,
@@ -34,11 +34,32 @@ describe("PLANS (single source shared with src/lib/usage.ts)", () => {
     expect(PLANS.pro).toMatchObject({
       id: "pro",
       name: "Pro",
-      priceUsd: 39,
+      priceUsd: { month: 19, year: 190 },
       monthlyConversations: 1000,
       agents: null,
       graceDays: 30,
     });
+    expect(PLANS.business).toMatchObject({
+      id: "business",
+      name: "Business",
+      priceUsd: { month: 99, year: 990 },
+      monthlyConversations: null,
+      agents: null,
+      graceDays: 30,
+    });
+  });
+
+  it("annual prices are ten months of the monthly price (two months free)", () => {
+    for (const plan of [PLANS.pro, PLANS.business]) {
+      expect(plan.priceUsd.year).toBe(plan.priceUsd.month * 10);
+    }
+  });
+
+  it("maps each stored Workspace plan to its shared plan, defaulting to Free", () => {
+    expect(planForWorkspace("BUSINESS").id).toBe("business");
+    expect(planForWorkspace("PRO").id).toBe("pro");
+    expect(planForWorkspace("FREE").id).toBe("free");
+    expect(planForWorkspace(undefined).id).toBe("free");
   });
 
   it("still honours the environment overrides", async () => {

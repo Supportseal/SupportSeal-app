@@ -98,6 +98,12 @@ describe("usage metering (FR-USE-01: counted once ever)", () => {
     expect(pro.limit).toBe(1000);
     expect(pro.overLimit).toBe(false);
 
+    // business: unlimited Conversations, never over limit, no grace
+    const business = await computeUsage(workspace.id, "business", now);
+    expect(business.limit).toBeNull();
+    expect(business.overLimit).toBe(false);
+    expect(business.graceEndsAt).toBeNull();
+
     // usage never blocks intake (FR-USE-02)
     const { usageBlocksIntake } = await import("@/lib/usage");
     expect(usageBlocksIntake()).toBe(false);

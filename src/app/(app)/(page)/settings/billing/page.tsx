@@ -2,14 +2,14 @@ import { redirect } from "next/navigation";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { formatCount, PLANS } from "@/config/pricing";
+import { formatCount, PLANS, planForWorkspace } from "@/config/pricing";
 import { reconcileWorkspacePlan } from "@/lib/billing";
 import { isHostedMode } from "@/lib/hosting";
 import { prisma } from "@/lib/prisma";
 import { computeUsage } from "@/lib/usage";
 import { requireWorkspace } from "@/lib/workspace";
 import { ManageSubscriptionButton } from "./manage-subscription-button";
-import { UpgradeButton } from "./upgrade-button";
+import { UpgradePlans, type UpgradePlanOption } from "./upgrade-plans";
 
 export const metadata = { title: "Billing" };
 
@@ -25,18 +25,31 @@ export default async function BillingPage() {
     where: { id: ctx.workspace.id },
     select: { stripeCustomerId: true },
   });
-  const usage = await computeUsage(ctx.workspace.id, planId === "PRO" ? "pro" : "free");
+  const usage = await computeUsage(ctx.workspace.id, planForWorkspace(planId).id);
   const percent =
     usage.limit !== null && usage.limit > 0
       ? Math.min(100, Math.round((usage.conversationsOpened / usage.limit) * 100))
       : null;
-  // Server-computed so the blurb sees the same env overrides as enforcement
-  // (client bundles cannot read them); never says "unlimited Conversations".
-  const upgradeBlurb = `Unlimited Products and agents, ${
-    PLANS.pro.monthlyConversations === null
-      ? "no Conversation allowance"
-      : `${formatCount(PLANS.pro.monthlyConversations)} new Conversations per month`
-  }. Manage or cancel any time.`;
+  // Server-computed so the blurbs see the same env overrides as enforcement
+  // (client bundles cannot read them); Pro never says "unlimited Conversations".
+  const upgradeOptions: UpgradePlanOption[] = [
+    {
+      id: "pro",
+      name: PLANS.pro.name,
+      priceUsd: PLANS.pro.priceUsd,
+      blurb: `Unlimited Products and agents, ${
+        PLANS.pro.monthlyConversations === null
+          ? "no Conversation allowance"
+          : `${formatCount(PLANS.pro.monthlyConversations)} new Conversations per month`
+      }.`,
+    },
+    {
+      id: "business",
+      name: PLANS.business.name,
+      priceUsd: PLANS.business.priceUsd,
+      blurb: "Unlimited Products, agents and Conversations.",
+    },
+  ];
 
   return (
     <div className="space-y-6">
@@ -97,7 +110,7 @@ export default async function BillingPage() {
             </p>
           ) : null}
 
-          {planId === "FREE" ? <UpgradeButton blurb={upgradeBlurb} /> : null}
+          {planId === "FREE" ? <UpgradePlans options={upgradeOptions} /> : null}
           {stripeCustomerId && ctx.role === "ADMIN" ? <ManageSubscriptionButton /> : null}
         </CardContent>
       </Card>

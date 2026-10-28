@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 
 import { redirect } from "next/navigation";
 
-import { PLANS, planForWorkspace } from "@/config/pricing";
+import { PLANS, planForWorkspace, type WorkspacePlanValue } from "@/config/pricing";
 import { isHostedMode } from "@/lib/hosting";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser, type SessionUser } from "@/lib/session";
@@ -11,7 +11,7 @@ export type MembershipRole = "ADMIN" | "AGENT";
 
 export type WorkspaceContext = {
   user: SessionUser;
-  workspace: { id: string; name: string; plan?: "FREE" | "PRO" };
+  workspace: { id: string; name: string; plan?: WorkspacePlanValue };
   role: MembershipRole;
 };
 

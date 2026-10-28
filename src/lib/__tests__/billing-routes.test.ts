@@ -1,3 +1,4 @@
+import { NextRequest } from "next/server";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createTestUser, startTestDb, stopTestDb, type TestDb } from "@/test/integration-db";
@@ -7,8 +8,19 @@ import { resetSubscriptionResyncCacheForTest } from "@/lib/billing";
 const session = vi.hoisted(() => ({ user: null as null | { id: string; email: string } }));
 vi.mock("@/lib/session", () => ({ getSessionUser: async () => session.user }));
 
-import { POST as checkout } from "@/app/api/billing/checkout/route";
+import { POST as checkoutRoute } from "@/app/api/billing/checkout/route";
 import { POST as portal } from "@/app/api/billing/portal/route";
+
+/** POST the checkout route; no body = the legacy default (Pro, monthly). */
+function checkout(body?: unknown) {
+  return checkoutRoute(
+    new NextRequest("http://localhost/api/billing/checkout", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    }),
+  );
+}
 
 let db: TestDb;
 let stripe: ReturnType<typeof fakeStripe>;
@@ -39,7 +51,7 @@ function stubStripe() {
   return writes;
 }
 
-async function signIn(role: "ADMIN" | "AGENT", workspace: { plan?: "FREE" | "PRO"; stripeCustomerId?: string } = {}) {
+async function signIn(role: "ADMIN" | "AGENT", workspace: { plan?: "FREE" | "PRO" | "BUSINESS"; stripeCustomerId?: string } = {}) {
   counter += 1;
   const user = await createTestUser(db.prisma, { email: `user${counter}@example.com` });
   const ws = await db.prisma.workspace.create({
@@ -60,7 +72,10 @@ afterAll(async () => {
 beforeEach(async () => {
   process.env.HOSTED_MODE = "1";
   process.env.STRIPE_SECRET_KEY = "sk_test_1";
-  process.env.STRIPE_PRO_PRICE_ID = "price_pro";
+  process.env.STRIPE_PRO_MONTHLY_PRICE_ID = "price_pro_m";
+  process.env.STRIPE_PRO_ANNUAL_PRICE_ID = "price_pro_y";
+  process.env.STRIPE_BUSINESS_MONTHLY_PRICE_ID = "price_biz_m";
+  process.env.STRIPE_BUSINESS_ANNUAL_PRICE_ID = "price_biz_y";
   session.user = null;
   missingCustomer = null;
   resetSubscriptionResyncCacheForTest();
@@ -100,6 +115,52 @@ describe("POST /api/billing/checkout double-subscribe guard", () => {
       plan: "PRO",
       stripeCustomerId: "cus_paid",
     });
+  });
+
+  it.each([
+    [undefined, "price_pro_m"],
+    [{ plan: "pro", interval: "month" }, "price_pro_m"],
+    [{ plan: "pro", interval: "year" }, "price_pro_y"],
+    [{ plan: "business", interval: "month" }, "price_biz_m"],
+    [{ plan: "business", interval: "year" }, "price_biz_y"],
+  ])("checks out %j on price %s", async (body, priceId) => {
+    const writes = stubStripe();
+    await signIn("ADMIN");
+
+    expect((await checkout(body)).status).toBe(200);
+    expect(writes[0].body.get("line_items[0][price]")).toBe(priceId);
+    expect(writes[0].body.get("mode")).toBe("subscription");
+  });
+
+  it.each([
+    [{ plan: "enterprise", interval: "month" }],
+    [{ plan: "pro", interval: "weekly" }],
+    [{ plan: "free" }],
+  ])("rejects %j without calling Stripe", async (body) => {
+    const writes = stubStripe();
+    await signIn("ADMIN");
+
+    const response = await checkout(body);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "invalid_plan" });
+    expect(writes).toHaveLength(0);
+  });
+
+  it("answers 503 when the chosen price is not configured", async () => {
+    const writes = stubStripe();
+    await signIn("ADMIN");
+    delete process.env.STRIPE_BUSINESS_ANNUAL_PRICE_ID;
+
+    expect((await checkout({ plan: "business", interval: "year" })).status).toBe(503);
+    expect(writes).toHaveLength(0);
+  });
+
+  it("blocks a Workspace that is already Business", async () => {
+    const writes = stubStripe();
+    await signIn("ADMIN", { plan: "BUSINESS" });
+
+    expect((await checkout({ plan: "pro", interval: "month" })).status).toBe(409);
+    expect(writes).toHaveLength(0);
   });
 
   it("blocks a Workspace that is already Pro", async () => {
