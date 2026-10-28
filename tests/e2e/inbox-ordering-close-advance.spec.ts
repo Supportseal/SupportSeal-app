@@ -113,4 +113,51 @@ test.describe.serial("inbox is oldest-first and Close advances", () => {
     await expect(agentPage).toHaveURL(/\/inbox\/?(\?.*)?$/u);
     await expect(agentPage.getByText("No open conversations.")).toBeVisible();
   });
+  test("pending queue: Close animates out and opens the next pending one", async () => {
+    const pendingMessages = ["Pending one: refund", "Pending two: invoice"];
+    for (const [offset, message] of pendingMessages.entries()) {
+      const frame = await openWidget(visitorPages[offset], productKey, { status: "Online" });
+      await frame.locator("#input").fill(message);
+      await frame.locator("#send").click();
+      await expect(frame.locator("#thread")).toContainText(message);
+    }
+    await agentPage.setViewportSize({ width: 1440, height: 900 });
+    await agentPage.goto("/inbox");
+    // Move both to Pending through the header's status menu.
+    for (const message of pendingMessages) {
+      await row(agentPage, message).click();
+      await agentPage.getByRole("button", { name: /^Open$/u }).first().click();
+      await agentPage.getByRole("menuitem", { name: "Pending" }).click();
+      // The status badge shows the saved state (the toast id is shared between rows).
+      await expect(agentPage.getByRole("button", { name: /^Pending$/u })).toBeVisible();
+    }
+    await agentPage.goto("/inbox?status=PENDING");
+    await expect(row(agentPage, pendingMessages[0])).toBeVisible({ timeout: 20_000 });
+    const nextHref = await row(agentPage, pendingMessages[1]).getAttribute("href");
+    await row(agentPage, pendingMessages[0]).click();
+
+    await close(agentPage);
+    // The closed thread slides out before the next pending one opens.
+    await expect(agentPage.locator(".thread-exit")).toHaveCount(1);
+    await expect(agentPage).toHaveURL(new RegExp(`${nextHref?.split("?")[0]}\\?status=PENDING$`, "u"));
+    await expect(agentPage.locator(".thread-exit")).toHaveCount(0);
+    await expect(agentPage.getByText(pendingMessages[1]).first()).toBeVisible();
+  });
+  test("desktop: closing the open thread from its list row opens the next one", async () => {
+    const messages2 = ["Row close one: login", "Row close two: billing"];
+    for (const [offset, message] of messages2.entries()) {
+      const frame = await openWidget(visitorPages[offset * 2], productKey, { status: "Online" });
+      await frame.locator("#input").fill(message);
+      await frame.locator("#send").click();
+      await expect(frame.locator("#thread")).toContainText(message);
+    }
+    await agentPage.goto("/inbox");
+    await expect(row(agentPage, messages2[1])).toBeVisible({ timeout: 20_000 });
+    const nextHref = await row(agentPage, messages2[1]).getAttribute("href");
+    await row(agentPage, messages2[0]).click();
+    await expect(agentPage).toHaveURL(/\/inbox\/[^/?]+/u);
+    await agentPage.getByRole("button", { name: /^Close conversation with / }).first().click();
+    await expect(agentPage).toHaveURL(new RegExp(`${nextHref?.split("?")[0]}`, "u"));
+    await expect(row(agentPage, messages2[0])).toHaveCount(0);
+  });
 });

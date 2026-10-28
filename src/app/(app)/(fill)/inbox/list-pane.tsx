@@ -19,7 +19,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { formatTicketRef } from "@/lib/ticket";
-import { publishVisibleConversations } from "@/lib/inbox-advance";
+import {
+  closeExitDelay,
+  nextConversationAfterCloseLoading,
+  noteConversationStatus,
+  publishVisibleConversations,
+} from "@/lib/inbox-advance";
 import { InboxListClient } from "@/lib/inbox-list-client";
 import { connectInboxStream } from "@/lib/inbox-stream-client";
 import { broadcastNotifyKick } from "@/lib/notifications/client";
@@ -155,6 +160,11 @@ export function ListPane() {
   const closeConversation = async (item: ConversationItem) => {
     const client = clientRef.current;
     if (!client) return;
+    // Closing the open thread moves on to the next one in this queue, like the
+    // header's Close; the target is picked before the row leaves the list.
+    const advanceTarget = item.id === selectedId ? await nextConversationAfterCloseLoading(item.id) : null;
+    const advancePath =
+      advanceTarget?.kind === "next" ? `/inbox/${advanceTarget.id}` : advanceTarget?.kind === "last" ? "/inbox" : null;
     const pending = client.removeItem(item.id, { from: item.status, to: "CLOSED" });
     if (!pending) return;
     // The filters may change while the save is in flight, which swaps in a new
@@ -176,6 +186,7 @@ export function ListPane() {
       return;
     }
     pending.settle();
+    noteConversationStatus(item.id, "CLOSED");
     toast("Conversation closed", {
       action: {
         label: "Undo",
@@ -190,7 +201,13 @@ export function ListPane() {
         },
       },
     });
-    syncAfterMove();
+    if (advancePath && window.location.pathname === `/inbox/${item.id}`) {
+      const query = searchParams.size ? `?${searchParams.toString()}` : "";
+      void clientRef.current?.refresh();
+      router.push(`${advancePath}${query}`);
+    } else {
+      syncAfterMove();
+    }
   };
 
   const updateParams = (mutate: (params: URLSearchParams) => void) => {
@@ -376,6 +393,7 @@ function ConversationRow({
   onClose: (item: ConversationItem) => void;
 }) {
   const searchParams = useSearchParams();
+  const [collapsing, setCollapsing] = useState(false);
   const params = new URLSearchParams(searchParams.toString());
   if (query) params.set("q", query);
   const closable = item.status !== "CLOSED";
@@ -386,7 +404,7 @@ function ConversationRow({
   const ChannelIcon = item.channel === "EMAIL" ? IconMail : IconMessageCircle;
 
   return (
-    <li className="group relative">
+    <li className={cn("group relative", collapsing && "row-collapse")}>
       <Link
         href={`/inbox/${item.id}${params.size ? `?${params.toString()}` : ""}`}
         aria-current={selected ? "true" : undefined}
@@ -469,7 +487,8 @@ function ConversationRow({
             // Never let the click reach the row (and open the thread).
             event.preventDefault();
             event.stopPropagation();
-            onClose(item);
+            setCollapsing(true);
+            void closeExitDelay().then(() => onClose(item)).finally(() => setCollapsing(false));
           }}
         >
           <IconCircleCheck className="size-[1.125rem]" aria-hidden />
