@@ -28,7 +28,8 @@ With a real Postgres instead: set `DATABASE_URL` and run `npm run db:migrate`.
 ## Self-hosting
 
 `docker compose up` runs Postgres, applies migrations, and serves the app on
-http://localhost:3000 (health: `/api/health`). The full guide — environment
+http://localhost:3000 (health: `/api/health`). Set `BETTER_AUTH_SECRET` in
+`.env` first (`openssl rand -hex 32`). The full guide — environment
 reference, email setup, HTTPS proxy, backups, upgrades — is
 [docs/self-hosting.md](docs/self-hosting.md). Widget installation:
 [docs/widget-integration.md](docs/widget-integration.md). API:
