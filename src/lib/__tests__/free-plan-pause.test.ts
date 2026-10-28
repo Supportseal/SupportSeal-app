@@ -174,6 +174,20 @@ describe("pause after grace", () => {
     expect((await getServicePause(ctx.workspace.id, nextMonth)).paused).toBe(false);
   });
 
+  it("gives a Workspace that downgrades while over the Free allowance its own 7 days", async () => {
+    await goOverLimit();
+    // Was on Pro until day 10, then billing sync moved it to Free.
+    const downgradedAt = daysAfter(10);
+    await db.prisma.workspace.update({
+      where: { id: ctx.workspace.id },
+      data: { plan: "FREE", freePlanSince: downgradedAt },
+    });
+    const usage = await computeUsage(ctx.workspace.id, "free", daysAfter(11));
+    expect(usage.graceStartedAt?.toISOString()).toBe(downgradedAt.toISOString());
+    expect((await getServicePause(ctx.workspace.id, daysAfter(16.9))).paused).toBe(false);
+    expect((await getServicePause(ctx.workspace.id, daysAfter(17))).paused).toBe(true);
+  });
+
   it("never pauses self-hosted installs or paid plans", async () => {
     await goOverLimit();
     process.env.HOSTED_MODE = "";

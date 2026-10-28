@@ -9,6 +9,8 @@ CREATE UNIQUE INDEX "usage_notifications_workspaceId_period_level_graceDay_key" 
 
 -- Free plan pause, kept until the Workspace pays.
 ALTER TABLE "workspaces" ADD COLUMN "freePlanPausedAt" TIMESTAMP(3);
+-- Last paid-to-Free downgrade: the Free grace window never starts earlier.
+ALTER TABLE "workspaces" ADD COLUMN "freePlanSince" TIMESTAMP(3);
 
 -- Period usage counts run on every widget request for Free Workspaces.
 CREATE INDEX "conversations_workspaceId_createdAt_idx" ON "conversations"("workspaceId", "createdAt");

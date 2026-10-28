@@ -21,7 +21,10 @@ export type UsageSummary = {
   conversationsCountedAllTime: number;
   limit: number | null;
   overLimit: boolean;
-  /** When grace started: the crossing, or FREE_GRACE_EFFECTIVE_FROM if later. */
+  /**
+   * When grace started: the crossing, or on Free the policy date or the last
+   * downgrade to Free if later.
+   */
   graceStartedAt: Date | null;
   graceEndsAt: Date | null;
   graceRemainingDays: number | null;
@@ -95,11 +98,19 @@ export async function computeGraceState(
       skip: limit,
       select: { createdAt: true },
     });
-    const crossingAt = crossing?.createdAt ?? now;
-    graceStartedAt =
-      plan.pausesAfterGrace && crossingAt < FREE_GRACE_EFFECTIVE_FROM
-        ? FREE_GRACE_EFFECTIVE_FROM
-        : crossingAt;
+    graceStartedAt = crossing?.createdAt ?? now;
+    if (plan.pausesAfterGrace) {
+      // Free grace never starts before the policy date or before the
+      // Workspace last moved to Free: a downgrade that is already over the
+      // allowance gets its own 7 days of reminders before any pause.
+      const workspace = await prisma.workspace.findUnique({
+        where: { id: workspaceId },
+        select: { freePlanSince: true },
+      });
+      for (const floor of [FREE_GRACE_EFFECTIVE_FROM, workspace?.freePlanSince]) {
+        if (floor && floor > graceStartedAt) graceStartedAt = floor;
+      }
+    }
     graceEndsAt = new Date(graceStartedAt.getTime() + plan.graceDays * DAY_MS);
     graceRemainingDays = Math.max(0, Math.ceil((graceEndsAt.getTime() - now.getTime()) / DAY_MS));
   }

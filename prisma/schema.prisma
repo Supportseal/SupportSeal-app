@@ -105,6 +105,10 @@ model Workspace {
   /// runs out, cleared once the Workspace is on a paid plan. Kept across
   /// months, so the monthly allowance reset does not lift the pause.
   freePlanPausedAt DateTime?
+  /// When billing sync last moved this Workspace from a paid plan to Free.
+  /// The Free grace window never starts before it, so a downgrade that is
+  /// already over the Free allowance still gets its 7 days of reminders.
+  freePlanSince    DateTime?
   /// Stripe customer linked to this Workspace (issue #202): the key billing
   /// state is synced by. Webhooks are triggers only; they fetch the
   /// customer's subscriptions from Stripe and write the current state here.

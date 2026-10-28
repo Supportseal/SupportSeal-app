@@ -132,8 +132,10 @@ export async function reconcileWorkspacePlan(
     data: {
       plan: billing.plan,
       stripeSubscriptionId: billing.subscriptionId,
-      // Paying lifts the Free plan pause (src/lib/service-pause.ts).
+      // Paying lifts the Free plan pause (src/lib/service-pause.ts); a
+      // downgrade starts a fresh Free grace window.
       ...(billing.plan !== "FREE" ? { freePlanPausedAt: null } : {}),
+      ...(billing.plan === "FREE" && workspace.plan !== "FREE" ? { freePlanSince: new Date() } : {}),
     },
   });
   // A webhook may have synced during the write; never leave a pre-webhook
@@ -231,8 +233,10 @@ async function syncFromStripe(customerId: string): Promise<string | null> {
     const state = {
       plan: billing.plan,
       stripeSubscriptionId: billing.subscriptionId,
-      // Paying lifts the Free plan pause (src/lib/service-pause.ts).
+      // Paying lifts the Free plan pause (src/lib/service-pause.ts); a
+      // downgrade starts a fresh Free grace window.
       ...(billing.plan !== "FREE" ? { freePlanPausedAt: null } : {}),
+      ...(billing.plan === "FREE" && linked && linked.plan !== "FREE" ? { freePlanSince: new Date() } : {}),
     };
 
     if (linked) {
