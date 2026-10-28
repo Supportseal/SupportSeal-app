@@ -26,6 +26,8 @@ function pendingInvite(): NonNullable<Invite> {
       createdAt: new Date(0),
       updatedAt: new Date(0),
       plan: "FREE",
+      freePlanPausedAt: null,
+    freePlanSince: null,
       stripeCustomerId: null,
       stripeCheckoutSessionId: null,
       stripeSubscriptionId: null,

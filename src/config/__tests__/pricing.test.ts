@@ -29,7 +29,8 @@ describe("PLANS (single source shared with src/lib/usage.ts)", () => {
       priceUsd: { month: 0, year: 0 },
       monthlyConversations: 100,
       agents: 1,
-      graceDays: 30,
+      graceDays: 7,
+      pausesAfterGrace: true,
     });
     expect(PLANS.pro).toMatchObject({
       id: "pro",
@@ -38,6 +39,7 @@ describe("PLANS (single source shared with src/lib/usage.ts)", () => {
       monthlyConversations: 1000,
       agents: null,
       graceDays: 30,
+      pausesAfterGrace: false,
     });
     expect(PLANS.business).toMatchObject({
       id: "business",
@@ -46,6 +48,7 @@ describe("PLANS (single source shared with src/lib/usage.ts)", () => {
       monthlyConversations: null,
       agents: null,
       graceDays: 30,
+      pausesAfterGrace: false,
     });
   });
 
@@ -70,16 +73,18 @@ describe("PLANS (single source shared with src/lib/usage.ts)", () => {
     const mod = await import("@/config/pricing");
     expect(mod.PLANS.free.monthlyConversations).toBe(250);
     expect(mod.PLANS.pro.monthlyConversations).toBe(5000);
-    expect(mod.PLANS.free.graceDays).toBe(45);
+    // Free grace is fixed at 7 days (2026-10-28); the override is for paid plans.
+    expect(mod.PLANS.free.graceDays).toBe(7);
     expect(mod.PLANS.pro.graceDays).toBe(45);
   });
 
-  it("never lets the grace override drop below the promised 30-day floor", async () => {
+  it("never lets the grace override drop paid plans below the 30-day floor", async () => {
     process.env.USAGE_GRACE_DAYS = "7";
     vi.resetModules();
     const mod = await import("@/config/pricing");
-    expect(mod.PLANS.free.graceDays).toBe(30);
+    expect(mod.PLANS.free.graceDays).toBe(7);
     expect(mod.PLANS.pro.graceDays).toBe(30);
+    expect(mod.PLANS.business.graceDays).toBe(30);
   });
 
   it("is the same object re-exported from src/lib/usage.ts", async () => {

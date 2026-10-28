@@ -1,12 +1,14 @@
 import { notifyConversationEvent } from "@/lib/events";
 import { linkAttachmentToMessage } from "@/lib/attachments";
 import { sweepAutoCloseLazily } from "@/lib/autoclose";
+import { sweepGraceRemindersLazily } from "@/lib/grace-reminders";
 import { attachSnapshotInTransaction, purgeExpiredForProduct } from "@/lib/diagnostics/store";
 import type { NormalizedSnapshot } from "@/lib/diagnostics/snapshot";
 import type { Prisma } from "@/generated/prisma/client";
 import { armEscalationTimer, sweepEscalationsLazily } from "@/lib/escalation";
 import { prisma } from "@/lib/prisma";
 import { allocateTicketNumber, parseTicketSearch } from "@/lib/ticket";
+import { isServicePaused, REPLIES_PAUSED_MESSAGE } from "@/lib/service-pause";
 import { notifyAllowanceInBackground } from "@/lib/usage-notifications";
 import type { WorkspaceContext } from "@/lib/workspace";
 
@@ -206,6 +208,7 @@ export async function createConversationWithFirstMessage(input: {
   }
   sweepEscalationsLazily();
   sweepAutoCloseLazily();
+  sweepGraceRemindersLazily();
   return {
     ok: true,
     conversationId: outcome.conversation.id,
@@ -326,6 +329,7 @@ export async function addCustomerMessage(input: {
   }
   sweepEscalationsLazily();
   sweepAutoCloseLazily();
+  sweepGraceRemindersLazily();
   if (diagnostics?.status === "attached") {
     // Bounded purge, outside the message transaction (see store.ts): a
     // purge failure must never roll back the visitor's message, but it is
@@ -358,6 +362,10 @@ export async function addAgentMessage(input: {
     input.conversationId,
   );
   if (!conversation) return { ok: false, error: "Conversation not found." };
+  // Free plan cutoff: replies pause, internal notes keep working.
+  if (kind === "AGENT" && (await isServicePaused(conversation.workspaceId))) {
+    return { ok: false, error: REPLIES_PAUSED_MESSAGE };
+  }
 
   const messageId = await prisma.$transaction(async (tx) => {
     const message = await tx.message.create({
@@ -442,6 +450,7 @@ export async function listConversations(
 ): Promise<{ items: ConversationListItem[]; nextCursor: string | null }> {
   sweepEscalationsLazily(); // inbox loads keep the escalation sweep warm
   sweepAutoCloseLazily();
+  sweepGraceRemindersLazily();
   const limit = Math.min(input.limit ?? 50, 100);
   const search = input.search?.trim();
   const ticketNumber = search ? parseTicketSearch(search) : null;

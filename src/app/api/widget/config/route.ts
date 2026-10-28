@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { noteWidgetConfigRequest } from "@/lib/install-signals";
+import { isServicePaused } from "@/lib/service-pause";
 import { getAvailabilityForProduct, isWidgetOriginAllowed, loadWidgetProduct, serviceOriginFrom } from "@/lib/widget";
 
 export const dynamic = "force-dynamic";
@@ -59,6 +60,8 @@ export async function GET(request: NextRequest) {
       availability,
       // Absent means off: disabled Products run no capture code.
       ...(product.diagnosticsEnabledAt ? { diagnostics: true } : {}),
+      // Free plan cutoff (src/lib/service-pause.ts); absent means taking chats.
+      ...((await isServicePaused(product.workspaceId)) ? { paused: true } : {}),
     },
     {
       headers: {

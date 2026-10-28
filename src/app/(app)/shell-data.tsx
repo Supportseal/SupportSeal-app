@@ -5,7 +5,9 @@ import { listProducts } from "@/lib/products";
 import { getAvailability, requireWorkspace } from "@/lib/workspace";
 import { computeChecklist } from "@/lib/onboarding";
 import { computeUsage } from "@/lib/usage";
+import { sweepGraceRemindersLazily } from "@/lib/grace-reminders";
 import { isHostedMode } from "@/lib/hosting";
+import { getServicePause } from "@/lib/service-pause";
 import { setAvailabilityAction } from "./actions";
 
 /**
@@ -22,7 +24,7 @@ export async function Shell({
 }) {
   const ctx = await requireWorkspace();
 
-  const [products, counts, availability, checklist, usage] = await Promise.all([
+  const [products, counts, availability, checklist, usage, pause] = await Promise.all([
     listProducts(ctx.workspace.id),
     prisma.conversation.groupBy({
       by: ["productId"],
@@ -31,11 +33,15 @@ export async function Shell({
     }),
     getAvailability(ctx.workspace.id),
     computeChecklist(ctx.workspace.id),
-    isHostedMode() && ctx.role === "ADMIN"
+    // Every role: agents need to know why replies are paused.
+    isHostedMode()
       ? computeUsage(ctx.workspace.id, planForWorkspace(ctx.workspace.plan).id)
       : Promise.resolve(null),
+    getServicePause(ctx.workspace.id),
   ]);
+  const paused = pause.paused;
 
+  sweepGraceRemindersLazily();
   const countByProduct = new Map(counts.map((c) => [c.productId, c._count._all]));
 
   return (
@@ -56,11 +62,13 @@ export async function Shell({
         }))}
       checklist={checklist}
       usageWarning={
-        usage && usage.overLimit
+        usage && (paused || (usage.overLimit && ctx.role === "ADMIN"))
           ? {
               conversationsOpened: usage.conversationsOpened,
               limit: usage.limit,
               graceRemainingDays: usage.graceRemainingDays ?? 0,
+              pausesAfterGrace: usage.plan.pausesAfterGrace,
+              paused,
             }
           : null
       }

@@ -21,9 +21,29 @@ export type UsageSummary = {
   conversationsCountedAllTime: number;
   limit: number | null;
   overLimit: boolean;
+  /**
+   * When grace started: the crossing, or on Free the policy date or the last
+   * downgrade to Free if later.
+   */
+  graceStartedAt: Date | null;
   graceEndsAt: Date | null;
   graceRemainingDays: number | null;
+  /**
+   * Grace has run out on a plan that pauses after grace (Free). Plan facts
+   * only: whether the pause applies (hosted mode) is decided in
+   * src/lib/service-pause.ts.
+   */
+  graceExpired: boolean;
 };
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The 7-day Free grace took effect on this date (2026-10-28 decision). A
+ * Workspace that was already over its allowance before then counts its 7
+ * days from here, so nobody is paused without a week of reminders.
+ */
+export const FREE_GRACE_EFFECTIVE_FROM = new Date("2026-10-29T00:00:00Z");
 
 function periodBounds(now = new Date()): { start: Date; end: Date; label: string } {
   const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
@@ -41,17 +61,32 @@ export async function computeUsage(
   planId: PlanId = "free",
   now = new Date(),
 ): Promise<UsageSummary> {
-  const plan = PLANS[planId];
-  const period = periodBounds(now);
-  const [inPeriod, allTime] = await Promise.all([
-    prisma.conversation.count({
-      where: { workspaceId, createdAt: { gte: period.start, lt: period.end } },
-    }),
+  const [grace, allTime] = await Promise.all([
+    computeGraceState(workspaceId, planId, now),
     prisma.conversation.count({ where: { workspaceId } }),
   ]);
+  return { ...grace, conversationsCountedAllTime: allTime };
+}
+
+/**
+ * The period's usage and grace window without the all-time count: one
+ * indexed count, plus one lookup only when over the allowance. Used on hot
+ * paths (src/lib/service-pause.ts).
+ */
+export async function computeGraceState(
+  workspaceId: string,
+  planId: PlanId = "free",
+  now = new Date(),
+): Promise<Omit<UsageSummary, "conversationsCountedAllTime">> {
+  const plan = PLANS[planId];
+  const period = periodBounds(now);
+  const inPeriod = await prisma.conversation.count({
+    where: { workspaceId, createdAt: { gte: period.start, lt: period.end } },
+  });
 
   const limit = plan.monthlyConversations;
   const overLimit = limit !== null && inPeriod > limit;
+  let graceStartedAt: Date | null = null;
   let graceEndsAt: Date | null = null;
   let graceRemainingDays: number | null = null;
   if (overLimit && limit !== null && plan.graceDays > 0) {
@@ -63,27 +98,34 @@ export async function computeUsage(
       skip: limit,
       select: { createdAt: true },
     });
-    const crossingAt = crossing?.createdAt ?? now;
-    graceEndsAt = new Date(crossingAt.getTime() + plan.graceDays * 24 * 60 * 60 * 1000);
-    graceRemainingDays = Math.max(
-      0,
-      Math.ceil((graceEndsAt.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)),
-    );
+    graceStartedAt = crossing?.createdAt ?? now;
+    if (plan.pausesAfterGrace) {
+      // Free grace never starts before the policy date or before the
+      // Workspace last moved to Free: a downgrade that is already over the
+      // allowance gets its own 7 days of reminders before any pause.
+      const workspace = await prisma.workspace.findUnique({
+        where: { id: workspaceId },
+        select: { freePlanSince: true },
+      });
+      for (const floor of [FREE_GRACE_EFFECTIVE_FROM, workspace?.freePlanSince]) {
+        if (floor && floor > graceStartedAt) graceStartedAt = floor;
+      }
+    }
+    graceEndsAt = new Date(graceStartedAt.getTime() + plan.graceDays * DAY_MS);
+    graceRemainingDays = Math.max(0, Math.ceil((graceEndsAt.getTime() - now.getTime()) / DAY_MS));
   }
+  const graceExpired = plan.pausesAfterGrace && graceEndsAt !== null && graceEndsAt <= now;
 
   return {
     plan,
     period,
     conversationsOpened: inPeriod,
-    conversationsCountedAllTime: allTime,
     limit,
     overLimit,
+    graceStartedAt,
     graceEndsAt,
     graceRemainingDays,
+    graceExpired,
   };
 }
 
-/** FR-USE-02: never abruptly reject messages — usage never blocks intake. */
-export function usageBlocksIntake(): false {
-  return false;
-}

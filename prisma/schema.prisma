@@ -92,12 +92,23 @@ enum WorkspacePlan {
 enum UsageNotificationLevel {
   APPROACHING
   EXCEEDED
+  /// Free plan daily grace reminder; `graceDay` says which day (1..7, where
+  /// 7 is the "paused" notice).
+  GRACE_REMINDER
 }
 
 model Workspace {
   id             String               @id @default(uuid())
   name           String
   plan           WorkspacePlan        @default(FREE)
+  /// Free plan cutoff (src/lib/service-pause.ts): set when the 7-day grace
+  /// runs out, cleared once the Workspace is on a paid plan. Kept across
+  /// months, so the monthly allowance reset does not lift the pause.
+  freePlanPausedAt DateTime?
+  /// When billing sync last moved this Workspace from a paid plan to Free.
+  /// The Free grace window never starts before it, so a downgrade that is
+  /// already over the Free allowance still gets its 7 days of reminders.
+  freePlanSince    DateTime?
   /// Stripe customer linked to this Workspace (issue #202): the key billing
   /// state is synced by. Webhooks are triggers only; they fetch the
   /// customer's subscriptions from Stripe and write the current state here.
@@ -384,6 +395,8 @@ model Conversation {
   @@index([contactId])
   @@index([emailMessageId])
   @@index([productId, createdAt])
+  /// Monthly usage metering and the Free plan pause check (src/lib/usage.ts).
+  @@index([workspaceId, createdAt])
   @@map("conversations")
 }
 
@@ -588,11 +601,13 @@ model UsageNotification {
   workspaceId String
   period      String
   level       UsageNotificationLevel
+  /// 0 for APPROACHING/EXCEEDED; the grace day for GRACE_REMINDER.
+  graceDay    Int                    @default(0)
   createdAt   DateTime               @default(now())
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
-  @@unique([workspaceId, period, level])
+  @@unique([workspaceId, period, level, graceDay])
   @@map("usage_notifications")
 }
 

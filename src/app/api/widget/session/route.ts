@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { VISITOR_COOKIE_MAX_AGE_SECONDS } from "@/config/session-lifetimes";
+import { isServicePaused } from "@/lib/service-pause";
 import { rateLimitWidgetSessionMint, rateLimitWidgetRequest } from "@/lib/widget-rate-limit";
 
 import {
@@ -67,6 +68,7 @@ export async function POST(request: NextRequest) {
       session: { email: existing.email, name: existing.name },
       availability,
       ...(product.diagnosticsEnabledAt ? { diagnostics: true } : {}),
+      ...((await isServicePaused(product.workspaceId)) ? { paused: true } : {}),
       thread,
     });
   }
@@ -93,6 +95,7 @@ export async function POST(request: NextRequest) {
     session: { email: null, name: null },
     availability,
     ...(product.diagnosticsEnabledAt ? { diagnostics: true } : {}),
+    ...((await isServicePaused(product.workspaceId)) ? { paused: true } : {}),
     thread: { conversationId: null, ticketRef: null, messages: [], status: "OPEN" },
   });
   response.cookies.set(

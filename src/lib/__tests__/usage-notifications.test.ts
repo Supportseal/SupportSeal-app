@@ -97,10 +97,13 @@ describe("admin allowance notifications (issue #15, FR-USE-02)", () => {
     for (const body of [sent[0].text, sent[0].html ?? ""]) {
       expect(body).toContain(`${used} conversations used this period`);
       expect(body).toContain("A conversation counts once, in the period it opens.");
-      expect(body).toContain("never block intake");
       expect(body).toContain("never upgrade your plan on our own");
       expect(body).toContain("never send a surprise bill");
-      expect(body).toContain(`If you go over, a ${PLANS.free.graceDays}-day grace window applies.`);
+      // Free pauses after grace (2026-10-28), so it no longer promises open intake.
+      expect(body).not.toContain("never block intake");
+      expect(body).toContain(
+        `If you go over, you have ${PLANS.free.graceDays} days to upgrade before your chat widget and replies pause.`,
+      );
       expect(body).toContain(billingUrl);
     }
     expect(sent[0].text).not.toContain("!");
@@ -124,9 +127,9 @@ describe("admin allowance notifications (issue #15, FR-USE-02)", () => {
     expect(sent[0].subject).toBe("Acme: over your Free plan conversation allowance");
     for (const body of [sent[0].text, sent[0].html ?? ""]) {
       expect(body).toContain(`${PLANS.free.monthlyConversations! + 1} of ${PLANS.free.monthlyConversations} conversations used this period`);
-      expect(body).toContain(`${PLANS.free.graceDays}-day grace window applies from the point you went over`);
-      expect(body).toContain("a higher-volume plan is the better fit");
-      expect(body).toContain("never block intake");
+      expect(body).toContain(`You have ${PLANS.free.graceDays} days from the point you went over`);
+      expect(body).toContain("chat widget stops taking new messages");
+      expect(body).toContain("reminder each day");
       expect(body).toContain(`${appConfig.url}/settings/billing`);
     }
 
@@ -159,6 +162,9 @@ describe("admin allowance notifications (issue #15, FR-USE-02)", () => {
       expect(result).toEqual({ status: "notified", level: "EXCEEDED", emailed: 1 });
       expect(sent[0].subject).toBe("Acme: over your Pro plan conversation allowance");
       expect(sent[0].text).toContain("11 of 10 conversations used");
+      // Paid plans keep the soft window and are never paused.
+      expect(sent[0].text).toContain(`${PLANS.pro.graceDays}-day grace window applies from the point you went over`);
+      expect(sent[0].text).toContain("never block intake");
     } finally {
       PLANS.pro.monthlyConversations = original;
     }

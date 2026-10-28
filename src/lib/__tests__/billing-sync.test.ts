@@ -101,6 +101,23 @@ describe("plan from the subscribed Stripe price", () => {
     expect(await reconcileWorkspacePlan(workspace.id, { fresh: true })).toBe("FREE");
   });
 
+  it("stamps the downgrade to Free so the Free grace window starts there", async () => {
+    const workspace = await seedWorkspace("PRO", "cus_1", "sub_1");
+    stripe.customers.set("cus_1", [{ id: "sub_1", status: "canceled" }]);
+    const before = Date.now();
+    await syncCustomerBilling("cus_1");
+    const row = await prisma.workspace.findUniqueOrThrow({ where: { id: workspace.id } });
+    expect(row.plan).toBe("FREE");
+    expect(row.freePlanSince?.getTime()).toBeGreaterThanOrEqual(before);
+
+    // Already on Free: a later sync does not move the stamp.
+    const stamped = row.freePlanSince;
+    resetSubscriptionResyncCacheForTest();
+    await reconcileWorkspacePlan(workspace.id, { fresh: true });
+    const again = await prisma.workspace.findUniqueOrThrow({ where: { id: workspace.id } });
+    expect(again.freePlanSince).toEqual(stamped);
+  });
+
   it("links a first-time Business checkout through the webhook sync", async () => {
     const workspace = await seedWorkspace("FREE", null);
     stripe.customers.set("cus_new", [

@@ -8,6 +8,7 @@ import { isHostedMode } from "@/lib/hosting";
 import { parsePlanIntent } from "@/lib/plan-intent";
 import { prisma } from "@/lib/prisma";
 import { computeUsage } from "@/lib/usage";
+import { getServicePause } from "@/lib/service-pause";
 import { requireWorkspace } from "@/lib/workspace";
 import { ManageSubscriptionButton } from "./manage-subscription-button";
 import { UpgradePlans, type UpgradePlanOption } from "./upgrade-plans";
@@ -34,7 +35,10 @@ export default async function BillingPage({
     where: { id: ctx.workspace.id },
     select: { stripeCustomerId: true },
   });
-  const usage = await computeUsage(ctx.workspace.id, planForWorkspace(planId).id);
+  const [usage, pause] = await Promise.all([
+    computeUsage(ctx.workspace.id, planForWorkspace(planId).id),
+    getServicePause(ctx.workspace.id),
+  ]);
   const percent =
     usage.limit !== null && usage.limit > 0
       ? Math.min(100, Math.round((usage.conversationsOpened / usage.limit) * 100))
@@ -77,7 +81,11 @@ export default async function BillingPage({
               <p className="text-sm text-muted">Current plan</p>
               <p className="text-xl font-semibold text-heading">{usage.plan.name}</p>
             </div>
-            {usage.overLimit ? (
+            {pause.paused ? (
+              <Badge variant="light" color="danger">
+                Paused — over limit
+              </Badge>
+            ) : usage.overLimit ? (
               <Badge variant="light" color="warning">
                 Over limit — grace {usage.graceRemainingDays}d
               </Badge>
@@ -111,7 +119,21 @@ export default async function BillingPage({
             </p>
           </div>
 
-          {usage.overLimit ? (
+          {pause.paused ? (
+            <p className="rounded-md bg-danger-label px-3 py-2 text-sm text-danger">
+              Chat and replies are paused. This workspace went over the {usage.plan.name} plan&apos;s
+              included conversations and its {usage.plan.graceDays}-day grace period ended, so your
+              chat widget isn&apos;t taking new messages and replies can&apos;t be sent.
+              Customer emails are still saved. Upgrade to resume straight away.
+            </p>
+          ) : usage.overLimit && usage.plan.pausesAfterGrace ? (
+            <p className="rounded-md bg-warning-label px-3 py-2 text-sm text-warning">
+              You are over this month&apos;s included conversations. In{" "}
+              {usage.graceRemainingDays} {usage.graceRemainingDays === 1 ? "day" : "days"} your
+              chat widget stops taking new messages and replies pause until you upgrade. We email
+              your admins a reminder each day until then.
+            </p>
+          ) : usage.overLimit ? (
             <p className="rounded-md bg-warning-label px-3 py-2 text-sm text-warning">
               You are over this period&apos;s included conversations. Customer messages keep
               flowing — nothing is lost and nothing is auto-upgraded. The grace window

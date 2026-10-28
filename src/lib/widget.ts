@@ -11,6 +11,7 @@ import {
   type VisitorIdentity,
 } from "@/lib/dev-context";
 import { prisma } from "@/lib/prisma";
+import { isServicePaused, SERVICE_PAUSED_CODE } from "@/lib/service-pause";
 import { notifyAllowanceInBackground } from "@/lib/usage-notifications";
 import { allocateTicketNumber, formatTicketRef } from "@/lib/ticket";
 import {
@@ -94,6 +95,10 @@ export function normalizeContactEmail(raw: string): string | null {
 
 const FORM_MESSAGE_MAX = 5000;
 
+/** Relayed by the submitting server to the person filling in the form. */
+export const FORM_PAUSED_MESSAGE =
+  "This team isn't taking messages through this form right now. Please contact them another way.";
+
 /** CHAT so analytics counts form posts with other website-channel submissions. */
 export async function createFormConversation(input: {
   product: FormProduct;
@@ -102,8 +107,12 @@ export async function createFormConversation(input: {
   subject?: string | null;
   message: string;
 }): Promise<
-  { ok: true; ticketRef: string } | { ok: false; error: string; productGone?: true }
+  | { ok: true; ticketRef: string }
+  | { ok: false; error: string; productGone?: true; paused?: true }
 > {
+  if (await isServicePaused(input.product.workspaceId)) {
+    return { ok: false, error: FORM_PAUSED_MESSAGE, paused: true };
+  }
   const email = normalizeContactEmail(input.email);
   if (!email) return { ok: false, error: "Enter a valid email address." };
   // Mail-loop guard (review of #154): a form submitted with the Product's
@@ -466,10 +475,13 @@ export async function visitorSendMessage(input: {
   userAgent?: string;
 }): Promise<
   | { ok: true; conversationId: string; diagnostics?: CustomerMessageDiagnosticsOutcome }
-  | { ok: false; error: string }
+  | { ok: false; error: string; paused?: true }
 > {
   const body = input.body.trim().slice(0, 5000);
   if (!body) return { ok: false, error: "Message is empty." };
+  if (await isServicePaused(input.product.workspaceId)) {
+    return { ok: false, error: SERVICE_PAUSED_CODE, paused: true };
+  }
 
   // Diagnostics gate: the Product must have diagnostics enabled *now*.
   let snapshot: NormalizedSnapshot | null = null;
