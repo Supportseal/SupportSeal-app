@@ -29,7 +29,7 @@ export function ManageSubscriptionButton() {
         type="button"
         onClick={() => void openPortal()}
         disabled={pending}
-        className="h-10 rounded-md border border-border px-5 text-sm font-medium text-heading hover:bg-surface-2 disabled:opacity-60"
+        className="min-h-10 w-full rounded-md border border-border px-4 py-2 text-center text-sm leading-snug sm:w-auto sm:px-5 font-medium text-heading hover:bg-surface-2 disabled:opacity-60"
       >
         {pending ? "Opening portal…" : "Manage subscription"}
       </button>

@@ -73,14 +73,14 @@ export function UpgradePlans({
           </p>
         </div>
       ) : null}
-      <div role="group" aria-label="Billing interval" className="inline-flex rounded-md border border-border p-0.5">
+      <div role="group" aria-label="Billing interval" className="flex w-full rounded-md border border-border p-0.5 sm:inline-flex sm:w-auto">
         {INTERVALS.map(({ id, label }) => (
           <button
             key={id}
             type="button"
             aria-pressed={interval === id}
             onClick={() => setInterval(id)}
-            className={`h-8 rounded px-3 text-sm ${
+            className={`min-h-8 flex-1 rounded px-3 py-1 text-sm sm:flex-none ${
               interval === id ? "bg-primary text-primary-contrast" : "text-muted hover:text-heading"
             }`}
           >
@@ -106,7 +106,7 @@ export function UpgradePlans({
               type="button"
               onClick={() => void upgrade(option.id)}
               disabled={pending !== null}
-              className="h-10 rounded-md bg-primary px-5 text-sm font-medium text-primary-contrast hover:bg-primary-dark disabled:opacity-60"
+              className="min-h-10 w-full rounded-md bg-primary px-4 py-2 text-center text-sm leading-snug sm:w-auto sm:px-5 font-medium text-primary-contrast hover:bg-primary-dark disabled:opacity-60"
             >
               {pending === option.id
                 ? "Starting checkout…"
