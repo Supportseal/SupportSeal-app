@@ -177,3 +177,41 @@ button {
     height: 0.375rem;
   }
 }
+
+/* Close-advance (inbox): the closed thread slides out, the next one slides in. */
+@keyframes thread-exit {
+  to {
+    opacity: 0;
+    transform: translateX(-1.5rem);
+  }
+}
+@keyframes thread-enter {
+  from {
+    opacity: 0;
+    transform: translateX(1.5rem);
+  }
+}
+@keyframes row-collapse {
+  to {
+    opacity: 0;
+    transform: translateX(-1rem);
+  }
+}
+.thread-exit {
+  animation: thread-exit 200ms ease-in forwards;
+  pointer-events: none;
+}
+.thread-enter {
+  animation: thread-enter 220ms ease-out;
+}
+.row-collapse {
+  animation: row-collapse 180ms ease-in forwards;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .thread-exit,
+  .thread-enter,
+  .row-collapse {
+    animation: none;
+  }
+}

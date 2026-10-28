@@ -84,3 +84,13 @@ export async function nextConversationAfterCloseLoading(closedId: string): Promi
     return { kind: outcome === "exhausted" ? "last" : "unavailable" };
   }
 }
+
+/** How long the closed thread / row animates out before the next one opens. */
+export const CLOSE_EXIT_MS = 200;
+
+/** Resolves after the exit animation, or at once when the user prefers reduced motion. */
+export function closeExitDelay(): Promise<void> {
+  const reduced =
+    typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  return new Promise((resolve) => setTimeout(resolve, reduced ? 0 : CLOSE_EXIT_MS));
+}

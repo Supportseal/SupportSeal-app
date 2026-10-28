@@ -19,7 +19,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { formatTicketRef } from "@/lib/ticket";
-import { publishVisibleConversations } from "@/lib/inbox-advance";
+import {
+  closeExitDelay,
+  nextConversationAfterCloseLoading,
+  noteConversationStatus,
+  publishVisibleConversations,
+} from "@/lib/inbox-advance";
 import { InboxListClient } from "@/lib/inbox-list-client";
 import { connectInboxStream } from "@/lib/inbox-stream-client";
 import { broadcastNotifyKick } from "@/lib/notifications/client";
@@ -152,30 +157,44 @@ export function ListPane() {
     };
   }, []);
 
-  const closeConversation = async (item: ConversationItem) => {
+  const closeConversation = async (item: ConversationItem, exited: Promise<void> = Promise.resolve()) => {
     const client = clientRef.current;
     if (!client) return;
-    const pending = client.removeItem(item.id, { from: item.status, to: "CLOSED" });
-    if (!pending) return;
+    // Closing the open thread moves on to the next one in this queue, like the
+    // header's Close; the target is picked before the row leaves the list.
+    const advanceTarget = item.id === selectedId ? await nextConversationAfterCloseLoading(item.id) : null;
+    const advancePath =
+      advanceTarget?.kind === "next" ? `/inbox/${advanceTarget.id}` : advanceTarget?.kind === "last" ? "/inbox" : null;
+    // The save starts now; the row's exit animation only times the removal.
+    const saved = (async () => {
+      try {
+        return (await setStatusAction({ conversationId: item.id, status: "CLOSED" })).error;
+      } catch {
+        return "Couldn't close the conversation. Check your connection and try again.";
+      }
+    })();
+    await exited;
+    // The filters may have changed during the awaits above, swapping in a new
+    // client; only the live one gets the optimistic removal. A stale one still
+    // closes the conversation, and the refresh below corrects the list.
+    const stale = clientRef.current !== client;
+    const pending = stale ? null : client.removeItem(item.id, { from: item.status, to: "CLOSED" });
+    if (!stale && !pending) return;
     // The filters may change while the save is in flight, which swaps in a new
     // client; an orphaned one must never publish its stale-filter rows.
     const syncAfterMove = () => {
       void clientRef.current?.refresh();
       if (item.id === selectedId) router.refresh();
     };
-    let error: string | undefined;
-    try {
-      error = (await setStatusAction({ conversationId: item.id, status: "CLOSED" })).error;
-    } catch {
-      error = "Couldn't close the conversation. Check your connection and try again.";
-    }
+    const error = await saved;
     if (error) {
-      if (clientRef.current === client) pending.rollback();
-      else pending.settle();
+      if (clientRef.current === client) pending?.rollback();
+      else pending?.settle();
       toast.error(error);
       return;
     }
-    pending.settle();
+    pending?.settle();
+    noteConversationStatus(item.id, "CLOSED");
     toast("Conversation closed", {
       action: {
         label: "Undo",
@@ -184,13 +203,30 @@ export function ListPane() {
             .then((result) => result.error)
             .catch(() => "Couldn't undo. Check your connection and try again.")
             .then((undoError) => {
-              if (undoError) toast.error(undoError);
-              syncAfterMove();
+              if (undoError) {
+                toast.error(undoError);
+                return;
+              }
+              noteConversationStatus(item.id, item.status);
+              // Like the header's Undo: only pull the agent back if they are
+              // still where Close left them.
+              if (advancePath && window.location.pathname === advancePath) {
+                void clientRef.current?.refresh();
+                router.push(`/inbox/${item.id}${searchParams.size ? `?${searchParams.toString()}` : ""}`);
+              } else {
+                syncAfterMove();
+              }
             });
         },
       },
     });
-    syncAfterMove();
+    if (advancePath && window.location.pathname === `/inbox/${item.id}`) {
+      const query = searchParams.size ? `?${searchParams.toString()}` : "";
+      void clientRef.current?.refresh();
+      router.push(`${advancePath}${query}`);
+    } else {
+      syncAfterMove();
+    }
   };
 
   const updateParams = (mutate: (params: URLSearchParams) => void) => {
@@ -373,9 +409,10 @@ function ConversationRow({
   item: ConversationItem;
   selected: boolean;
   query: string;
-  onClose: (item: ConversationItem) => void;
+  onClose: (item: ConversationItem, exited: Promise<void>) => void;
 }) {
   const searchParams = useSearchParams();
+  const [collapsing, setCollapsing] = useState(false);
   const params = new URLSearchParams(searchParams.toString());
   if (query) params.set("q", query);
   const closable = item.status !== "CLOSED";
@@ -386,7 +423,7 @@ function ConversationRow({
   const ChannelIcon = item.channel === "EMAIL" ? IconMail : IconMessageCircle;
 
   return (
-    <li className="group relative">
+    <li className={cn("group relative", collapsing && "row-collapse")}>
       <Link
         href={`/inbox/${item.id}${params.size ? `?${params.toString()}` : ""}`}
         aria-current={selected ? "true" : undefined}
@@ -469,7 +506,9 @@ function ConversationRow({
             // Never let the click reach the row (and open the thread).
             event.preventDefault();
             event.stopPropagation();
-            onClose(item);
+            setCollapsing(true);
+            const exited = closeExitDelay();
+            void Promise.resolve(onClose(item, exited)).finally(() => setCollapsing(false));
           }}
         >
           <IconCircleCheck className="size-[1.125rem]" aria-hidden />

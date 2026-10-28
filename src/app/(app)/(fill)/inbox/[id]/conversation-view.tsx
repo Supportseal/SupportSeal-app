@@ -52,6 +52,7 @@ import { formatTicketRef } from "@/lib/ticket";
 import {
   nextConversationAfterCloseLoading,
   noteConversationStatus,
+  closeExitDelay,
 } from "@/lib/inbox-advance";
 import { connectInboxStream } from "@/lib/inbox-stream-client";
 import { broadcastNotifyKick } from "@/lib/notifications/client";
@@ -162,6 +163,12 @@ export function ConversationView({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [sending, setSending] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
+  // Set while the closed thread animates out ahead of the next one opening.
+  const [leavingId, setLeavingId] = useState<string | null>(null);
+  // The exit state belongs to one conversation: once the view shows another,
+  // drop it so returning (Undo, Back) never replays the exit.
+  if (leavingId !== null && leavingId !== conversation.id) setLeavingId(null);
+  const leaving = leavingId === conversation.id;
   const [openSnapshot, setOpenSnapshot] = useState<DiagSnapshotView | null>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const lastLength = conversation.messages.length;
@@ -189,7 +196,8 @@ export function ConversationView({
       el.removeEventListener("scroll", onScroll);
       observer.disconnect();
     };
-  }, []);
+    // The thread root is re-keyed per conversation, so follow its element.
+  }, [conversation.id]);
 
   const contactLabel = useMemo(() => visitorLabel(conversation.contact), [conversation.contact]);
 
@@ -381,13 +389,21 @@ export function ConversationView({
     const reopenHref = `/inbox/${conversation.id}${query}`;
     startTransition(async () => {
       const target = advance ? await nextConversationAfterCloseLoading(conversation.id) : null;
+      // Slide the thread out while the save runs, only when a next one follows.
+      const exiting = target?.kind === "next" || target?.kind === "last";
+      if (exiting) setLeavingId(conversation.id);
+      const exited = exiting ? closeExitDelay() : Promise.resolve();
       // Without a known next conversation the agent stays on the closed one.
       const advancePath = target?.kind === "next" ? `/inbox/${target.id}` : target?.kind === "last" ? "/inbox" : null;
-      const result = await setStatusAction({ conversationId: conversation.id, status });
+      const result = await setStatusAction({ conversationId: conversation.id, status }).catch(() => ({
+        error: "Couldn't update the conversation. Check your connection and try again.",
+      }));
       if (result.error) {
+        setLeavingId(null);
         toast.error(result.error);
         return;
       }
+      await exited;
       noteConversationStatus(conversation.id, status);
       // One shared id: closing top-down replaces the toast instead of
       // stacking them over the header's Close button.
@@ -419,13 +435,17 @@ export function ConversationView({
       if (advancePath && window.location.pathname === `/inbox/${conversation.id}`) {
         router.push(`${advancePath}${query}`);
       } else {
+        setLeavingId(null);
         router.refresh();
       }
     });
   }
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1">
+    <div
+      key={conversation.id}
+      className={cn("flex min-h-0 min-w-0 flex-1", leaving ? "thread-exit" : "thread-enter")}
+    >
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3">
           <Button
