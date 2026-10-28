@@ -1,0 +1,26 @@
+name: OpenCode review
+
+# Advisory AI review of ready PRs, shared with Pete's other repos.
+# Needs a ZHIPU_API_KEY Actions secret here, and pietervw/.github must be
+# readable from this repo (it holds the reusable workflow and action).
+# Runs on GitHub-hosted runners unless a RUNNER Actions variable says otherwise.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+# One review per PR at a time; a newer push cancels the superseded run.
+concurrency:
+  group: opencode-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  review:
+    permissions:
+      contents: read
+      pull-requests: write
+    uses: pietervw/.github/.github/workflows/opencode-review.yml@v1
+    secrets:
+      ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
