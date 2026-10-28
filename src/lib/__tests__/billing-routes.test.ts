@@ -210,6 +210,26 @@ describe("POST /api/billing/checkout double-subscribe guard", () => {
     });
   });
 
+  it("logs the Stripe error and returns 502 when Checkout Session creation fails", async () => {
+    stubStripe();
+    const ws = await signIn("ADMIN");
+    const message = "Invalid line_items[0]: the product tax code is missing.";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) =>
+        init?.method === "POST"
+          ? new Response(JSON.stringify({ error: { message } }), { status: 400 })
+          : stripe.fetch(input),
+      ),
+    );
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const response = await checkout();
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({ error: message });
+    expect(logged).toHaveBeenCalledWith("[billing] checkout session failed", { workspaceId: ws.id, error: message });
+    logged.mockRestore();
+  });
+
   it("is admin-only and hosted-only", async () => {
     stubStripe();
     await signIn("AGENT");
@@ -278,8 +298,11 @@ describe("POST /api/billing/portal", () => {
     stubStripe();
     await signIn("ADMIN", { stripeCustomerId: "cus_f" });
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: { message: "no portal config" } }), { status: 400 })));
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const response = await portal();
     expect(response.status).toBe(502);
     expect(await response.json()).toEqual({ error: "no portal config" });
+    expect(logged).toHaveBeenCalledWith("[billing] portal session failed", expect.objectContaining({ error: "no portal config" }));
+    logged.mockRestore();
   });
 });
