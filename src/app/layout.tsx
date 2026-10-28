@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
-import { Public_Sans } from "next/font/google";
+import { Plus_Jakarta_Sans } from "next/font/google";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { Toaster } from "sonner";
 import { siteConfig } from "@/config/site";
 import "./globals.css";
 
-const publicSans = Public_Sans({
-  variable: "--font-public-sans",
+const plusJakartaSans = Plus_Jakarta_Sans({
+  variable: "--font-plus-jakarta-sans",
   subsets: ["latin"],
   weight: ["300", "400", "500", "600", "700"],
 });
@@ -22,7 +22,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${publicSans.variable} h-full`} suppressHydrationWarning>
+    <html lang="en" className={`${plusJakartaSans.variable} h-full`} suppressHydrationWarning>
       <body className="min-h-full bg-body-bg font-sans text-body antialiased">
         <ThemeProvider>
           {children}

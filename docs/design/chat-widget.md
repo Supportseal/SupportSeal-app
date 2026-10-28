@@ -6,7 +6,7 @@ FR-CTX-02, FR-FILE-01, FR-PROD-02, FR-SEC-01, FR-SEC-02),
 [architecture.md](../architecture.md) (separately bundled widget).
 
 **UI kit baseline:** the widget must **not** import the dashboard React
-components, the dashboard bundle, Tailwind output or Public Sans
+components, the dashboard bundle, Tailwind output or the UI font (Plus Jakarta Sans)
 (architecture.md: the widget never downloads the main application
 JavaScript bundle). It reuses only token **values**, as its own
 small CSS custom-property set written in px so it ignores the host's root
