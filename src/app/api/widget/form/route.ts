@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { SERVICE_PAUSED_CODE } from "@/lib/service-pause";
 import { rateLimitFormSubmission } from "@/lib/widget-rate-limit";
 import { createFormConversation, formKeyFromRequest, loadFormProduct } from "@/lib/widget";
 
@@ -50,6 +51,11 @@ export async function POST(request: NextRequest) {
   if (!result.ok) {
     // Key rotated or Product archived mid-request: same answer as the lookup.
     if (result.productGone) return NextResponse.json({ error: "not_found" }, { status: 404 });
+    // Free plan cutoff (src/lib/service-pause.ts): a stable code plus a
+    // sentence the submitting server can show its visitor.
+    if (result.paused) {
+      return NextResponse.json({ error: SERVICE_PAUSED_CODE, message: result.error }, { status: 402 });
+    }
     return NextResponse.json({ error: result.error }, { status: 400 });
   }
   return NextResponse.json({ ticketRef: result.ticketRef }, { headers: { "cache-control": "no-store" } });

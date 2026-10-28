@@ -109,11 +109,12 @@ text becomes "Search conversations…" with a `Ctrl K` / `⌘K` hint.
 
 A single stacked region above main content, using `components/ui/alert.tsx`:
 
-- **Usage** (hosted, Admins only, FR-USE-02): `warning` when the allowance is
-  close or exceeded and the grace period is active; `danger` when the grace
-  period is ending. Always says new customer messages are still accepted,
-  and links to Billing. Agents see nothing. Never shown in self-hosted mode
-  (FR-HOST-01).
+- **Usage** (hosted, FR-USE-02): `warning` for Admins while the allowance is
+  exceeded and the grace period is active (Free: says chat and replies pause
+  in N days and links Upgrade; paid plans: says customer messages keep
+  flowing). `danger` for every member once a Free Workspace is paused: chat
+  and replies are paused, customer emails are still saved, Upgrade to
+  resume. Never shown in self-hosted mode (FR-HOST-01).
 - **Realtime connection**: after about 5s without a stream, show an `info`
   alert "Reconnecting… new messages may be delayed". Clear it silently on
   recovery. Never block the UI; sending still uses normal requests

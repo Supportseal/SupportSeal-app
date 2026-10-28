@@ -34,7 +34,7 @@ function Shell({
   onAvailabilityChange: (next: Availability) => Promise<unknown>;
   mode?: "page" | "fill";
   checklist?: SetupChecklist | null;
-  usageWarning?: { conversationsOpened: number; limit: number | null; graceRemainingDays: number } | null;
+  usageWarning?: UsageWarning | null;
   children: React.ReactNode;
 }) {
   const { collapsed, mobileOpen, setMobileOpen } = useLayout();
@@ -75,16 +75,7 @@ function Shell({
         />
         <NotificationListener userId={user.id} workspaceId={workspaceId} />
         <InboxSoundListener userId={user.id} workspaceId={workspaceId} />
-        {usageWarning ? (
-          <div className="border-b border-border bg-warning-label px-4 py-2 text-sm text-warning">
-            {usageWarning.conversationsOpened} conversations this period
-            {usageWarning.limit !== null ? ` (limit ${usageWarning.limit})` : ""} — customer
-            messages keep flowing; grace ends in {usageWarning.graceRemainingDays} days.{" "}
-            <a href="/settings/billing" className="font-medium underline">
-              Review usage
-            </a>
-          </div>
-        ) : null}
+        {usageWarning ? <UsageBanner warning={usageWarning} /> : null}
         <main
           id="main"
           className={cn(
@@ -94,6 +85,46 @@ function Shell({
           {children}
         </main>
       </div>
+    </div>
+  );
+}
+
+type UsageWarning = {
+  conversationsOpened: number;
+  limit: number | null;
+  graceRemainingDays: number;
+  /** Free: chat and replies pause when grace ends (src/lib/service-pause.ts). */
+  pausesAfterGrace: boolean;
+  paused: boolean;
+};
+
+function UsageBanner({ warning }: { warning: UsageWarning }) {
+  const days = `${warning.graceRemainingDays} ${warning.graceRemainingDays === 1 ? "day" : "days"}`;
+  if (warning.paused) {
+    return (
+      <div
+        role="alert"
+        className="border-b border-border bg-danger-label px-4 py-2 text-sm text-danger"
+      >
+        Chat and replies are paused: this workspace is over its Free plan allowance. Your chat
+        widget isn&apos;t taking new messages and replies can&apos;t be sent until you upgrade.
+        Customer emails are still saved.{" "}
+        <a href="/settings/billing" className="font-medium underline">
+          Upgrade to resume
+        </a>
+      </div>
+    );
+  }
+  return (
+    <div className="border-b border-border bg-warning-label px-4 py-2 text-sm text-warning">
+      {warning.conversationsOpened} conversations this period
+      {warning.limit !== null ? ` (limit ${warning.limit})` : ""} —{" "}
+      {warning.pausesAfterGrace
+        ? `chat and replies pause in ${days} unless you upgrade.`
+        : `customer messages keep flowing; grace ends in ${days}.`}{" "}
+      <a href="/settings/billing" className="font-medium underline">
+        {warning.pausesAfterGrace ? "Upgrade" : "Review usage"}
+      </a>
     </div>
   );
 }

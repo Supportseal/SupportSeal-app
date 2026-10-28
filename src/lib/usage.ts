@@ -21,9 +21,26 @@ export type UsageSummary = {
   conversationsCountedAllTime: number;
   limit: number | null;
   overLimit: boolean;
+  /** When grace started: the crossing, or FREE_GRACE_EFFECTIVE_FROM if later. */
+  graceStartedAt: Date | null;
   graceEndsAt: Date | null;
   graceRemainingDays: number | null;
+  /**
+   * Grace has run out on a plan that pauses after grace (Free). Plan facts
+   * only: whether the pause applies (hosted mode) is decided in
+   * src/lib/service-pause.ts.
+   */
+  graceExpired: boolean;
 };
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The 7-day Free grace took effect on this date (2026-10-28 decision). A
+ * Workspace that was already over its allowance before then counts its 7
+ * days from here, so nobody is paused without a week of reminders.
+ */
+export const FREE_GRACE_EFFECTIVE_FROM = new Date("2026-10-29T00:00:00Z");
 
 function periodBounds(now = new Date()): { start: Date; end: Date; label: string } {
   const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
@@ -52,6 +69,7 @@ export async function computeUsage(
 
   const limit = plan.monthlyConversations;
   const overLimit = limit !== null && inPeriod > limit;
+  let graceStartedAt: Date | null = null;
   let graceEndsAt: Date | null = null;
   let graceRemainingDays: number | null = null;
   if (overLimit && limit !== null && plan.graceDays > 0) {
@@ -64,12 +82,14 @@ export async function computeUsage(
       select: { createdAt: true },
     });
     const crossingAt = crossing?.createdAt ?? now;
-    graceEndsAt = new Date(crossingAt.getTime() + plan.graceDays * 24 * 60 * 60 * 1000);
-    graceRemainingDays = Math.max(
-      0,
-      Math.ceil((graceEndsAt.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)),
-    );
+    graceStartedAt =
+      plan.pausesAfterGrace && crossingAt < FREE_GRACE_EFFECTIVE_FROM
+        ? FREE_GRACE_EFFECTIVE_FROM
+        : crossingAt;
+    graceEndsAt = new Date(graceStartedAt.getTime() + plan.graceDays * DAY_MS);
+    graceRemainingDays = Math.max(0, Math.ceil((graceEndsAt.getTime() - now.getTime()) / DAY_MS));
   }
+  const graceExpired = plan.pausesAfterGrace && graceEndsAt !== null && graceEndsAt <= now;
 
   return {
     plan,
@@ -78,12 +98,10 @@ export async function computeUsage(
     conversationsCountedAllTime: allTime,
     limit,
     overLimit,
+    graceStartedAt,
     graceEndsAt,
     graceRemainingDays,
+    graceExpired,
   };
 }
 
-/** FR-USE-02: never abruptly reject messages — usage never blocks intake. */
-export function usageBlocksIntake(): false {
-  return false;
-}

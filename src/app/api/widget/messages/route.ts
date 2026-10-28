@@ -113,7 +113,10 @@ export async function POST(request: NextRequest) {
     diagnostics: payload.diagnostics,
     userAgent: request.headers.get("user-agent") ?? "",
   });
-  if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
+  if (!result.ok) {
+    // Free plan cutoff: the panel switches to its "chat unavailable" notice.
+    return NextResponse.json({ error: result.error }, { status: result.paused ? 402 : 400 });
+  }
 
   const thread = await visitorListMessages({ product, visitor: { ...visitor, conversationId: result.conversationId } });
   return NextResponse.json({ thread, ...(result.diagnostics ? { diagnostics: result.diagnostics } : {}) });

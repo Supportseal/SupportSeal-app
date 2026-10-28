@@ -131,6 +131,7 @@ export function ConversationView({
   devContext,
   diagnostics,
   failedDeliveryCount = 0,
+  repliesPaused = false,
 }: {
   conversation: ConversationViewData;
   availableTags: { id: string; name: string }[];
@@ -142,6 +143,8 @@ export function ConversationView({
   devContext: DevContextProp;
   diagnostics: DiagnosticsProp;
   failedDeliveryCount?: number;
+  /** Free plan cutoff (src/lib/service-pause.ts): replies refused, notes still work. */
+  repliesPaused?: boolean;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -586,6 +589,14 @@ export function ConversationView({
                 </button>
               ))}
             </div>
+            {mode === "REPLY" && repliesPaused ? (
+              <span className="text-xs text-danger">
+                Replies are paused until this workspace upgrades.{" "}
+                <a href="/settings/billing" className="font-medium underline">
+                  Upgrade
+                </a>
+              </span>
+            ) : null}
             {mode === "NOTE" ? (
               <span className="flex items-center gap-1 text-xs text-warning">
                 <IconLock className="size-3.5" />
@@ -778,7 +789,12 @@ export function ConversationView({
               <Button
                 size="sm"
                 onClick={() => void send()}
-                disabled={sending || uploading || (!body.trim() && attachments.length === 0)}
+                disabled={
+                  sending ||
+                  uploading ||
+                  (mode === "REPLY" && repliesPaused) ||
+                  (!body.trim() && attachments.length === 0)
+                }
               >
                 {sending ? "Sending…" : mode === "NOTE" ? "Add note" : "Send"}
               </Button>

@@ -103,10 +103,6 @@ describe("usage metering (FR-USE-01: counted once ever)", () => {
     expect(business.limit).toBeNull();
     expect(business.overLimit).toBe(false);
     expect(business.graceEndsAt).toBeNull();
-
-    // usage never blocks intake (FR-USE-02)
-    const { usageBlocksIntake } = await import("@/lib/usage");
-    expect(usageBlocksIntake()).toBe(false);
   });
 });
 

@@ -5,6 +5,7 @@ import { orderContextForDisplay } from "@/lib/dev-context";
 import { hasExpiredSnapshotsForConversation, listSnapshotsForConversation } from "@/lib/diagnostics/store";
 import { listActiveProducts } from "@/lib/products";
 import { listSavedRepliesForProduct, savedReplyProductNames } from "@/lib/saved-replies";
+import { isServicePaused } from "@/lib/service-pause";
 import { requireWorkspace } from "@/lib/workspace";
 import { ConversationView } from "./conversation-view";
 
@@ -26,11 +27,12 @@ export default async function ConversationPage({
   if (!conversation) notFound();
 
   // A reply is offered when it is All-products or includes this Product.
-  const [savedReplies, snapshots, hasExpired, products] = await Promise.all([
+  const [savedReplies, snapshots, hasExpired, products, repliesPaused] = await Promise.all([
     listSavedRepliesForProduct(ctx.workspace.id, conversation.product.id),
     listSnapshotsForConversation(ctx.workspace.id, conversation.id),
     hasExpiredSnapshotsForConversation(ctx.workspace.id, conversation.id),
     listActiveProducts(ctx.workspace.id),
+    isServicePaused(ctx.workspace.id),
   ]);
 
   return (
@@ -84,6 +86,7 @@ export default async function ConversationPage({
           : []
       }
       failedDeliveryCount={failedDeliveries}
+      repliesPaused={repliesPaused}
       devContext={{
         identifiedUserId: conversation.chatVisitors[0]?.externalUserId ?? null,
         entries: orderContextForDisplay(

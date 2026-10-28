@@ -7,8 +7,14 @@
  * Conversations/month, 1 agent; Pro $19/mo or $190/yr — 1,000 new
  * Conversations/month, unlimited agents; Business $99/mo or $990/yr —
  * unlimited Conversations and agents. Pro is never advertised as unlimited
- * Conversations. Grace is at least 30 days (`USAGE_GRACE_DAYS` may only
- * lengthen it).
+ * Conversations.
+ *
+ * Grace (decided 2026-10-28, supersedes the 30-day floor for Free): a Free
+ * Workspace over its monthly allowance gets FREE_GRACE_DAYS, with a daily
+ * reminder email, and then its chat widget and agent replies pause until it
+ * upgrades or the next month's allowance starts (hosted only; see
+ * src/lib/service-pause.ts). Paid plans keep the soft 30-day window
+ * (`USAGE_GRACE_DAYS` may only lengthen it) and are never paused.
  *
  * The public pricing page (separate marketing repository) mirrors these
  * numbers; change both together.
@@ -29,6 +35,8 @@ export type Plan = {
   monthlyConversations: number | null; // null = unlimited
   agents: number | null; // null = unlimited
   graceDays: number;
+  /** Hosted only: chat and agent replies pause once grace runs out. */
+  pausesAfterGrace: boolean;
 };
 
 function envInt(name: string, fallback: number): number {
@@ -45,6 +53,9 @@ function configuredGraceDays(): number {
 
 const graceDays = configuredGraceDays();
 
+/** Free plan grace before the hosted widget and replies pause. Fixed. */
+export const FREE_GRACE_DAYS = 7;
+
 export const PLANS: Record<PlanId, Plan> = {
   free: {
     id: "free",
@@ -52,7 +63,8 @@ export const PLANS: Record<PlanId, Plan> = {
     priceUsd: { month: 0, year: 0 },
     monthlyConversations: envInt("FREE_TIER_CONVERSATION_LIMIT", 100),
     agents: 1,
-    graceDays,
+    graceDays: FREE_GRACE_DAYS,
+    pausesAfterGrace: true,
   },
   pro: {
     id: "pro",
@@ -61,6 +73,7 @@ export const PLANS: Record<PlanId, Plan> = {
     monthlyConversations: envInt("PRO_TIER_CONVERSATION_LIMIT", 1000),
     agents: null,
     graceDays,
+    pausesAfterGrace: false,
   },
   business: {
     id: "business",
@@ -69,6 +82,7 @@ export const PLANS: Record<PlanId, Plan> = {
     monthlyConversations: null,
     agents: null,
     graceDays,
+    pausesAfterGrace: false,
   },
 };
 

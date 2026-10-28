@@ -92,6 +92,9 @@ enum WorkspacePlan {
 enum UsageNotificationLevel {
   APPROACHING
   EXCEEDED
+  /// Free plan daily grace reminder; `graceDay` says which day (1..7, where
+  /// 7 is the "paused" notice).
+  GRACE_REMINDER
 }
 
 model Workspace {
@@ -588,11 +591,13 @@ model UsageNotification {
   workspaceId String
   period      String
   level       UsageNotificationLevel
+  /// 0 for APPROACHING/EXCEEDED; the grace day for GRACE_REMINDER.
+  graceDay    Int                    @default(0)
   createdAt   DateTime               @default(now())
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
-  @@unique([workspaceId, period, level])
+  @@unique([workspaceId, period, level, graceDay])
   @@map("usage_notifications")
 }
 

@@ -611,15 +611,51 @@ ${WIDGET_SOUND_JS}
     var away = data.availability === 'AWAY';
     // Optional per-Product support address (display only; textContent keeps it inert).
     if (data.supportEmail) document.getElementById('awaySupport').textContent = 'Prefer email? Write to ' + data.supportEmail + '.';
-    document.getElementById('dot').className = 'dot' + (away ? ' away' : '');
-    document.getElementById('statusline').textContent = away
-      ? 'Away · Send us a message, we\\u2019ll reply by email'
-      : 'Online · Chat with us';
+    renderStatus();
     try {
       var h = new URL(hostOrigin).hostname;
       if (h === 'localhost' || h === '127.0.0.1') document.getElementById('testmode').style.display = 'inline-block';
     } catch (e) {}
     if (data.diagnostics) renderDiagNotice();
+  }
+
+  // Header dot and status line. Paused = the team's Free plan cutoff
+  // (src/lib/service-pause.ts): chat takes no new messages.
+  function renderStatus() {
+    var paused = !!(config && config.paused);
+    var away = config && config.availability === 'AWAY';
+    document.getElementById('dot').className = 'dot' + (away || paused ? ' away' : '');
+    document.getElementById('statusline').textContent = paused
+      ? 'Chat unavailable right now'
+      : away
+        ? 'Away · Send us a message, we\\u2019ll reply by email'
+        : 'Online · Chat with us';
+  }
+
+  // A send refused with service_paused: switch to the notice without a reload.
+  function markPaused() {
+    if (!config) return;
+    config.paused = true;
+    renderStatus();
+    render();
+  }
+
+  function renderPausedNotice() {
+    var card = document.createElement('div');
+    card.className = 'card';
+    card.id = 'pausedNotice';
+    card.setAttribute('role', 'status');
+    var title = document.createElement('p');
+    title.textContent = 'Chat is unavailable right now';
+    title.style.fontWeight = '600';
+    var text = document.createElement('p');
+    text.className = 'sysline';
+    text.style.textAlign = 'left';
+    text.textContent = (config.name || 'This team') + ' isn\\u2019t taking chat messages at the moment. ' +
+      (config.supportEmail ? 'You can still reach them by email at ' + config.supportEmail + '.' : 'Please try again later.');
+    card.appendChild(title);
+    card.appendChild(text);
+    thread.appendChild(card);
   }
 
   function initial() {
@@ -641,7 +677,8 @@ ${WIDGET_SOUND_JS}
     var oldCapture = document.getElementById('captureEmail');
     var draft = oldCapture ? { value: oldCapture.value, focused: document.activeElement === oldCapture } : null;
     thread.innerHTML = '';
-    if (state.messages.length === 0 && config && config.availability !== 'AWAY') {
+    var paused = !!(config && config.paused);
+    if (state.messages.length === 0 && config && config.availability !== 'AWAY' && !paused) {
       var welcome = document.createElement('div');
       welcome.className = 'welcome';
       var mark = document.createElement('div');
@@ -701,7 +738,9 @@ ${WIDGET_SOUND_JS}
         thread.appendChild(time);
       }
     });
-    if (state.email) {
+    if (paused) {
+      renderPausedNotice();
+    } else if (state.email) {
       var s = document.createElement('p');
       s.className = 'sysline';
       s.textContent = 'We\\u2019ll email ' + state.email + ' if you\\u2019ve left.';
@@ -735,6 +774,15 @@ ${WIDGET_SOUND_JS}
   }
 
   function renderModes() {
+    if (config && config.paused) {
+      // Paused: the thread stays readable, nothing can be sent.
+      awayForm.style.display = 'none';
+      thread.style.display = 'flex';
+      document.getElementById('composer').style.display = 'none';
+      var staleHint = document.getElementById('emailHint');
+      if (staleHint) staleHint.remove();
+      return;
+    }
     var away = config && config.availability === 'AWAY';
     var showAway = away && state.messages.length === 0;
     awayForm.style.display = showAway ? 'flex' : 'none';
@@ -1009,7 +1057,9 @@ ${WIDGET_SOUND_JS}
           input.value = body;
           updateSendState();
           restoreDiagnostics();
-          if (result.data.error === 'rate_limited') {
+          if (result.data.error === 'service_paused') {
+            markPaused();
+          } else if (result.data.error === 'rate_limited') {
             var hint = document.createElement('p');
             hint.className = 'sysline';
             hint.textContent = 'You\\u2019re sending messages too quickly. Try again in a moment.';
@@ -1083,6 +1133,7 @@ ${WIDGET_SOUND_JS}
       }).then(function (r) { return r && r.json(); }).then(function (data) {
         if (!data || awayGeneration !== sessionGeneration) return;
         document.getElementById('awaySend').disabled = false;
+        if (data.error === 'service_paused') { restoreDiagnostics(); markPaused(); return; }
         if (data.thread) {
           var saved = data.thread.messages || [];
           if (hasNewAgentReply(state.messages, saved)) chime.notify();

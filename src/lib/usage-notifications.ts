@@ -57,32 +57,17 @@ const FONT = "-apple-system,'Segoe UI',Helvetica,Arial,sans-serif";
 /**
  * Plain-text and HTML bodies share one set of paragraphs so the text part
  * carries every fact the styled part does. The HTML is a single-column,
- * inline-styled table with no images or external assets.
+ * inline-styled table with no images or external assets. Shared with the
+ * daily grace reminders (src/lib/grace-reminders.ts).
  */
-function allowanceEmail(input: {
-  workspaceName: string;
-  planName: string;
-  opened: number;
-  limit: number;
-  graceDays: number;
-  level: AllowanceLevel;
+export function renderNoticeEmail(input: {
+  headline: string;
+  paragraphs: string[];
+  cta: string;
+  url: string;
 }): { text: string; html: string } {
-  const billingUrl = `${appConfig.url}/settings/billing`;
-  const used = `${formatCount(input.opened)} of ${formatCount(input.limit)}`;
-  const over = input.level === "EXCEEDED";
-  const headline = over
-    ? `${input.workspaceName} is over its ${input.planName} plan allowance`
-    : `${input.workspaceName} is nearing its ${input.planName} plan allowance`;
-  const paragraphs = [
-    `${used} conversations used this period. A conversation counts once, in the period it opens.`,
-    `Customer messages keep flowing: we never block intake, never upgrade your plan on our own and never send a surprise bill.`,
-    over
-      ? `A ${input.graceDays}-day grace window applies from the point you went over. If this volume continues, a higher-volume plan is the better fit.`
-      : `If you go over, a ${input.graceDays}-day grace window applies.`,
-  ];
-  const cta = "Review your plan and upgrade";
-
-  const text = [headline, "", ...paragraphs.flatMap((p) => [p, ""]), `${cta}: ${billingUrl}`].join("\n");
+  const { headline, paragraphs, cta, url } = input;
+  const text = [headline, "", ...paragraphs.flatMap((p) => [p, ""]), `${cta}: ${url}`].join("\n");
 
   const paragraphCells = paragraphs
     .map(
@@ -98,13 +83,80 @@ function allowanceEmail(input: {
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
 <tr><td style="padding:0 0 18px 0;font-family:${FONT};font-size:20px;line-height:28px;font-weight:600;color:#111827;">${escapeHtml(headline)}</td></tr>
 ${paragraphCells}
-<tr><td style="padding:6px 0 18px 0;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td style="background-color:${BRAND_GREEN};border-radius:6px;"><a href="${escapeHtml(billingUrl)}" style="display:inline-block;padding:12px 22px;font-family:${FONT};font-size:16px;line-height:20px;font-weight:600;color:#ffffff;text-decoration:none;">${cta}</a></td></tr></table></td></tr>
+<tr><td style="padding:6px 0 18px 0;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td style="background-color:${BRAND_GREEN};border-radius:6px;"><a href="${escapeHtml(url)}" style="display:inline-block;padding:12px 22px;font-family:${FONT};font-size:16px;line-height:20px;font-weight:600;color:#ffffff;text-decoration:none;">${escapeHtml(cta)}</a></td></tr></table></td></tr>
 <tr><td style="padding:0;font-family:${FONT};font-size:13px;line-height:20px;color:#6b7280;">Sent by ${escapeHtml(siteConfig.name)}. This address does not take replies.</td></tr>
 </table>
 </td></tr></table>
 </td></tr></table>
 </body></html>`;
   return { text, html };
+}
+
+export function billingUrl(): string {
+  return `${appConfig.url}/settings/billing`;
+}
+
+function allowanceEmail(input: {
+  workspaceName: string;
+  planName: string;
+  opened: number;
+  limit: number;
+  graceDays: number;
+  pausesAfterGrace: boolean;
+  level: AllowanceLevel;
+}): { text: string; html: string } {
+  const used = `${formatCount(input.opened)} of ${formatCount(input.limit)}`;
+  const over = input.level === "EXCEEDED";
+  const headline = over
+    ? `${input.workspaceName} is over its ${input.planName} plan allowance`
+    : `${input.workspaceName} is nearing its ${input.planName} plan allowance`;
+  const graceParagraph = input.pausesAfterGrace
+    ? over
+      ? `You have ${input.graceDays} days from the point you went over. After that your chat widget stops taking new messages and replies are paused until you upgrade or next month's allowance starts. We'll email a reminder each day until then.`
+      : `If you go over, you have ${input.graceDays} days to upgrade before your chat widget and replies pause.`
+    : over
+      ? `A ${input.graceDays}-day grace window applies from the point you went over. If this volume continues, a higher-volume plan is the better fit.`
+      : `If you go over, a ${input.graceDays}-day grace window applies.`;
+  const paragraphs = [
+    `${used} conversations used this period. A conversation counts once, in the period it opens.`,
+    input.pausesAfterGrace
+      ? `We never upgrade your plan on our own and never send a surprise bill.`
+      : `Customer messages keep flowing: we never block intake, never upgrade your plan on our own and never send a surprise bill.`,
+    graceParagraph,
+  ];
+  return renderNoticeEmail({ headline, paragraphs, cta: "Review your plan and upgrade", url: billingUrl() });
+}
+
+/**
+ * Email every admin of the Workspace. Returns how many sends succeeded and
+ * failed; failures are logged with the address only.
+ */
+export async function emailWorkspaceAdmins(input: {
+  workspaceId: string;
+  subject: string;
+  text: string;
+  html: string;
+}): Promise<{ emailed: number; failures: number }> {
+  const admins = await prisma.membership.findMany({
+    where: { workspaceId: input.workspaceId, role: "ADMIN" },
+    include: { user: { select: { email: true } } },
+  });
+  let emailed = 0;
+  let failures = 0;
+  for (const admin of admins) {
+    const result = await sendSystemEmail({
+      to: admin.user.email,
+      subject: input.subject,
+      text: input.text,
+      html: input.html,
+    });
+    if (result.ok) emailed += 1;
+    else {
+      failures += 1;
+      console.error(`usage notice to ${admin.user.email} failed: ${result.error}`);
+    }
+  }
+  return { emailed, failures };
 }
 
 /**
@@ -145,10 +197,6 @@ export async function maybeNotifyAllowance(input: {
     throw error;
   }
 
-  const admins = await prisma.membership.findMany({
-    where: { workspaceId: input.workspaceId, role: "ADMIN" },
-    include: { user: { select: { email: true } } },
-  });
   const subject = `${workspace.name}: ${
     level === "EXCEEDED" ? "over" : "approaching"
   } your ${usage.plan.name} plan conversation allowance`;
@@ -158,19 +206,16 @@ export async function maybeNotifyAllowance(input: {
     opened: usage.conversationsOpened,
     limit: usage.limit,
     graceDays: plan.graceDays,
+    pausesAfterGrace: plan.pausesAfterGrace,
     level,
   });
 
-  let emailed = 0;
-  let failures = 0;
-  for (const admin of admins) {
-    const result = await sendSystemEmail({ to: admin.user.email, subject, text, html });
-    if (result.ok) emailed += 1;
-    else {
-      failures += 1;
-      console.error(`allowance notification to ${admin.user.email} failed: ${result.error}`);
-    }
-  }
+  const { emailed, failures } = await emailWorkspaceAdmins({
+    workspaceId: input.workspaceId,
+    subject,
+    text,
+    html,
+  });
   if (failures > 0) {
     // Drop the dedupe row so the next conversation in this period retries the
     // level (at-least-once delivery; a retried level may re-mail an admin
@@ -178,7 +223,12 @@ export async function maybeNotifyAllowance(input: {
     // `ok: true` and keeps the row, matching the reply-email dev semantics.
     await prisma.usageNotification
       .delete({
-        where: { workspaceId_period_level: { workspaceId: input.workspaceId, period: usage.period.label, level } },
+        where: { workspaceId_period_level_graceDay: {
+          workspaceId: input.workspaceId,
+          period: usage.period.label,
+          level,
+          graceDay: 0,
+        } },
       })
       .catch((error) => {
         console.error(`failed to reset allowance notification row for retry:`, error);
