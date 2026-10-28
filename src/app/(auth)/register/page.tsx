@@ -2,9 +2,10 @@ import { redirect } from "next/navigation";
 
 import { publicLegalLinks } from "@/config/legal";
 import { isHostedMode } from "@/lib/hosting";
-import { parsePlanIntent, planCheckoutPath } from "@/lib/plan-intent";
+import { parsePlanIntent, planCheckoutPath, planOnboardingPath } from "@/lib/plan-intent";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/session";
+import { getPrimaryMembership } from "@/lib/workspace";
 import { RegisterForm } from "./register-form";
 
 export const metadata = { title: "Create an account" };
@@ -22,7 +23,14 @@ export default async function RegisterPage({
   // Sign-up CTAs on the marketing site link here unconditionally; a visitor
   // who is already signed in goes to the dashboard, as on /login, or
   // straight to checkout for the plan they picked.
-  if (await getSessionUser()) redirect(planIntent ? planCheckoutPath(planIntent) : "/inbox");
+  const user = await getSessionUser();
+  if (user) {
+    if (!planIntent) redirect("/inbox");
+    // No Workspace yet (sign-up done, onboarding abandoned): checkout needs
+    // one, so finish onboarding first and carry the pick along.
+    const membership = await getPrimaryMembership(user.id);
+    redirect(membership ? planCheckoutPath(planIntent) : planOnboardingPath(planIntent));
+  }
   // Self-hosted first run (FR-HOST-01): once the single Workspace exists,
   // registration closes — additional users arrive by invitation.
   if (!isHostedMode()) {

@@ -4,6 +4,7 @@ import {
   deserializePlanIntent,
   parsePlanIntent,
   planCheckoutPath,
+  planOnboardingPath,
   serializePlanIntent,
 } from "@/lib/plan-intent";
 
@@ -31,5 +32,11 @@ describe("plan intent from the marketing pricing page", () => {
 
   it("points at the billing page with the plan preselected", () => {
     expect(planCheckoutPath({ plan: "pro", interval: "year" })).toBe("/settings/billing?plan=pro&interval=year");
+  });
+});
+
+describe("planOnboardingPath", () => {
+  it("keeps the plan on the way into onboarding", () => {
+    expect(planOnboardingPath({ plan: "pro", interval: "year" })).toBe("/onboarding?plan=pro&interval=year");
   });
 });

@@ -34,3 +34,8 @@ export function deserializePlanIntent(value: string | undefined): PlanIntent | n
 export function planCheckoutPath(intent: PlanIntent): string {
   return `/settings/billing?plan=${intent.plan}&interval=${intent.interval}`;
 }
+
+/** Where a signed-in visitor with no Workspace yet restarts onboarding, keeping the plan. */
+export function planOnboardingPath(intent: PlanIntent): string {
+  return `/onboarding?plan=${intent.plan}&interval=${intent.interval}`;
+}

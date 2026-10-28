@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 const state = vi.hoisted(() => ({
   user: null as { id: string } | null,
   workspaces: 0,
+  membership: true,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -14,6 +15,10 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("@/lib/session", () => ({ getSessionUser: async () => state.user }));
 vi.mock("@/lib/prisma", () => ({ prisma: { workspace: { count: async () => state.workspaces } } }));
+
+vi.mock("@/lib/workspace", () => ({
+  getPrimaryMembership: async () => (state.membership ? { workspaceId: "w1" } : null),
+}));
 
 import RegisterPage from "../page";
 
@@ -30,6 +35,7 @@ describe("register page", () => {
   beforeEach(() => {
     state.user = null;
     state.workspaces = 0;
+    state.membership = true;
     vi.unstubAllEnvs();
   });
 
@@ -78,6 +84,15 @@ describe("register page", () => {
     await expect(
       RegisterPage({ searchParams: Promise.resolve({ plan: "business" }) }),
     ).rejects.toThrow("redirect:/settings/billing?plan=business&interval=month");
+  });
+
+  it("sends a signed-in visitor without a Workspace to onboarding, keeping the plan", async () => {
+    vi.stubEnv("HOSTED_MODE", "1");
+    state.user = { id: "u1" };
+    state.membership = false;
+    await expect(
+      RegisterPage({ searchParams: Promise.resolve({ plan: "pro", interval: "year" }) }),
+    ).rejects.toThrow("redirect:/onboarding?plan=pro&interval=year");
   });
 
   it("sends a signed-in visitor to the dashboard", async () => {

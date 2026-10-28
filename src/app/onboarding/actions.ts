@@ -9,23 +9,32 @@ import { createWorkspace as createWorkspaceService, requireWorkspace } from "@/l
 import { getSessionUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { isHostedMode } from "@/lib/hosting";
-import { deserializePlanIntent, PLAN_INTENT_COOKIE, planCheckoutPath } from "@/lib/plan-intent";
+import {
+  deserializePlanIntent,
+  parsePlanIntent,
+  PLAN_INTENT_COOKIE,
+  planCheckoutPath,
+  planOnboardingPath,
+} from "@/lib/plan-intent";
 
 export async function createWorkspaceAction(formData: FormData): Promise<void> {
   const user = await getSessionUser();
   if (!user) redirect("/login?next=%2Fonboarding");
   const name = String(formData.get("name") ?? "");
   const result = await createWorkspaceService({ userId: user.id, name });
-  if (!result.ok) redirect("/onboarding?error=1");
+  // Hidden fields come from a plan picked just now; the sign-up cookie may be
+  // older, so the fields win and the error redirect keeps them.
+  const picked = parsePlanIntent(formData.get("plan"), formData.get("interval"));
+  if (!result.ok) {
+    redirect(picked ? `${planOnboardingPath(picked)}&error=1` : "/onboarding?error=1");
+  }
   revalidatePath("/", "layout");
   // A visitor who picked a paid plan on the pricing page goes to checkout
   // now that the Workspace exists; the billing page links back to setup.
   const cookieStore = await cookies();
-  const intent = deserializePlanIntent(cookieStore.get(PLAN_INTENT_COOKIE)?.value);
-  if (intent) {
-    cookieStore.delete(PLAN_INTENT_COOKIE);
-    if (isHostedMode()) redirect(planCheckoutPath(intent));
-  }
+  const intent = picked ?? deserializePlanIntent(cookieStore.get(PLAN_INTENT_COOKIE)?.value);
+  cookieStore.delete(PLAN_INTENT_COOKIE);
+  if (intent && isHostedMode()) redirect(planCheckoutPath(intent));
   redirect("/onboarding/product");
 }
 
