@@ -8,6 +8,7 @@ import { computeUsage } from "@/lib/usage";
 import { sweepGraceRemindersLazily } from "@/lib/grace-reminders";
 import { isHostedMode } from "@/lib/hosting";
 import { getServicePause } from "@/lib/service-pause";
+import { SupportWidget } from "@/components/support/support-widget";
 import { setAvailabilityAction } from "./actions";
 
 /**
@@ -74,6 +75,10 @@ export async function Shell({
       }
     >
       {children}
+      {/* Own support chat; left off the inbox, where it would cover the reply box. */}
+      {mode === "page" ? (
+        <SupportWidget user={{ id: ctx.user.id, email: ctx.user.email, name: ctx.user.name }} />
+      ) : null}
     </AppShell>
   );
 }

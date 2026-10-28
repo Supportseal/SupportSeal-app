@@ -85,6 +85,13 @@ body {
   min-height: 100%;
 }
 
+/* Own support chat (SupportWidget): visible only on pages that render it,
+   and out of the way while a dialog's footer buttons sit under the launcher. */
+html[data-support-widget="off"] #supportseal-widget-host,
+body:has([role="dialog"][data-state="open"]) #supportseal-widget-host {
+  display: none !important;
+}
+
 @layer base {
   h1,
   h2,

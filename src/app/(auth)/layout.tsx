@@ -1,4 +1,5 @@
 import { Logo } from "@/components/layout/logo";
+import { SupportWidget } from "@/components/support/support-widget";
 import { brand } from "@/lib/brand";
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
@@ -29,6 +30,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       <div className="flex items-center justify-center p-6">
         <div className="w-full max-w-[26.5rem]">{children}</div>
       </div>
+      <SupportWidget />
     </div>
   );
 }

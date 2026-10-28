@@ -42,6 +42,10 @@ services:
       # https://dashboard.supportseal.app/api/auth/callback/github).
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      # Own support chat: the public widget key of the hosted "SupportSeal"
+      # Product (the same one the marketing site embeds). Public by design;
+      # set SUPPORT_WIDGET_KEY in Coolify to override.
+      SUPPORT_WIDGET_KEY: ${SUPPORT_WIDGET_KEY:-pk_plbDP7iSd3DjHJ1bZ0eOCppMxFbg5_b_}
     expose:
       - "3000"
     volumes:

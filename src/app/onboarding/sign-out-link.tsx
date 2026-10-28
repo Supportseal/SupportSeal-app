@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { resetSupportWidget } from "@/components/support/support-widget-script";
 import { authClient } from "@/lib/auth-client";
 
 export function SignOutLink() {
@@ -9,7 +10,10 @@ export function SignOutLink() {
     <button
       type="button"
       className="text-sm text-muted hover:text-heading"
-      onClick={() => void authClient.signOut().then(() => router.push("/login"))}
+      onClick={() => {
+        resetSupportWidget();
+        void authClient.signOut().then(() => router.push("/login"));
+      }}
     >
       Sign out
     </button>
