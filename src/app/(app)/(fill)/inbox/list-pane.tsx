@@ -157,7 +157,7 @@ export function ListPane() {
     };
   }, []);
 
-  const closeConversation = async (item: ConversationItem) => {
+  const closeConversation = async (item: ConversationItem, exited: Promise<void> = Promise.resolve()) => {
     const client = clientRef.current;
     if (!client) return;
     // Closing the open thread moves on to the next one in this queue, like the
@@ -165,7 +165,16 @@ export function ListPane() {
     const advanceTarget = item.id === selectedId ? await nextConversationAfterCloseLoading(item.id) : null;
     const advancePath =
       advanceTarget?.kind === "next" ? `/inbox/${advanceTarget.id}` : advanceTarget?.kind === "last" ? "/inbox" : null;
-    // The filters may have changed during the await above, swapping in a new
+    // The save starts now; the row's exit animation only times the removal.
+    const saved = (async () => {
+      try {
+        return (await setStatusAction({ conversationId: item.id, status: "CLOSED" })).error;
+      } catch {
+        return "Couldn't close the conversation. Check your connection and try again.";
+      }
+    })();
+    await exited;
+    // The filters may have changed during the awaits above, swapping in a new
     // client; only the live one gets the optimistic removal. A stale one still
     // closes the conversation, and the refresh below corrects the list.
     const stale = clientRef.current !== client;
@@ -177,12 +186,7 @@ export function ListPane() {
       void clientRef.current?.refresh();
       if (item.id === selectedId) router.refresh();
     };
-    let error: string | undefined;
-    try {
-      error = (await setStatusAction({ conversationId: item.id, status: "CLOSED" })).error;
-    } catch {
-      error = "Couldn't close the conversation. Check your connection and try again.";
-    }
+    const error = await saved;
     if (error) {
       if (clientRef.current === client) pending?.rollback();
       else pending?.settle();
@@ -199,8 +203,19 @@ export function ListPane() {
             .then((result) => result.error)
             .catch(() => "Couldn't undo. Check your connection and try again.")
             .then((undoError) => {
-              if (undoError) toast.error(undoError);
-              syncAfterMove();
+              if (undoError) {
+                toast.error(undoError);
+                return;
+              }
+              noteConversationStatus(item.id, item.status);
+              // Like the header's Undo: only pull the agent back if they are
+              // still where Close left them.
+              if (advancePath && window.location.pathname === advancePath) {
+                void clientRef.current?.refresh();
+                router.push(`/inbox/${item.id}${searchParams.size ? `?${searchParams.toString()}` : ""}`);
+              } else {
+                syncAfterMove();
+              }
             });
         },
       },
@@ -394,7 +409,7 @@ function ConversationRow({
   item: ConversationItem;
   selected: boolean;
   query: string;
-  onClose: (item: ConversationItem) => void;
+  onClose: (item: ConversationItem, exited: Promise<void>) => void;
 }) {
   const searchParams = useSearchParams();
   const [collapsing, setCollapsing] = useState(false);
@@ -492,7 +507,8 @@ function ConversationRow({
             event.preventDefault();
             event.stopPropagation();
             setCollapsing(true);
-            void closeExitDelay().then(() => onClose(item)).finally(() => setCollapsing(false));
+            const exited = closeExitDelay();
+            void Promise.resolve(onClose(item, exited)).finally(() => setCollapsing(false));
           }}
         >
           <IconCircleCheck className="size-[1.125rem]" aria-hidden />
