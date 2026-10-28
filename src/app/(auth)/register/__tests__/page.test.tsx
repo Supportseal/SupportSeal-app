@@ -55,6 +55,31 @@ describe("register page", () => {
     expect(markup).toContain("Create your account");
   });
 
+  it("shows the plan picked on the pricing page in hosted mode", async () => {
+    vi.stubEnv("HOSTED_MODE", "1");
+    const markup = renderToStaticMarkup(
+      await RegisterPage({ searchParams: Promise.resolve({ plan: "pro", interval: "year" }) }),
+    );
+    expect(markup).toContain("You picked Pro (annual).");
+  });
+
+  it("ignores a plan on a self-hosted installation, which has no billing", async () => {
+    vi.stubEnv("HOSTED_MODE", "");
+    const markup = renderToStaticMarkup(
+      await RegisterPage({ searchParams: Promise.resolve({ plan: "pro" }) }),
+    );
+    expect(markup).toContain("Create your account");
+    expect(markup).not.toContain("data-plan-intent");
+  });
+
+  it("sends a signed-in visitor who picked a plan to checkout", async () => {
+    vi.stubEnv("HOSTED_MODE", "1");
+    state.user = { id: "u1" };
+    await expect(
+      RegisterPage({ searchParams: Promise.resolve({ plan: "business" }) }),
+    ).rejects.toThrow("redirect:/settings/billing?plan=business&interval=month");
+  });
+
   it("sends a signed-in visitor to the dashboard", async () => {
     vi.stubEnv("HOSTED_MODE", "");
     state.user = { id: "u1" };

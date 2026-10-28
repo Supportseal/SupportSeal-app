@@ -8,6 +8,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { authClient } from "@/lib/auth-client";
+import {
+  PLAN_INTENT_COOKIE,
+  PLAN_INTENT_MAX_AGE_SECONDS,
+  serializePlanIntent,
+  type PlanIntent,
+} from "@/lib/plan-intent";
 
 type LegalLink = { slug: string; label: string; href: string };
 
@@ -33,7 +39,15 @@ function SignupLegalNotice({ links }: { links: LegalLink[] }) {
   );
 }
 
-export function RegisterForm({ legalLinks = [] }: { legalLinks?: LegalLink[] }) {
+const PLAN_LABELS: Record<PlanIntent["plan"], string> = { pro: "Pro", business: "Business" };
+
+export function RegisterForm({
+  legalLinks = [],
+  planIntent = null,
+}: {
+  legalLinks?: LegalLink[];
+  planIntent?: PlanIntent | null;
+}) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -55,6 +69,10 @@ export function RegisterForm({ legalLinks = [] }: { legalLinks?: LegalLink[] }) 
       setPending(false);
       return;
     }
+    if (planIntent) {
+      // Picked up when the Workspace is created, which then opens checkout.
+      document.cookie = `${PLAN_INTENT_COOKIE}=${serializePlanIntent(planIntent)}; Path=/; Max-Age=${PLAN_INTENT_MAX_AGE_SECONDS}; SameSite=Lax`;
+    }
     // Full document navigation for the same reason as the login form: auth
     // pages prefetch protected routes (logo → /inbox), and a soft navigation
     // to /onboarding can replay a stale logged-out redirect from the client
@@ -70,6 +88,12 @@ export function RegisterForm({ legalLinks = [] }: { legalLinks?: LegalLink[] }) 
         <p className="mt-1 mb-6 text-muted">
           One account, one Workspace, every product you build
         </p>
+        {planIntent ? (
+          <p className="-mt-3 mb-6 rounded-md bg-primary-label px-3 py-2 text-sm text-heading" data-plan-intent="">
+            You picked {PLAN_LABELS[planIntent.plan]} ({planIntent.interval === "year" ? "annual" : "monthly"}).
+            Create your account and Workspace, then finish checkout.
+          </p>
+        ) : null}
         <form className="space-y-4" method="post" onSubmit={handleSubmit}>
           <div>
             <Label htmlFor="name">Name</Label>

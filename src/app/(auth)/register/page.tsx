@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { publicLegalLinks } from "@/config/legal";
 import { isHostedMode } from "@/lib/hosting";
+import { parsePlanIntent, planCheckoutPath } from "@/lib/plan-intent";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/session";
 import { RegisterForm } from "./register-form";
@@ -9,10 +10,19 @@ import { RegisterForm } from "./register-form";
 export const metadata = { title: "Create an account" };
 export const dynamic = "force-dynamic";
 
-export default async function RegisterPage() {
+export default async function RegisterPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ plan?: string | string[]; interval?: string | string[] }>;
+} = {}) {
+  // Choose Pro / Choose Business on the marketing pricing page link here
+  // with the plan; it only means something where billing exists.
+  const params = (await searchParams) ?? {};
+  const planIntent = isHostedMode() ? parsePlanIntent(params.plan, params.interval) : null;
   // Sign-up CTAs on the marketing site link here unconditionally; a visitor
-  // who is already signed in goes to the dashboard, as on /login.
-  if (await getSessionUser()) redirect("/inbox");
+  // who is already signed in goes to the dashboard, as on /login, or
+  // straight to checkout for the plan they picked.
+  if (await getSessionUser()) redirect(planIntent ? planCheckoutPath(planIntent) : "/inbox");
   // Self-hosted first run (FR-HOST-01): once the single Workspace exists,
   // registration closes — additional users arrive by invitation.
   if (!isHostedMode()) {
@@ -30,5 +40,5 @@ export default async function RegisterPage() {
     }
     return <RegisterForm />;
   }
-  return <RegisterForm legalLinks={publicLegalLinks()} />;
+  return <RegisterForm legalLinks={publicLegalLinks()} planIntent={planIntent} />;
 }

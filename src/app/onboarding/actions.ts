@@ -2,11 +2,14 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 
 import { addProductDomain, createProduct, normalizeDomain, setProductSupportEmail } from "@/lib/products";
 import { createWorkspace as createWorkspaceService, requireWorkspace } from "@/lib/workspace";
 import { getSessionUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
+import { isHostedMode } from "@/lib/hosting";
+import { deserializePlanIntent, PLAN_INTENT_COOKIE, planCheckoutPath } from "@/lib/plan-intent";
 
 export async function createWorkspaceAction(formData: FormData): Promise<void> {
   const user = await getSessionUser();
@@ -15,6 +18,14 @@ export async function createWorkspaceAction(formData: FormData): Promise<void> {
   const result = await createWorkspaceService({ userId: user.id, name });
   if (!result.ok) redirect("/onboarding?error=1");
   revalidatePath("/", "layout");
+  // A visitor who picked a paid plan on the pricing page goes to checkout
+  // now that the Workspace exists; the billing page links back to setup.
+  const cookieStore = await cookies();
+  const intent = deserializePlanIntent(cookieStore.get(PLAN_INTENT_COOKIE)?.value);
+  if (intent) {
+    cookieStore.delete(PLAN_INTENT_COOKIE);
+    if (isHostedMode()) redirect(planCheckoutPath(intent));
+  }
   redirect("/onboarding/product");
 }
 
