@@ -9,7 +9,12 @@ import { createWorkspace as createWorkspaceService, requireWorkspace } from "@/l
 import { getSessionUser } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { isHostedMode } from "@/lib/hosting";
-import { deserializePlanIntent, PLAN_INTENT_COOKIE, planCheckoutPath } from "@/lib/plan-intent";
+import {
+  deserializePlanIntent,
+  parsePlanIntent,
+  PLAN_INTENT_COOKIE,
+  planCheckoutPath,
+} from "@/lib/plan-intent";
 
 export async function createWorkspaceAction(formData: FormData): Promise<void> {
   const user = await getSessionUser();
@@ -21,11 +26,11 @@ export async function createWorkspaceAction(formData: FormData): Promise<void> {
   // A visitor who picked a paid plan on the pricing page goes to checkout
   // now that the Workspace exists; the billing page links back to setup.
   const cookieStore = await cookies();
-  const intent = deserializePlanIntent(cookieStore.get(PLAN_INTENT_COOKIE)?.value);
-  if (intent) {
-    cookieStore.delete(PLAN_INTENT_COOKIE);
-    if (isHostedMode()) redirect(planCheckoutPath(intent));
-  }
+  const intent =
+    deserializePlanIntent(cookieStore.get(PLAN_INTENT_COOKIE)?.value) ??
+    parsePlanIntent(formData.get("plan"), formData.get("interval"));
+  cookieStore.delete(PLAN_INTENT_COOKIE);
+  if (intent && isHostedMode()) redirect(planCheckoutPath(intent));
   redirect("/onboarding/product");
 }
 
