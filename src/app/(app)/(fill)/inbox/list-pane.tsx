@@ -165,8 +165,12 @@ export function ListPane() {
     const advanceTarget = item.id === selectedId ? await nextConversationAfterCloseLoading(item.id) : null;
     const advancePath =
       advanceTarget?.kind === "next" ? `/inbox/${advanceTarget.id}` : advanceTarget?.kind === "last" ? "/inbox" : null;
-    const pending = client.removeItem(item.id, { from: item.status, to: "CLOSED" });
-    if (!pending) return;
+    // The filters may have changed during the await above, swapping in a new
+    // client; only the live one gets the optimistic removal. A stale one still
+    // closes the conversation, and the refresh below corrects the list.
+    const stale = clientRef.current !== client;
+    const pending = stale ? null : client.removeItem(item.id, { from: item.status, to: "CLOSED" });
+    if (!stale && !pending) return;
     // The filters may change while the save is in flight, which swaps in a new
     // client; an orphaned one must never publish its stale-filter rows.
     const syncAfterMove = () => {
@@ -180,12 +184,12 @@ export function ListPane() {
       error = "Couldn't close the conversation. Check your connection and try again.";
     }
     if (error) {
-      if (clientRef.current === client) pending.rollback();
-      else pending.settle();
+      if (clientRef.current === client) pending?.rollback();
+      else pending?.settle();
       toast.error(error);
       return;
     }
-    pending.settle();
+    pending?.settle();
     noteConversationStatus(item.id, "CLOSED");
     toast("Conversation closed", {
       action: {
