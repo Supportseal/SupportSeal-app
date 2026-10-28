@@ -37,6 +37,7 @@ export async function createCheckoutSession(input: {
     "line_items[0][quantity]": "1",
     success_url: input.successUrl,
     cancel_url: input.cancelUrl,
+    allow_promotion_codes: "true",
     "metadata[workspaceId]": input.workspaceId,
     // Subscription events carry subscription metadata, not session metadata:
     // stamp the workspace there so cancels/downgrades find it.
