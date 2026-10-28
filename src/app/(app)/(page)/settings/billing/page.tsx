@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { formatCount, PLANS, planForWorkspace } from "@/config/pricing";
 import { reconcileWorkspacePlan } from "@/lib/billing";
 import { isHostedMode } from "@/lib/hosting";
+import { parsePlanIntent } from "@/lib/plan-intent";
 import { prisma } from "@/lib/prisma";
 import { computeUsage } from "@/lib/usage";
 import { requireWorkspace } from "@/lib/workspace";
@@ -13,8 +14,16 @@ import { UpgradePlans, type UpgradePlanOption } from "./upgrade-plans";
 
 export const metadata = { title: "Billing" };
 
-export default async function BillingPage() {
+export default async function BillingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ plan?: string | string[]; interval?: string | string[] }>;
+}) {
   const ctx = await requireWorkspace("/settings/billing");
+  // Set when the admin arrives from Choose Pro / Choose Business on the
+  // marketing pricing page (via sign-up and Workspace creation).
+  const params = await searchParams;
+  const intent = parsePlanIntent(params.plan, params.interval);
   if (!isHostedMode()) redirect("/settings/team"); // self-hosted: no billing
 
   // Lazy re-sync (issue #202): a missed webhook must not show (or bill) a
@@ -110,7 +119,7 @@ export default async function BillingPage() {
             </p>
           ) : null}
 
-          {planId === "FREE" ? <UpgradePlans options={upgradeOptions} /> : null}
+          {planId === "FREE" ? <UpgradePlans options={upgradeOptions} intent={intent} /> : null}
           {stripeCustomerId && ctx.role === "ADMIN" ? <ManageSubscriptionButton /> : null}
         </CardContent>
       </Card>
