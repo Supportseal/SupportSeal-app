@@ -8,7 +8,7 @@ Status: design direction for the build thread. Grounded in [PRD](../PRD.md),
 - UI kit source: `src/components`, `src/styles/tokens.css`, `src/lib` and the
   `globals.css` token mapping. Paths below are relative to `src/`.
 - Stack it assumes: Next.js App Router, React 19, Tailwind v4 (CSS-first),
-  Radix primitives, Tabler icons, Public Sans, `next-themes`, `cmdk`, `sonner`.
+  Radix primitives, Tabler icons, Plus Jakarta Sans, `next-themes`, `cmdk`, `sonner`.
 - Colour: only through `--vx-*` tokens (`styles/tokens.css`, dark values on
   `.dark`). Product colours are data, never tokens (see "Product identity").
 - Brand: SupportSeal, mint green. `brand.md` defines the palette, the
