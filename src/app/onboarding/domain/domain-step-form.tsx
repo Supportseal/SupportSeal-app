@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { track } from "@/lib/analytics";
 import { domainAllowlistStatus } from "@/lib/domain-allowlist";
 import { saveDomainsAction, skipDomainsAction } from "../actions";
 
@@ -146,7 +147,7 @@ export function DomainStepForm({
           </button>
         </div>
       </form>
-      <form action={skipDomainsAction}>
+      <form action={skipDomainsAction} onSubmit={() => track("onboarding_domains_skipped")}>
         <button type="submit" className="text-sm text-muted hover:text-heading">
           Skip for now, I&apos;ll test on localhost
         </button>

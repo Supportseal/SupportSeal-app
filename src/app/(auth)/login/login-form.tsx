@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Logo } from "@/components/layout/logo";
+import { track } from "@/lib/analytics";
 import { authClient } from "@/lib/auth-client";
 import { brand } from "@/lib/brand";
 import { safeNextPath } from "./next-path";
@@ -27,6 +28,7 @@ export function LoginForm() {
     const password = String(formData.get("password") ?? "");
     const result = await authClient.signIn.email({ email, password });
     if (result.error) {
+      track("login_failed", { method: "email" });
       setError("Invalid email or password.");
       setPending(false);
       return;
@@ -38,6 +40,7 @@ export function LoginForm() {
     // the stale redirect and wedges the router (sign-in appears hung until a
     // manual refresh). A document navigation bypasses that cache and boots
     // the app with the fresh session cookie.
+    track("login_completed", { method: "email" });
     window.location.assign(safeNextPath(searchParams.get("next"), window.location.origin));
   }
 

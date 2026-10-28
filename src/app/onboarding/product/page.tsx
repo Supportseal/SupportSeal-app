@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { requireWorkspace } from "@/lib/workspace";
 import { prisma } from "@/lib/prisma";
+import { TrackOnMount } from "@/components/analytics/track-on-mount";
 import { WizardShell } from "../wizard-shell";
 import { ProductStepForm } from "./product-step-form";
 
@@ -23,6 +24,7 @@ export default async function ProductStepPage({
   return (
     <WizardShell step={2} heading="Add your first Product">
       <ProductStepForm error={error} />
+      {error ? <TrackOnMount event="onboarding_error" data={{ step: "product" }} /> : null}
     </WizardShell>
   );
 }

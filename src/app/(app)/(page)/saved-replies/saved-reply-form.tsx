@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { track } from "@/lib/analytics";
 import { SAVED_REPLY_BODY_MAX, SAVED_REPLY_NAME_MAX } from "@/lib/saved-reply-limits";
 import { createSavedReplyAction, type SavedReplyFormState } from "./actions";
 
@@ -20,7 +21,10 @@ export function SavedReplyForm({ products }: { products: { id: string; name: str
       const next = await createSavedReplyAction(prev, formData);
       // React resets the uncontrolled name/body after the action; the
       // controlled availability must follow, or it leaks into the next reply.
-      if (!next.error) setProductIds([]);
+      if (!next.error) {
+        setProductIds([]);
+        track("saved_reply_created", { from: "settings" });
+      }
       return next;
     },
     initialState,

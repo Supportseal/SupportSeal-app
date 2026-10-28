@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 import type { BillingInterval, PaidPlanId, Plan } from "@/config/pricing";
+import { track } from "@/lib/analytics";
 import type { PlanIntent } from "@/lib/plan-intent";
 
 export type UpgradePlanOption = {
@@ -46,10 +47,12 @@ export function UpgradePlans({
       // offline / connection reset: fall through to the retryable error
     }
     if (data?.url) {
+      track("checkout_started", { plan, interval, from_pricing: intent !== null });
       window.location.assign(data.url);
       return;
     }
     setPending(null);
+    track("checkout_failed", { plan, reason: data?.error ?? "network" });
     setError(
       data?.error === "billing_not_configured"
         ? "Billing is not configured on this installation yet."

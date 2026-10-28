@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { TrackOnMount } from "@/components/analytics/track-on-mount";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatCount, PLANS, planForWorkspace } from "@/config/pricing";
@@ -17,7 +18,11 @@ export const metadata = { title: "Billing" };
 export default async function BillingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ plan?: string | string[]; interval?: string | string[] }>;
+  searchParams: Promise<{
+    plan?: string | string[];
+    interval?: string | string[];
+    checkout?: string | string[];
+  }>;
 }) {
   const ctx = await requireWorkspace("/settings/billing");
   // Set when the admin arrives from Choose Pro / Choose Business on the
@@ -62,6 +67,16 @@ export default async function BillingPage({
 
   return (
     <div className="space-y-6">
+      {/* Stripe returns here with ?checkout=success|cancelled (api/billing/checkout). */}
+      {params.checkout === "success" ? (
+        <TrackOnMount
+          event="checkout_completed"
+          // The webhook can land after the redirect; "pending" until it has.
+          data={{ plan: planId === "FREE" ? "pending" : planId.toLowerCase() }}
+        />
+      ) : params.checkout === "cancelled" ? (
+        <TrackOnMount event="checkout_cancelled" />
+      ) : null}
       <header>
         <h2 className="text-lg font-medium text-heading">Billing</h2>
         <p className="mt-1 text-muted">

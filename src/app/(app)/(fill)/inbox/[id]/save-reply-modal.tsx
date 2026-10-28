@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { track } from "@/lib/analytics";
 import { SAVED_REPLY_BODY_MAX, SAVED_REPLY_NAME_MAX } from "@/lib/saved-reply-limits";
 
 import { saveReplyFromComposerAction } from "../actions";
@@ -57,6 +58,7 @@ export function SaveReplyModal({
         setError(result.error);
         return;
       }
+      track("saved_reply_created", { from: "composer" });
       toast.success("Saved reply created");
       onSaved();
       onOpenChange(false);

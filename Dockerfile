@@ -33,9 +33,15 @@ ARG NEXT_PUBLIC_APP_URL=http://localhost:3000
 ARG NEXT_PUBLIC_APP_NAME=SupportSeal
 # Inlined into client bundles at build time; the runtime env cannot change it.
 ARG NEXT_PUBLIC_MARKETING_URL=https://supportseal.app
+# Hosted tier only (docker-compose.hosted.yml): Umami analytics. Empty by
+# default, so self-hosted images load no tracker (FR-HOST-01).
+ARG NEXT_PUBLIC_UMAMI_SCRIPT_URL=
+ARG NEXT_PUBLIC_UMAMI_WEBSITE_ID=
 ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL \
     NEXT_PUBLIC_APP_NAME=$NEXT_PUBLIC_APP_NAME \
     NEXT_PUBLIC_MARKETING_URL=$NEXT_PUBLIC_MARKETING_URL \
+    NEXT_PUBLIC_UMAMI_SCRIPT_URL=$NEXT_PUBLIC_UMAMI_SCRIPT_URL \
+    NEXT_PUBLIC_UMAMI_WEBSITE_ID=$NEXT_PUBLIC_UMAMI_WEBSITE_ID \
     DATABASE_URL="postgresql://build:build@127.0.0.1:5432/build?sslmode=disable"
 RUN npm run build
 

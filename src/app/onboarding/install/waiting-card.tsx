@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { track } from "@/lib/analytics";
+
 /**
  * Step-4 waiting state: listens for the first conversation of the Product
  * (polling; the inbox stream serves agents, this page is pre-inbox).
@@ -13,6 +15,8 @@ export function WaitingCard({ productId }: { productId: string }) {
 
   useEffect(() => {
     let cancelled = false;
+    let sawEmpty = false;
+    let tracked = false;
     const poll = async () => {
       try {
         const response = await fetch(`/api/inbox?status=ALL&product=${productId}`);
@@ -21,6 +25,13 @@ export function WaitingCard({ productId }: { productId: string }) {
         if (!cancelled && data.items.length > 0) {
           setFirstLine(data.items[0]?.preview ?? null);
           setState("done");
+          // Activation: the widget went live while this page was waiting.
+          if (sawEmpty && !tracked) {
+            tracked = true;
+            track("widget_first_message");
+          }
+        } else if (data.items.length === 0) {
+          sawEmpty = true;
         }
       } catch {
         // retry silently

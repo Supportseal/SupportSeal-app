@@ -23,6 +23,10 @@ services:
         NEXT_PUBLIC_APP_NAME: SupportSeal
         # Client-bundle links to the marketing site are inlined at build time.
         NEXT_PUBLIC_MARKETING_URL: https://supportseal.app
+        # Umami analytics (hosted only; docs/analytics.md). Set both in the
+        # deployment environment; either one empty keeps tracking off.
+        NEXT_PUBLIC_UMAMI_SCRIPT_URL: ${NEXT_PUBLIC_UMAMI_SCRIPT_URL:-}
+        NEXT_PUBLIC_UMAMI_WEBSITE_ID: ${NEXT_PUBLIC_UMAMI_WEBSITE_ID:-}
     environment:
       DATABASE_URL: ${DATABASE_URL}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}

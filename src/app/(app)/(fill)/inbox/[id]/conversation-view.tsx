@@ -14,6 +14,7 @@ import {
   IconPaperclip,
 } from "@tabler/icons-react";
 
+import { track } from "@/lib/analytics";
 import { cn } from "@/lib/cn";
 import { ProductChip } from "@/components/product-identity";
 import { Badge } from "@/components/ui/badge";
@@ -148,6 +149,8 @@ export function ConversationView({
   const [pending, startTransition] = useTransition();
   const [mode, setMode] = useState<"REPLY" | "NOTE">("REPLY");
   const [body, setBody] = useState("");
+  // Whether the draft used a saved reply, for the reply_sent event.
+  const usedSavedReply = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pendingCaret = useRef<number | null>(null);
   const [savedOpen, setSavedOpen] = useState(false);
@@ -222,6 +225,8 @@ export function ConversationView({
   function insertSavedReply(reply: PaletteReply, range: { start: number; end: number }) {
     pendingCaret.current = range.start + reply.body.length;
     setBody((current) => current.slice(0, range.start) + reply.body + current.slice(range.end));
+    usedSavedReply.current = true;
+    track("saved_reply_inserted");
     setSlash(null);
     setSavedOpen(false);
   }
@@ -334,8 +339,10 @@ export function ConversationView({
       form.append("file", file);
       form.append("conversationId", conversation.id);
       let failure: string | null = null;
+      let failedStatus = 0;
       try {
         const response = await fetch("/api/inbox/attachments", { method: "POST", body: form });
+        failedStatus = response.status;
         const data = (await response.json().catch(() => null)) as
           | { attachment?: { id: string; filename: string; size: number }; error?: string }
           | null;
@@ -350,6 +357,7 @@ export function ConversationView({
       if (failure) {
         const message = `${file.name} was not attached: ${failure}`;
         setUploadErrors((current) => [...current, message]);
+        track("attachment_failed", { status: failedStatus });
         toast.error(message);
       }
     }
@@ -366,10 +374,19 @@ export function ConversationView({
       attachmentIds: attachments.map((a) => a.id),
     });
     setSending(false);
+    const kind = mode === "NOTE" ? "note" : "reply";
     if (result.error) {
+      track("reply_failed", { kind });
       toast.error(result.error);
       return;
     }
+    track("reply_sent", {
+      kind,
+      channel: conversation.channel === "CHAT" ? "chat" : "email",
+      saved_reply: usedSavedReply.current,
+      attachments: attachments.length,
+    });
+    usedSavedReply.current = false;
     setBody("");
     setAttachments([]);
     setUploadErrors([]);
@@ -403,6 +420,7 @@ export function ConversationView({
         toast.error(result.error);
         return;
       }
+      track("conversation_status_changed", { status: status.toLowerCase(), from: "thread" });
       await exited;
       noteConversationStatus(conversation.id, status);
       // One shared id: closing top-down replaces the toast instead of

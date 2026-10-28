@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { track } from "@/lib/analytics";
 import { authClient } from "@/lib/auth-client";
 import {
   PLAN_INTENT_COOKIE,
@@ -50,6 +51,15 @@ export function RegisterForm({
 }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [started, setStarted] = useState(false);
+  const plan = planIntent?.plan ?? "none";
+
+  function handleFirstFocus() {
+    // Started vs completed sign-ups shows how many visitors abandon the form.
+    if (started) return;
+    setStarted(true);
+    track("signup_form_started", { plan });
+  }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -61,14 +71,17 @@ export function RegisterForm({
     const password = String(formData.get("password") ?? "");
     const result = await authClient.signUp.email({ name, email, password });
     if (result.error) {
+      const exists = result.error.code === "user-already-exists";
+      track("signup_failed", { method: "email", reason: exists ? "exists" : "other" });
       setError(
-        result.error.code === "user-already-exists"
+        exists
           ? "An account with that email already exists. Sign in instead."
           : "Could not create the account. Check the details and try again.",
       );
       setPending(false);
       return;
     }
+    track("signup_completed", { method: "email", plan });
     if (planIntent) {
       // Picked up when the Workspace is created, which then opens checkout.
       document.cookie = `${PLAN_INTENT_COOKIE}=${serializePlanIntent(planIntent)}; Path=/; Max-Age=${PLAN_INTENT_MAX_AGE_SECONDS}; SameSite=Lax`;
@@ -94,7 +107,7 @@ export function RegisterForm({
             Create your account and Workspace, then finish checkout.
           </p>
         ) : null}
-        <form className="space-y-4" method="post" onSubmit={handleSubmit}>
+        <form className="space-y-4" method="post" onSubmit={handleSubmit} onFocus={handleFirstFocus}>
           <div>
             <Label htmlFor="name">Name</Label>
             <Input id="name" name="name" autoComplete="name" required maxLength={80} />

@@ -9,6 +9,7 @@ import { siteConfig } from "@/config/site";
 import { getMailDomainState } from "@/lib/email/mail-domain";
 import { prisma } from "@/lib/prisma";
 import { requireWorkspace } from "@/lib/workspace";
+import { TrackOnMount } from "@/components/analytics/track-on-mount";
 import { WizardShell } from "../wizard-shell";
 import { saveSupportEmailAction } from "../actions";
 
@@ -62,6 +63,7 @@ export default async function MailStepPage({
                 never sends mail to it, so forwarding it here cannot create a loop.
               </p>
               {error ? <p className="text-sm text-danger">{error}</p> : null}
+              {error ? <TrackOnMount event="onboarding_error" data={{ step: "mail" }} /> : null}
               {saved ? <p className="text-sm text-success">Saved.</p> : null}
             </form>
           </CardContent>

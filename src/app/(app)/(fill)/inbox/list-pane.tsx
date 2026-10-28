@@ -13,6 +13,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 
+import { track } from "@/lib/analytics";
 import { cn } from "@/lib/cn";
 import { ProductMark } from "@/components/product-identity";
 import { Badge } from "@/components/ui/badge";
@@ -194,6 +195,7 @@ export function ListPane() {
       return;
     }
     pending?.settle();
+    track("conversation_status_changed", { status: "closed", from: "list" });
     noteConversationStatus(item.id, "CLOSED");
     toast("Conversation closed", {
       action: {

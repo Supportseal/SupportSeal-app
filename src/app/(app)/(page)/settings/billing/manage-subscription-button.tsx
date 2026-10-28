@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { track } from "@/lib/analytics";
+
 export function ManageSubscriptionButton() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -13,6 +15,7 @@ export function ManageSubscriptionButton() {
       const response = await fetch("/api/billing/portal", { method: "POST" });
       const data = (await response.json().catch(() => null)) as { url?: string } | null;
       if (data?.url) {
+        track("billing_portal_opened");
         window.location.assign(data.url);
         return;
       }

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { requireWorkspace } from "@/lib/workspace";
 import { prisma } from "@/lib/prisma";
+import { TrackOnMount } from "@/components/analytics/track-on-mount";
 import { WizardShell } from "../wizard-shell";
 import { DomainStepForm } from "./domain-step-form";
 
@@ -29,6 +30,7 @@ export default async function DomainStepPage({
         error={error === "invalid" ? "Enter a hostname like app.example.com." : error}
         productId={product.id}
       />
+      {error ? <TrackOnMount event="onboarding_error" data={{ step: "domain" }} /> : null}
       <p className="mt-4 text-xs text-muted">
         Tip: you can also manage domains any time in{" "}
         <Link href={`/settings/products/${product.id}`} className="text-primary hover:underline">
