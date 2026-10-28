@@ -58,14 +58,28 @@ export async function computeUsage(
   planId: PlanId = "free",
   now = new Date(),
 ): Promise<UsageSummary> {
-  const plan = PLANS[planId];
-  const period = periodBounds(now);
-  const [inPeriod, allTime] = await Promise.all([
-    prisma.conversation.count({
-      where: { workspaceId, createdAt: { gte: period.start, lt: period.end } },
-    }),
+  const [grace, allTime] = await Promise.all([
+    computeGraceState(workspaceId, planId, now),
     prisma.conversation.count({ where: { workspaceId } }),
   ]);
+  return { ...grace, conversationsCountedAllTime: allTime };
+}
+
+/**
+ * The period's usage and grace window without the all-time count: one
+ * indexed count, plus one lookup only when over the allowance. Used on hot
+ * paths (src/lib/service-pause.ts).
+ */
+export async function computeGraceState(
+  workspaceId: string,
+  planId: PlanId = "free",
+  now = new Date(),
+): Promise<Omit<UsageSummary, "conversationsCountedAllTime">> {
+  const plan = PLANS[planId];
+  const period = periodBounds(now);
+  const inPeriod = await prisma.conversation.count({
+    where: { workspaceId, createdAt: { gte: period.start, lt: period.end } },
+  });
 
   const limit = plan.monthlyConversations;
   const overLimit = limit !== null && inPeriod > limit;
@@ -95,7 +109,6 @@ export async function computeUsage(
     plan,
     period,
     conversationsOpened: inPeriod,
-    conversationsCountedAllTime: allTime,
     limit,
     overLimit,
     graceStartedAt,

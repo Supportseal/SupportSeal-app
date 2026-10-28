@@ -1,6 +1,7 @@
 import { formatCount, PLANS } from "@/config/pricing";
 import { isHostedMode } from "@/lib/hosting";
 import { prisma } from "@/lib/prisma";
+import { getServicePause } from "@/lib/service-pause";
 import { computeUsage, type UsageSummary } from "@/lib/usage";
 import { billingUrl, emailWorkspaceAdmins, renderNoticeEmail } from "@/lib/usage-notifications";
 
@@ -21,7 +22,8 @@ import { billingUrl, emailWorkspaceAdmins, renderNoticeEmail } from "@/lib/usage
  *
  * Same shape as the auto-close sweep: no background worker, swept lazily
  * from dashboard and intake traffic. Stops on its own once the Workspace
- * pays (it is no longer on Free) or the next month's allowance starts.
+ * pays (it is no longer on Free) or the next month's allowance starts
+ * before grace runs out.
  * Hosted only; self-hosted installs have no allowance (FR-HOST-01).
  */
 
@@ -65,7 +67,7 @@ export function graceReminderEmail(input: {
       paragraphs: [
         `${workspaceName} used ${used} conversations on the ${usage.plan.name} plan this month and its ${usage.plan.graceDays}-day grace period has ended.`,
         `Your chat widget has stopped taking new messages and replies from the inbox are paused. ${nothingLost}`,
-        `Upgrade to resume straight away. Otherwise everything resumes when next month's allowance starts.`,
+        `Upgrade to resume straight away. The pause stays until you do.`,
       ],
       cta: "Upgrade to resume",
       url: billingUrl(),
@@ -79,7 +81,7 @@ export function graceReminderEmail(input: {
     headline: `${daysLeft} ${dayWord} left before chat and replies pause`,
     paragraphs: [
       `${workspaceName} is over its ${usage.plan.name} plan allowance: ${used} conversations used this month.`,
-      `On ${cutoff} your chat widget will stop taking new messages and replies from the inbox will pause, until you upgrade or next month's allowance starts. ${nothingLost}`,
+      `On ${cutoff} your chat widget will stop taking new messages and replies from the inbox will pause until you upgrade. ${nothingLost}`,
       `Upgrading takes a minute and stops these reminders.`,
     ],
     cta: "Upgrade now",
@@ -97,13 +99,19 @@ export async function maybeSendGraceReminder(input: {
   const now = input.now ?? new Date();
   const workspace = await prisma.workspace.findUnique({
     where: { id: input.workspaceId },
-    select: { name: true, plan: true },
+    select: { name: true, plan: true, freePlanPausedAt: true },
   });
   if (!workspace || workspace.plan !== "FREE") return false;
   const usage = await computeUsage(input.workspaceId, "free", now);
   const graceDay = graceDayFor(usage, now);
   // Day 0 is the "over your allowance" email sent at the crossing.
   if (graceDay === null || graceDay < 1) return false;
+  // Already paused (the pause lasts until paid): no countdown mail, and the
+  // paused notice only for a pause that started this period.
+  const paused = workspace.freePlanPausedAt;
+  if (paused && (graceDay < usage.plan.graceDays || paused < usage.period.start)) return false;
+  // Record the pause on the day it starts, even before anyone visits.
+  if (graceDay >= usage.plan.graceDays) await getServicePause(input.workspaceId, now);
 
   const key = {
     workspaceId: input.workspaceId,

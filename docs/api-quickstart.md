@@ -182,8 +182,7 @@ screen. This endpoint predates the Workspace API and has its own, simpler error
 shape (an unknown, rotated or archived-Product key answers `404`). On the
 hosted Free plan, once a Workspace's 7-day grace period after going over its
 monthly allowance ends, the form answers `402` with
-`{"error":"service_paused","message":"…"}` until the Workspace upgrades or the
-next month starts; show the `message` to your visitor. Self-hosted installs
+`{"error":"service_paused","message":"…"}` until the Workspace upgrades; show the `message` to your visitor. Self-hosted installs
 never return it.
 
 ## 5. Embed the widget and check the allowlist

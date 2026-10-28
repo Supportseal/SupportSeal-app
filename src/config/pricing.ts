@@ -12,7 +12,7 @@
  * Grace (decided 2026-10-28, supersedes the 30-day floor for Free): a Free
  * Workspace over its monthly allowance gets FREE_GRACE_DAYS, with a daily
  * reminder email, and then its chat widget and agent replies pause until it
- * upgrades or the next month's allowance starts (hosted only; see
+ * upgrades (hosted only; see
  * src/lib/service-pause.ts). Paid plans keep the soft 30-day window
  * (`USAGE_GRACE_DAYS` may only lengthen it) and are never paused.
  *

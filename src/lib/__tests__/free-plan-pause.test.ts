@@ -5,7 +5,11 @@ import { PLANS } from "@/config/pricing";
 import { addAgentMessage } from "@/lib/conversations";
 import { setTransportForTest } from "@/lib/email/outbound";
 import { sweepGraceReminders } from "@/lib/grace-reminders";
-import { getServicePause, REPLIES_PAUSED_MESSAGE } from "@/lib/service-pause";
+import {
+  clearServicePauseCacheForTest,
+  getServicePause,
+  REPLIES_PAUSED_MESSAGE,
+} from "@/lib/service-pause";
 import { allocateTicketNumber } from "@/lib/ticket";
 import { computeUsage, FREE_GRACE_EFFECTIVE_FROM } from "@/lib/usage";
 import {
@@ -20,7 +24,7 @@ import type { WorkspaceContext } from "@/lib/workspace";
 /**
  * Free plan cutoff (decided 2026-10-28): 7 days of grace with a daily
  * reminder, then the widget, the contact form and agent replies pause on
- * hosted Free Workspaces until they upgrade or the next month starts.
+ * hosted Free Workspaces until they upgrade.
  */
 
 let db: TestDb;
@@ -77,6 +81,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   sent = [];
+  clearServicePauseCacheForTest();
   process.env.HOSTED_MODE = "1";
   PLANS.free.monthlyConversations = LIMIT;
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -142,9 +147,9 @@ describe("Free plan grace window", () => {
     expect(usage.graceExpired).toBe(false);
   });
 
-  it("resets with the next month's allowance", async () => {
-    await goOverLimit();
-    const nextMonth = new Date("2027-04-01T00:00:00Z");
+  it("does not pause when the next month starts before grace runs out", async () => {
+    await goOverLimit(new Date("2027-03-28T09:00:00Z"));
+    const nextMonth = new Date("2027-04-05T00:00:00Z");
     expect((await getServicePause(ctx.workspace.id, nextMonth)).paused).toBe(false);
   });
 });
@@ -154,6 +159,19 @@ describe("pause after grace", () => {
     await goOverLimit();
     expect((await getServicePause(ctx.workspace.id, daysAfter(6))).paused).toBe(false);
     expect((await getServicePause(ctx.workspace.id, daysAfter(7))).paused).toBe(true);
+  });
+
+  it("stays paused into the next month until the Workspace pays", async () => {
+    await goOverLimit();
+    expect((await getServicePause(ctx.workspace.id, daysAfter(8))).paused).toBe(true);
+    const nextMonth = new Date("2027-04-02T00:00:00Z");
+    expect((await getServicePause(ctx.workspace.id, nextMonth)).paused).toBe(true);
+
+    await db.prisma.workspace.update({ where: { id: ctx.workspace.id }, data: { plan: "PRO" } });
+    expect((await getServicePause(ctx.workspace.id, nextMonth)).paused).toBe(false);
+    // Paying cleared the stored pause, so a later downgrade starts fresh.
+    await db.prisma.workspace.update({ where: { id: ctx.workspace.id }, data: { plan: "FREE" } });
+    expect((await getServicePause(ctx.workspace.id, nextMonth)).paused).toBe(false);
   });
 
   it("never pauses self-hosted installs or paid plans", async () => {
@@ -231,6 +249,18 @@ describe("daily grace reminders", () => {
     // No further mail while paused.
     expect(await sweepGraceReminders({ now: daysAfter(9) })).toEqual({ sent: 0 });
     expect(sent).toHaveLength(7);
+  });
+
+  it("sends no countdown to a Workspace that is still paused from an earlier month", async () => {
+    await db.prisma.workspace.update({
+      where: { id: ctx.workspace.id },
+      data: { freePlanPausedAt: new Date("2027-02-20T00:00:00Z") },
+    });
+    await goOverLimit();
+    for (const day of [1, 3, 7]) {
+      expect(await sweepGraceReminders({ now: daysAfter(day + 0.1) })).toEqual({ sent: 0 });
+    }
+    expect(sent).toHaveLength(0);
   });
 
   it("only sends today's reminder after a quiet stretch, never a backlog", async () => {

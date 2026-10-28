@@ -106,7 +106,7 @@ function UsageBanner({ warning }: { warning: UsageWarning }) {
         role="alert"
         className="border-b border-border bg-danger-label px-4 py-2 text-sm text-danger"
       >
-        Chat and replies are paused: this workspace is over its Free plan allowance. Your chat
+        Chat and replies are paused: this workspace went over its Free plan allowance. Your chat
         widget isn&apos;t taking new messages and replies can&apos;t be sent until you upgrade.
         Customer emails are still saved.{" "}
         <a href="/settings/billing" className="font-medium underline">

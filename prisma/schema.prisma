@@ -101,6 +101,10 @@ model Workspace {
   id             String               @id @default(uuid())
   name           String
   plan           WorkspacePlan        @default(FREE)
+  /// Free plan cutoff (src/lib/service-pause.ts): set when the 7-day grace
+  /// runs out, cleared once the Workspace is on a paid plan. Kept across
+  /// months, so the monthly allowance reset does not lift the pause.
+  freePlanPausedAt DateTime?
   /// Stripe customer linked to this Workspace (issue #202): the key billing
   /// state is synced by. Webhooks are triggers only; they fetch the
   /// customer's subscriptions from Stripe and write the current state here.
@@ -387,6 +391,8 @@ model Conversation {
   @@index([contactId])
   @@index([emailMessageId])
   @@index([productId, createdAt])
+  /// Monthly usage metering and the Free plan pause check (src/lib/usage.ts).
+  @@index([workspaceId, createdAt])
   @@map("conversations")
 }
 

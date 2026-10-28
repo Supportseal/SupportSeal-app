@@ -112,7 +112,7 @@ function allowanceEmail(input: {
     : `${input.workspaceName} is nearing its ${input.planName} plan allowance`;
   const graceParagraph = input.pausesAfterGrace
     ? over
-      ? `You have ${input.graceDays} days from the point you went over. After that your chat widget stops taking new messages and replies are paused until you upgrade or next month's allowance starts. We'll email a reminder each day until then.`
+      ? `You have ${input.graceDays} days from the point you went over. After that your chat widget stops taking new messages and replies are paused until you upgrade. We'll email a reminder each day until then.`
       : `If you go over, you have ${input.graceDays} days to upgrade before your chat widget and replies pause.`
     : over
       ? `A ${input.graceDays}-day grace window applies from the point you went over. If this volume continues, a higher-volume plan is the better fit.`
@@ -172,11 +172,13 @@ export async function maybeNotifyAllowance(input: {
 
   const workspace = await prisma.workspace.findUnique({
     where: { id: input.workspaceId },
-    select: { name: true, plan: true },
+    select: { name: true, plan: true, freePlanPausedAt: true },
   });
   if (!workspace) return { status: "skipped" };
 
   const plan = planForWorkspace(workspace.plan);
+  // A paused Free Workspace already knows; no new countdown until it pays.
+  if (plan.pausesAfterGrace && workspace.freePlanPausedAt) return { status: "none" };
   const usage = await computeUsage(input.workspaceId, plan.id, input.now);
   const level = levelFor({
     limit: usage.limit,

@@ -129,7 +129,12 @@ export async function reconcileWorkspacePlan(
       plan: workspace.plan,
       stripeSubscriptionId: workspace.stripeSubscriptionId,
     },
-    data: { plan: billing.plan, stripeSubscriptionId: billing.subscriptionId },
+    data: {
+      plan: billing.plan,
+      stripeSubscriptionId: billing.subscriptionId,
+      // Paying lifts the Free plan pause (src/lib/service-pause.ts).
+      ...(billing.plan !== "FREE" ? { freePlanPausedAt: null } : {}),
+    },
   });
   // A webhook may have synced during the write; never leave a pre-webhook
   // status cached.
@@ -223,7 +228,12 @@ async function syncFromStripe(customerId: string): Promise<string | null> {
     });
     const billing = await fetchBilling(customerId);
     if ("error" in billing) throw new Error(`Stripe subscription sync failed: ${billing.error}`);
-    const state = { plan: billing.plan, stripeSubscriptionId: billing.subscriptionId };
+    const state = {
+      plan: billing.plan,
+      stripeSubscriptionId: billing.subscriptionId,
+      // Paying lifts the Free plan pause (src/lib/service-pause.ts).
+      ...(billing.plan !== "FREE" ? { freePlanPausedAt: null } : {}),
+    };
 
     if (linked) {
       if (matchesRow(billing, linked)) return linked.id;
