@@ -52,12 +52,13 @@ navigated with Back.
    keyboard and screen-reader users. Page size ~30. Do not use the theme
    `Pagination` component here.
 
-### Row anatomy (≈ 76px, three lines)
+### Row anatomy (≈ 88px, three or four lines)
 
 ```
-[ProductMark] Contact label                        2m
-              Last customer-visible message preview…
-              [● Product name] [chat|mail icon] [tag] [tag] +2    [!]
+( JO )ᴾ  Contact label                                   2m
+         Subject (email) — or the preview, up to 2 lines (chat)
+         Preview, one line (email only)
+         [chat|mail] Product name · SS-12 [tag] [tag] +2   [✓]
 ```
 
 - **Contact label**, in priority order: identified name (FR-CTX-01),
@@ -72,9 +73,16 @@ navigated with Back.
   customer, the contact label is `font-semibold text-heading` and a 6px
   primary dot sits before the time. This is derived from message order, not
   per-agent read tracking (not specified in V1).
-- **Product identity**: `ProductMark` (sm) at left **and** `ProductChip`
-  in the meta line, on every row, including when filtered to one Product
-  (FR-PROD-02). Archived Products use the archived chip style.
+- **Avatar**: the contact's initials in a neutral circle ("?" for an
+  anonymous visitor), with the Product's `ProductMark` badged on its corner.
+- **Product identity**: the badged `ProductMark` **and** the Product name in
+  the meta line, on every row, including when filtered to one Product
+  (FR-PROD-02).
+- **Ticket reference** (`SS-12`) follows the Product name.
+- **Status**: the tabs already say it, so rows show a status badge only in
+  search results, which mix statuses.
+- **Close** `[✓]`: bottom-right icon button. Revealed on hover/focus where
+  the pointer can hover; always visible on touch screens.
 - **Channel**: Tabler `IconMessageCircle` (chat) / `IconMail` (email) with
   `aria-label`. A Conversation that has used both shows both icons
   (FR-INBOX-03).
@@ -130,7 +138,7 @@ navigated with Back.
 | Errors | `components/ui/alert.tsx` | Inline list error |
 | Spinner | `components/ui/spinner.tsx` | "Load more" busy state only |
 | Toast | `sonner` | Undo after status change |
-| Contact avatar | `components/ui/avatar.tsx` | Not in rows (ProductMark takes that slot); used in conversation header |
+| Contact avatar | Initials circle in `list-pane.tsx` | Rows badge the `ProductMark` on it |
 | Row skeleton | new `Skeleton` | Three bars matching row anatomy |
 | Empty states | new `EmptyState` | See table below |
 | Context sheet | new `Sheet` | Right-side panel at `lg` |

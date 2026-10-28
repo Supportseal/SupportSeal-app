@@ -171,6 +171,26 @@ export function ConversationView({
     if (el) el.scrollTop = el.scrollHeight;
   }, [lastLength]);
 
+  // Keep the newest message in view when the thread pane shrinks (a phone
+  // keyboard opening, the composer growing), unless the agent scrolled up.
+  useEffect(() => {
+    const el = threadRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    let atBottom = true;
+    const onScroll = () => {
+      atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+    };
+    const observer = new ResizeObserver(() => {
+      if (atBottom) el.scrollTop = el.scrollHeight;
+    });
+    el.addEventListener("scroll", onScroll, { passive: true });
+    observer.observe(el);
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      observer.disconnect();
+    };
+  }, []);
+
   const contactLabel = useMemo(() => visitorLabel(conversation.contact), [conversation.contact]);
 
   // Saved replies (FR-INBOX-02): `/` at the start of a line and the Saved
@@ -419,16 +439,24 @@ export function ConversationView({
           >
             <IconArrowLeft className="size-5" />
           </Button>
-          <span className="min-w-0 truncate font-medium text-heading">{contactLabel}</span>
-          <span className="shrink-0 text-sm tabular-nums text-muted" data-testid="ticket-ref">
-            {formatTicketRef(conversation.ticketNumber)}
-          </span>
+          {/* Phones stack the reference under the name so neither is cut to "Priya Na…". */}
+          <div className="flex min-w-0 flex-col sm:flex-row sm:items-center sm:gap-2">
+            <span className="min-w-0 truncate text-sm font-medium leading-tight text-heading sm:text-base">
+              {contactLabel}
+            </span>
+            <span className="flex min-w-0 items-center gap-1 text-xs text-muted sm:text-sm">
+              <span className="shrink-0 tabular-nums" data-testid="ticket-ref">
+                {formatTicketRef(conversation.ticketNumber)}
+              </span>
+              <span className="truncate sm:hidden">· {conversation.product.name}</span>
+            </span>
+          </div>
           <ProductChip
             name={conversation.product.name}
             color={conversation.product.primaryColor}
             className="hidden sm:inline-flex"
           />
-          <div className="ms-auto flex items-center gap-1.5">
+          <div className="ms-auto flex shrink-0 items-center gap-1">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="text" color="secondary" size="sm">
@@ -696,14 +724,16 @@ export function ConversationView({
                 ? savedReplyOptionId(slashId, slashNav.results[slashNav.active])
                 : undefined
             }
-            rows={3}
+            rows={2}
             placeholder={
               mode === "NOTE"
                 ? "Add an internal note (not sent to the customer)"
                 : "Write a reply… (/ for saved replies, Ctrl+Enter to send)"
             }
             aria-label={mode === "NOTE" ? "Internal note" : `Reply to ${contactLabel}`}
-            className="w-full resize-none rounded-md border border-border-strong bg-surface p-2.5 text-sm text-heading placeholder:text-muted focus-visible:outline-2 focus-visible:outline-primary"
+            // Grows with the text (where supported) but never past a third of the
+            // screen, so the thread stays readable with a phone keyboard open.
+            className="max-h-[33dvh] min-h-16 w-full resize-none rounded-md border border-border-strong bg-surface p-2.5 text-sm text-heading [field-sizing:content] placeholder:text-muted focus-visible:outline-2 focus-visible:outline-primary sm:min-h-[5.5rem]"
           />
           </div>
           <div className="mt-2 flex items-center gap-2">
