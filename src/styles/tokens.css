@@ -5,6 +5,11 @@
 :root {
   --vx-brand-mint: #3ddc97;
   --vx-brand-ink: #053b2a;
+  /* Marketing extensions: fixed brand tones used on ink slabs and bands
+     (same value in both themes; mint-100 is 10.9:1 on ink). */
+  --vx-mint-100: #d3f6e6;
+  --vx-ink-soft: #0a4a35;
+  --vx-ink-rule: rgba(211, 246, 230, 0.14);
   /* Wordmark (brand.md, "Logo contrast"): both tones >= 4.5:1 on the surface. */
   --vx-logo-lead: #053b2a;
   --vx-logo-accent: #08765a;
