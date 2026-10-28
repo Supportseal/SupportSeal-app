@@ -11,7 +11,7 @@ const SIDE_CLASSES = {
   right:
     "inset-y-0 right-0 h-full w-[22rem] max-w-full border-l data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right",
   bottom:
-    "inset-x-0 bottom-0 max-h-[85dvh] rounded-t-lg border-t data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom",
+    "inset-x-0 bottom-0 max-h-[85dvh] overflow-y-auto rounded-t-lg pb-[env(safe-area-inset-bottom)] border-t data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom",
 } as const;
 
 /** Side/bottom sheet built on Radix Dialog (focus trap, Esc, scroll lock). */
