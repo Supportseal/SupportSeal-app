@@ -37,6 +37,42 @@ test.describe("plan picked on the pricing page", () => {
     await expect(page.getByRole("button", { name: "Continue to Pro checkout" })).toBeVisible();
   });
 
+  test("a signed-in visitor with no Workspace keeps the plan through onboarding", async ({ page }) => {
+    const account = uniqueAccount();
+    // Sign up with no plan, so there is no sign-up cookie, and stop before the Workspace.
+    await page.goto("/register");
+    await page.locator("#name").fill(account.name);
+    await page.locator("#email").fill(account.email);
+    await page.locator("#password").fill(account.password);
+    await page.getByRole("button", { name: "Sign up" }).click();
+    await expect(page).toHaveURL(/\/onboarding/u);
+
+    await page.goto("/register?plan=pro&interval=year");
+    await expect(page).toHaveURL(/\/onboarding\?plan=pro&interval=year/u);
+    await page.locator("#name").fill(account.workspace);
+    await page.getByRole("button", { name: "Continue" }).click();
+    await expect(page).toHaveURL(/\/settings\/billing\?plan=pro&interval=year/u);
+    await expect(page.getByRole("button", { name: "Continue to Pro checkout" })).toBeVisible();
+  });
+
+  test("a newer pick beats the sign-up cookie from an abandoned onboarding", async ({ page }) => {
+    const account = uniqueAccount();
+    await page.goto("/register?plan=pro&interval=month");
+    await page.locator("#name").fill(account.name);
+    await page.locator("#email").fill(account.email);
+    await page.locator("#password").fill(account.password);
+    await page.getByRole("button", { name: "Sign up" }).click();
+    await expect(page).toHaveURL(/\/onboarding/u);
+
+    // Back later, signed in, picking another plan: the sign-up cookie is still set.
+    await page.goto("/register?plan=business&interval=year");
+    await expect(page).toHaveURL(/\/onboarding\?plan=business&interval=year/u);
+    await page.locator("#name").fill(account.workspace);
+    await page.getByRole("button", { name: "Continue" }).click();
+    await expect(page).toHaveURL(/\/settings\/billing\?plan=business&interval=year/u);
+    await expect(page.getByRole("button", { name: "Continue to Business checkout" })).toBeVisible();
+  });
+
   test("ignores an unknown plan", async ({ page }) => {
     await page.goto("/register?plan=enterprise");
     await expect(page.getByText("Create your account")).toBeVisible();
