@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { publicLegalLinks } from "@/config/legal";
+import { isGitHubSignInEnabled } from "@/lib/github-auth";
 import { isHostedMode } from "@/lib/hosting";
 import { parsePlanIntent, planCheckoutPath, planOnboardingPath } from "@/lib/plan-intent";
 import { prisma } from "@/lib/prisma";
@@ -14,7 +15,11 @@ export const dynamic = "force-dynamic";
 export default async function RegisterPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ plan?: string | string[]; interval?: string | string[] }>;
+  searchParams?: Promise<{
+    plan?: string | string[];
+    interval?: string | string[];
+    error?: string | string[];
+  }>;
 } = {}) {
   // Choose Pro / Choose Business on the marketing pricing page link here
   // with the plan; it only means something where billing exists.
@@ -31,6 +36,9 @@ export default async function RegisterPage({
     const membership = await getPrimaryMembership(user.id);
     redirect(membership ? planCheckoutPath(planIntent) : planOnboardingPath(planIntent));
   }
+  const githubEnabled = isGitHubSignInEnabled();
+  const githubError =
+    githubEnabled && typeof params.error === "string" ? params.error : null;
   // Self-hosted first run (FR-HOST-01): once the single Workspace exists,
   // registration closes — additional users arrive by invitation.
   if (!isHostedMode()) {
@@ -46,7 +54,14 @@ export default async function RegisterPage({
         </div>
       );
     }
-    return <RegisterForm />;
+    return <RegisterForm githubEnabled={githubEnabled} githubError={githubError} />;
   }
-  return <RegisterForm legalLinks={publicLegalLinks()} planIntent={planIntent} />;
+  return (
+    <RegisterForm
+      legalLinks={publicLegalLinks()}
+      planIntent={planIntent}
+      githubEnabled={githubEnabled}
+      githubError={githubError}
+    />
+  );
 }

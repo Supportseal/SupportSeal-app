@@ -54,6 +54,7 @@ Copy `.env.example` and fill in at least the required values:
 | `OUTBOUND_EMAIL_LOCAL` | no | Local part of the managed sender (default `no-reply`). |
 | `CRON_SECRET` | no | Enables `POST /api/internal/escalations/sweep` (Bearer auth) so a scheduler can trigger the unanswered-request alert sweep every minute. Alerts also fire from in-app activity and timers without it; see [design/escalation.md](design/escalation.md). |
 | `HOSTED_MODE` | no | Leave unset for self-hosting. `1` enables multi-Workspace SaaS modules (billing). Never set this on a self-hosted install. |
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | no | Turn on "Sign in with GitHub". Both must be set; see [GitHub sign-in](#github-sign-in-optional). |
 | `TRUSTED_PROXY_HEADER` | no | Header your proxy sets with the real client IP (e.g. `cf-connecting-ip`), used by the per-IP rate limits instead of `X-Forwarded-For`. See [HTTPS / reverse proxy](#https--reverse-proxy) for the precondition. |
 
 Stripe variables are hosted-mode only and are never needed here. For
@@ -62,6 +63,32 @@ and one price id per paid plan and billing interval:
 `STRIPE_PRO_MONTHLY_PRICE_ID`, `STRIPE_PRO_ANNUAL_PRICE_ID`,
 `STRIPE_BUSINESS_MONTHLY_PRICE_ID` and `STRIPE_BUSINESS_ANNUAL_PRICE_ID`.
 `STRIPE_PRO_PRICE_ID` is retired.
+
+## GitHub sign-in (optional)
+
+Sign-in and sign-up with GitHub appear only when both `GITHUB_CLIENT_ID` and
+`GITHUB_CLIENT_SECRET` are set. Without them the app uses email and password
+only.
+
+1. On GitHub open **Settings → Developer settings → OAuth Apps → New OAuth
+   App** (<https://github.com/settings/applications/new>, or your
+   organisation's settings).
+2. **Homepage URL**: your `NEXT_PUBLIC_APP_URL`, e.g. `https://support.example.com`.
+3. **Authorization callback URL**:
+   `https://support.example.com/api/auth/callback/github` (your
+   `NEXT_PUBLIC_APP_URL` followed by `/api/auth/callback/github`).
+4. Register the app, copy the **Client ID**, then **Generate a new client
+   secret**. Put both into `.env` and restart the app.
+
+How accounts are matched:
+
+- A new account is created only from **Sign up with GitHub** on the register
+  page, and only when the primary email on GitHub is verified. On a
+  self-hosted install that already has its Workspace, GitHub sign-up is
+  closed like email sign-up; teammates still join by invitation.
+- An existing email-and-password account is never taken over silently. When
+  someone signs in with GitHub using the same email, they are asked to sign
+  in with their password once; GitHub is then connected to that account.
 
 ## Email setup
 

@@ -1,4 +1,5 @@
 import { betterAuth } from "better-auth";
+import { APIError } from "better-auth/api";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 
 import {
@@ -8,6 +9,12 @@ import {
 import { brand } from "@/lib/brand";
 import { appConfig } from "@/lib/config";
 import { sendSystemEmail } from "@/lib/email/outbound";
+import {
+  GITHUB_EMAIL_NOT_VERIFIED,
+  GITHUB_REGISTRATION_CLOSED,
+  githubOAuthCredentials,
+} from "@/lib/github-auth";
+import { isHostedMode } from "@/lib/hosting";
 import { resolvePrisma } from "@/lib/prisma";
 
 function safeHost(url: string): string | undefined {
@@ -18,7 +25,32 @@ function safeHost(url: string): string | undefined {
   }
 }
 
+/**
+ * Guards accounts created by an OAuth callback (GitHub sign-up). Email
+ * sign-up is gated in the auth route handler instead.
+ */
+async function beforeOAuthUserCreate(user: { emailVerified?: boolean }): Promise<void> {
+  // An unverified GitHub email could belong to someone else: creating the
+  // account would let its real owner later reset the password while the
+  // GitHub login stays attached (account pre-hijacking).
+  if (!user.emailVerified) {
+    throw new APIError("FORBIDDEN", {
+      code: GITHUB_EMAIL_NOT_VERIFIED,
+      message: "Verify your primary email address on GitHub first.",
+    });
+  }
+  // Self-hosted (FR-HOST-01): once the single Workspace exists, public
+  // registration is closed — GitHub must not open a side door.
+  if (!isHostedMode() && (await resolvePrisma().workspace.count()) > 0) {
+    throw new APIError("FORBIDDEN", {
+      code: GITHUB_REGISTRATION_CLOSED,
+      message: "Registration is closed on this installation.",
+    });
+  }
+}
+
 function createAuth() {
+  const github = githubOAuthCredentials();
   return betterAuth({
     // The signing secret comes from BETTER_AUTH_SECRET (read automatically);
     // production refuses to boot without it — see getAuth().
@@ -93,6 +125,25 @@ function createAuth() {
       // A completed reset invalidates existing sessions (containment when the
       // reset follows an account compromise).
       revokeSessionsOnPasswordReset: true,
+    },
+    // Optional GitHub sign-in (see github-auth.ts). Implicit sign-up is off:
+    // only the register page (which shows the legal notice) passes
+    // requestSignUp, so "Sign in with GitHub" never creates an account.
+    // Account linking keeps better-auth's defaults: an existing account is
+    // linked automatically only when BOTH the GitHub email and the local
+    // email are verified; otherwise the visitor signs in with the password
+    // first and links explicitly (linkSocial), which proves ownership.
+    socialProviders: github ? { github: { ...github, disableImplicitSignUp: true } } : {},
+    // Pinned explicitly so a library default change cannot loosen linking.
+    account: { accountLinking: { enabled: true, requireLocalEmailVerified: true } },
+    databaseHooks: {
+      user: {
+        create: {
+          before: async (user, context) => {
+            if (context?.path?.startsWith("/callback/")) await beforeOAuthUserCreate(user);
+          },
+        },
+      },
     },
     session: {
       expiresIn: AGENT_SESSION_EXPIRES_IN_SECONDS,
