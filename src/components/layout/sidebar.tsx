@@ -110,8 +110,9 @@ function ProductList({
       <ul
         className={cn(
           "space-y-0.5 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]",
-          // Floor only for lists tall enough to be squeezed; a short or empty list keeps its natural height.
-          visible.length > 3 && "min-h-24",
+          // Long lists may shrink to a 96px scroll window; short ones keep their content height as the
+          // floor (never squeezed to zero on a short viewport, no dead space; an empty list collapses).
+          visible.length > 3 ? "min-h-24" : "min-h-fit",
         )}
       >
         {visible.map((product) => (
