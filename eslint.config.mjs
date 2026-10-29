@@ -10,7 +10,7 @@ const eslintConfig = [
   ...nextCoreWebVitals,
   ...nextTypeScript,
   {
-    files: ["src/app/api/v1/**/*.ts", "src/lib/api/**/*.ts"],
+    files: ["src/app/api/v1/**/*.{ts,tsx}", "src/lib/api/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-imports": [
         "error",
@@ -19,12 +19,14 @@ const eslintConfig = [
             { name: "@/lib/prisma", message: SCOPE_FIX },
             { name: "@prisma/client", message: SCOPE_FIX },
           ],
-          patterns: [{ group: ["@/generated/prisma", "@/generated/prisma/*", "@prisma/client/*"], message: SCOPE_FIX }],
+          patterns: [{ group: ["@/generated/prisma", "@/generated/prisma/*", "@prisma/client/*", "**/prisma", "**/generated/prisma", "**/generated/prisma/*"], message: SCOPE_FIX }],
         },
       ],
       "no-restricted-syntax": [
         "error",
         ...RAW_SQL.map((name) => ({ selector: `MemberExpression[property.name="${name}"]`, message: `${name} bypasses the Workspace scope. ${SCOPE_FIX}` })),
+        { selector: "ImportExpression", message: `Use a static import so the scope gate can check it. ${SCOPE_FIX}` },
+        { selector: "ExportAllDeclaration", message: "Export each handler as `export const GET = v1Route(...)` so it runs behind auth and rate limits." },
       ],
     },
   },

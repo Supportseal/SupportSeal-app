@@ -151,6 +151,8 @@ describe("numbers quoted in the docs", () => {
   };
   const facts = [
     { name: "writes per minute per token", re: /(\d+) writes?\b/gu, actual: WIDGET_RATE_LIMITS.apiTokenWrite, source: "WIDGET_RATE_LIMITS.apiTokenWrite" },
+    { name: "reads per minute per token", re: /(\d+) reads?\b/gu, actual: WIDGET_RATE_LIMITS.apiTokenRead, source: "WIDGET_RATE_LIMITS.apiTokenRead" },
+    { name: "/api/v1 requests per minute per IP", re: /(\d+) `\/api\/v1` requests\b/gu, actual: WIDGET_RATE_LIMITS.apiIp, source: "WIDGET_RATE_LIMITS.apiIp" },
     { name: "failed token attempts per minute per IP", re: /(\d+) (?:failed|failures)\b/gu, actual: WIDGET_RATE_LIMITS.apiTokenFailure, source: "WIDGET_RATE_LIMITS.apiTokenFailure" },
     { name: "domains per list", re: /(\d+) (?:domains per list|domains\b|entries)/gu, actual: MAX_DOMAINS_PER_LIST, source: "MAX_DOMAINS_PER_LIST" },
     { name: "Products per Workspace through the API", re: /(\d+) Products\b/gu, actual: MAX_API_PRODUCTS_PER_WORKSPACE, source: "MAX_API_PRODUCTS_PER_WORKSPACE" },

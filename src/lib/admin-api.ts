@@ -91,7 +91,7 @@ export async function authorizeBearer(
  */
 export async function authorizeAdminApi(
   request: Request,
-  capability: ApiScope,
+  capability: "products:read" | "products:write",
 ): Promise<{ ok: true; ctx: AdminApiContext } | { ok: false; response: NextResponse }> {
   const authorization = request.headers.get("authorization");
   if (authorization !== null) {

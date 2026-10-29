@@ -12,7 +12,12 @@ import { describe, expect, it } from "vitest";
 
 const ROOTS = ["src/app/api/v1", "src/lib/api"];
 const FORBIDDEN = [
-  { pattern: /from\s+["'](@\/lib\/prisma|@\/generated\/prisma[^"']*|@prisma\/client[^"']*)["']/u, what: "a Prisma import" },
+  {
+    pattern:
+      /\b(?:from|import)\s*\(?\s*["'](?:@\/lib\/prisma|@prisma\/client(?:\/[^"']*)?|@\/generated\/prisma(?:\/[^"']*)?|(?:\.\.?\/)+(?:[^"']*\/)?(?:prisma|generated\/prisma(?:\/[^"']*)?))["']/u,
+    what: "a Prisma import",
+  },
+  { pattern: /\bimport\s*\(/u, what: "a dynamic import" },
   { pattern: /\$(queryRaw|executeRaw|queryRawUnsafe|executeRawUnsafe)\b/u, what: "raw SQL" },
 ];
 
@@ -42,7 +47,8 @@ describe("Workspace API data access", () => {
       .flatMap((file) => {
         const source = readFileSync(file, "utf8");
         const methods = [...source.matchAll(/export\s+(?:async\s+)?(?:const|function|let|var)\s+(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b(.*)/gu)];
-        const reexports = /export\s*\{[^}]*\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b/u.test(source);
+        const reexports =
+          /export\s*\{[^}]*\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b/u.test(source) || /export\s*\*/u.test(source);
         return [
           ...methods.filter(([, , rest]) => !/^\s*=\s*v1Route\(/u.test(rest)).map(([, method]) => `${file}: ${method}`),
           ...(reexports ? [`${file}: re-exported handler`] : []),
@@ -57,14 +63,21 @@ describe("Workspace API data access", () => {
       [
         'import { prisma } from "@/lib/prisma";',
         'import type { Prisma } from "@/generated/prisma/client";',
+        'import { prisma as relative } from "../../../../lib/prisma";',
+        'export * from "./impl";',
         "export type Probe = Prisma.ModelName;",
         "export const probe = () => prisma.$queryRawUnsafe('select 1');",
+        "export const lazy = () => import('@/lib/prisma').then(() => relative);",
       ].join("\n"),
       { filePath: path.join(process.cwd(), "src/app/api/v1/probe/route.ts") },
     );
     expect(result.messages.map((message) => message.ruleId).sort()).toEqual([
       "no-restricted-imports",
       "no-restricted-imports",
+      "no-restricted-imports",
+      "no-restricted-imports",
+      "no-restricted-syntax",
+      "no-restricted-syntax",
       "no-restricted-syntax",
     ]);
   }, 60_000);
