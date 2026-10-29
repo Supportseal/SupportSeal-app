@@ -25,6 +25,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { authClient } from "@/lib/auth-client";
+import { resetSupportWidget } from "@/components/support/support-widget-script";
 import {
   useNotificationPreference,
   useNotificationSupport,
@@ -62,6 +63,8 @@ export function Header({
   } = useNotificationSupport();
 
   async function signOut() {
+    // Queued first: the next person on this device starts a fresh support chat.
+    resetSupportWidget();
     await authClient.signOut();
     router.push("/login");
   }
