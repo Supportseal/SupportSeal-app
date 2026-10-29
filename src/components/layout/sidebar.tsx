@@ -107,7 +107,13 @@ function ProductList({
           />
         </div>
       ) : null}
-      <ul className="min-h-24 space-y-0.5 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]">
+      <ul
+        className={cn(
+          "space-y-0.5 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]",
+          // Floor only for lists tall enough to be squeezed; a short or empty list keeps its natural height.
+          visible.length > 3 && "min-h-24",
+        )}
+      >
         {visible.map((product) => (
           <li key={product.id}>
             <Link
