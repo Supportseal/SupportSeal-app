@@ -63,17 +63,22 @@ not RFC 8628's bare `{ "error": "..." }` body, so a client has one error parser.
 ### A. Setup secret: headless first run (self-hosted only)
 
 1. The operator (or the agent that writes the compose `.env`) sets
-   `SETUP_TOKEN` to a random value of at least 32 characters. Shorter values
+   `SETUP_TOKEN` to a random value of at least 32 characters and
+   `SETUP_ADMIN_EMAIL` to the human Admin's address. Shorter values
    make the server refuse to enable the endpoint and log why.
 2. `POST /api/v1/bootstrap` with `Authorization: Bearer <setup secret>` and
-   `{ workspaceName, adminEmail }` creates the single Workspace and returns
+   `{ workspaceName }` creates the single Workspace and returns
    `{ workspaceId, token, expiresAt, scopes }`. A separate high-entropy
    one-time `claimCode` (hashed at rest, not the setup secret) lets a human
    become the Admin (AB3). It is **not** in the response: the agent holds the
    token, and giving it the claim code too would let it register the first
-   Admin itself. The code goes to `adminEmail` through the outbound email
-   adapter, and `/register` accepts it only for that same address, so the
-   human-only proof is control of the mailbox.
+   Admin itself. The Admin address is operator configuration
+   (`SETUP_ADMIN_EMAIL`), never request input, because a caller-chosen address
+   would only prove control of the agent's mailbox. The code goes to that
+   address through the outbound email adapter, and `/register` accepts it only
+   for that same address, so the human-only proof is control of the operator's
+   mailbox. If the agent wrote the whole `.env` it also chose that address;
+   that is the trust the operator already extended by letting it deploy.
 3. It works exactly once: the check "no Workspace exists", the Workspace
    create, the token insert and the claim-code insert run in the **same**
    advisory-lock transaction `createWorkspace` already uses, so there is never
@@ -81,11 +86,13 @@ not RFC 8628's bare `{ "error": "..." }` body, so a client has one error parser.
    first Workspace exists the route answers like an unknown route (`404`), with
    or without the secret, so it cannot be probed for state.
    *Lost response.* The server cannot tell whether the client received the one
-   response. Recovery is operator-owned and needs no second unauthenticated
-   path: the operator recreates an empty database (no in-app
-   reset exists today) and calls again (the lost response also lost the
-   `claimCode`, so the Workspace is unclaimable). A bounded re-issue window authenticated by the
-   same secret is the alternative (AB6); the recommendation is not to build it.
+   response, and the token is not recoverable. The `claimCode` is unaffected
+   (it was emailed), so the human claims the Admin at `/register` and mints a
+   fresh dashboard token; the orphaned bootstrap token expires on its own or is
+   revoked there. Only when no outbound email is configured (the AB3 log
+   alternative) does the operator have to recreate the still-empty database. A
+   bounded re-issue window authenticated by the same secret is the alternative
+   (AB6); the recommendation is not to build it.
 4. The secret is compared as `timingSafeEqual` of SHA-256 digests. It is never
    logged, echoed, or stored in the database. Failed attempts count against the
    existing per-IP failed-auth bucket and a tighter dedicated one.
@@ -175,7 +182,7 @@ message) and carry no state-dependent header:
   (a failure after the Workspace insert leaves neither), the claim code is
   never in any bootstrap response or log, the bootstrap caller alone cannot
   complete the Admin claim, registering with a different email than
-  `adminEmail` is refused, the claim code is single-use, expires, and exactly one concurrent claim wins; an expired,
+  `SETUP_ADMIN_EMAIL` is refused, a request body naming an email is ignored, the claim code is single-use, expires, and exactly one concurrent claim wins; an expired,
   unclaimed `claimCode` leaves the Workspace unclaimable and the documented
   recovery applies, plaintext HTTP refused
   without processing the credential.
