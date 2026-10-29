@@ -247,14 +247,13 @@ describe("scopedDb", () => {
     ).rejects.toEqual(new NotInScopeError("Conversation"));
   });
 
-  it("rejects nested relation writes, raw SQL, global models and Workspace create or delete", async () => {
+  it("rejects nested relation writes, raw SQL, client escapes, global models and Workspace create or delete", async () => {
     await expect(
       asBeta.tag.create({ data: { name: "n", workspace: { connect: { id: alpha.workspaceId } } } as never }),
     ).rejects.toBeInstanceOf(ScopeViolationError);
-    const raw = asBeta as unknown as { $queryRawUnsafe(sql: string): Promise<unknown> };
-    await expect(raw.$queryRawUnsafe("select 1")).rejects.toBeInstanceOf(ScopeViolationError);
-    const users = (asBeta as unknown as Record<string, Delegate>).user;
-    await expect(users.findMany()).rejects.toBeInstanceOf(ScopeViolationError);
+    for (const denied of ["$extends", "$connect", "$disconnect", "$on", "$queryRaw", "$executeRawUnsafe", "user", "account", "session"]) {
+      expect(() => (asBeta as unknown as Record<string, unknown>)[denied], denied).toThrow(ScopeViolationError);
+    }
     await expect(asBeta.workspace.create({ data: { name: "x" } } as never)).rejects.toBeInstanceOf(ScopeViolationError);
     await expect(asBeta.workspace.deleteMany()).rejects.toBeInstanceOf(ScopeViolationError);
     expect((await asBeta.workspace.findMany()).map((w) => w.id)).toEqual([beta.workspaceId]);
@@ -319,7 +318,9 @@ describe("scopedDb", () => {
     await expect(asBeta.$transaction(async () => capturedTransaction(async () => 1))).rejects.toBeInstanceOf(
       ScopeViolationError,
     );
-    expect(await db.prisma.tag.count({ where: { name: "captured" } })).toBe(0);
+    const pending = asBeta.tag.create({ data: { name: "pending", workspaceId: beta.workspaceId } });
+    await expect(asBeta.$transaction(async () => await pending)).rejects.toBeInstanceOf(ScopeViolationError);
+    expect(await db.prisma.tag.count({ where: { name: { in: ["captured", "pending"] } } })).toBe(0);
     expect(await db.prisma.message.count({ where: { body: "cross-scope" } })).toBe(0);
 
     const batch = asBeta.$transaction as unknown as (ops: unknown[]) => Promise<unknown>;

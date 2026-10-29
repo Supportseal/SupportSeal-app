@@ -303,7 +303,36 @@ function assertOutsideTx(): void {
   if (activeTx.getStore()) throw new ScopeViolationError("Inside a transaction, use the client its callback receives.");
 }
 
-/** Checks at call time too, so a delegate taken before a transaction cannot run outside it from within. */
+const DENIED_AT_RUNTIME: ReadonlySet<string> = new Set([
+  "$queryRaw",
+  "$executeRaw",
+  "$queryRawUnsafe",
+  "$executeRawUnsafe",
+  "$extends",
+  "$connect",
+  "$disconnect",
+  "$on",
+  ...Object.entries(TENANT_MODELS)
+    .filter(([, scoping]) => scoping.kind === "global")
+    .map(([model]) => model[0].toLowerCase() + model.slice(1)),
+]);
+
+/** Prisma queries run when awaited, so a query built before a transaction is checked again when it starts. */
+function guardPending<T>(pending: T): T {
+  if (typeof (pending as { then?: unknown } | null)?.then !== "function") return pending;
+  return new Proxy(pending as object, {
+    get(target, prop) {
+      const value: unknown = Reflect.get(target, prop, target);
+      if (typeof value !== "function") return value;
+      return (...args: unknown[]) => {
+        if (prop === "then" || prop === "catch" || prop === "finally") assertOutsideTx();
+        return (value as (...a: unknown[]) => unknown).apply(target, args);
+      };
+    },
+  }) as T;
+}
+
+/** Checks at call and run time, so a delegate or query taken before a transaction cannot run outside it from within. */
 function guardDelegate<T extends object>(delegate: T): T {
   return new Proxy(delegate, {
     get(target, prop, receiver) {
@@ -311,7 +340,7 @@ function guardDelegate<T extends object>(delegate: T): T {
       if (typeof value !== "function") return value;
       return (...args: unknown[]) => {
         assertOutsideTx();
-        return (value as (...a: unknown[]) => unknown).apply(target, args);
+        return guardPending((value as (...a: unknown[]) => unknown).apply(target, args));
       };
     },
   });
@@ -323,6 +352,9 @@ export function scopedDb(workspaceId: string): ScopedDb {
   return new Proxy(scoped as unknown as ScopedDb, {
     get(target, prop, receiver) {
       if (prop === "workspaceId") return workspaceId;
+      if (typeof prop === "string" && DENIED_AT_RUNTIME.has(prop)) {
+        throw new ScopeViolationError(`${prop} is not available on a scoped client.`);
+      }
       assertOutsideTx();
       if (prop === "$transaction") {
         return <R>(fn: (tx: ScopedTx) => Promise<R>, options?: { maxWait?: number; timeout?: number }) => {
