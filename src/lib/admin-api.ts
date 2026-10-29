@@ -57,6 +57,14 @@ export async function authorizeBearer(
     recordApiTokenAuthFailure(request);
     return { ok: false, response: denyToken() };
   }
+  if (bucket !== null && !rateLimitApiToken(bucket, result.tokenId)) {
+    return {
+      ok: false,
+      response: apiError("rate_limited", `Too many ${BUCKET_NOUN[bucket]} for this API token. Retry later.`, {
+        headers: RETRY_AFTER,
+      }),
+    };
+  }
   if (scope !== null && !scopesGrant(result.scopes, scope)) {
     return {
       ok: false,
@@ -64,14 +72,6 @@ export async function authorizeBearer(
         "insufficient_scope",
         `This API token does not have the ${scope} scope. Create a token that includes ${scope} and retry.`,
       ),
-    };
-  }
-  if (bucket !== null && !rateLimitApiToken(bucket, result.tokenId)) {
-    return {
-      ok: false,
-      response: apiError("rate_limited", `Too many ${BUCKET_NOUN[bucket]} for this API token. Retry later.`, {
-        headers: RETRY_AFTER,
-      }),
     };
   }
   return { ok: true, ctx: { workspaceId: result.workspaceId, tokenId: result.tokenId, scopes: result.scopes } };

@@ -208,6 +208,18 @@ describe("/api/v1 rate limits", () => {
     });
     expect((await whoami(v1Request("GET", "/api/v1/whoami", { token: betaToken }), noParams)).status).toBe(200);
   });
+
+  it("charges the token's budget for requests refused for a missing scope", async () => {
+    const { token } = await mintToken(db.prisma, beta.workspaceId, []);
+    const probe = v1Route({ scope: "conversations:read" }, vi.fn());
+    const call = () => probe(v1Request("GET", "/api/v1/probe", { token, ip: freshIp() }), noParams);
+    for (let i = 0; i < WIDGET_RATE_LIMITS.apiTokenRead; i += 1) expect((await call()).status).toBe(403);
+    const limited = await call();
+    expect(limited.status).toBe(429);
+    expect(await limited.json()).toEqual({
+      error: { code: "rate_limited", message: "Too many read requests for this API token. Retry later." },
+    });
+  });
 });
 
 describe("v1Route", () => {

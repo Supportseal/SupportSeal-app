@@ -22,7 +22,7 @@ export const NOT_FOUND_MESSAGE = "No such resource in this Workspace. Check the 
 /**
  * Every `/api/v1` handler is exported through this wrapper (enforced by
  * v1-static.test.ts). Order: per-IP budget, bearer token (a session cookie is
- * never accepted), scope, per-token budget, then the handler with a database
+ * never accepted), per-token budget, scope, then the handler with a database
  * client confined to the token's Workspace. A missing or foreign row the
  * handler hits becomes the uniform 404.
  */
