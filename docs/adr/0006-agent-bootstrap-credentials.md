@@ -44,8 +44,14 @@ existing path.
 **Transport.** Both flows carry credentials in request and response bodies, so
 they are HTTPS-only. The routes reject plaintext requests (`403`, no
 credential processing) when the request is not secure, judged from the request
-origin (`x-forwarded-proto`, as the widget code reads it), and the self-hosting guide requires a
-TLS-terminating proxy before either is enabled. Responses carry
+origin (`x-forwarded-proto`, as the widget code reads it). That header is
+only trustworthy when the first trusted proxy overwrites it and the app
+listener is not reachable except through that proxy; a client that can reach
+the listener directly can forge `X-Forwarded-Proto: https`. The self-hosting
+guide therefore requires a TLS-terminating proxy that sets the header and a
+listener bound to the proxy only before either flow is enabled; where that
+cannot be assured, the flows stay disabled (AB1 records this as a precondition,
+not an option). Responses carry
 `Cache-Control: private, no-store`.
 
 **Error shape.** Every response, success or failure, uses the shared envelope
@@ -106,12 +112,13 @@ Admin already exists:
    Workspace; nothing in the agent's request names one.
 3. `POST /api/v1/device/token { deviceCode }` answers `authorization_pending`,
    `slow_down`, `access_denied`, `expired_token`, or the token.
-   *Atomic claim.* On approval the token is stored hashed with the approved
-   request; the first poll to flip `deliveredAt` from null in a conditional
-   update (`... WHERE deliveredAt IS NULL`) wins and the response carries the
-   token. Concurrent polls lose and answer like an unknown code, so a token is
-   never issued twice.
-   *Lost response.* The token itself is not stored recoverably, so a lost
+   *Atomic claim.* Approval stores only the approved scopes and expiry, not a
+   token. The first poll to flip `deliveredAt` from null in a conditional
+   update (`... WHERE deliveredAt IS NULL`) wins; in that same transaction it
+   mints the token and stores its hash with the approved scopes and expiry, and
+   only that response carries the plaintext. Concurrent polls lose and answer
+   like an unknown code, so a token is never issued twice.
+   *Lost response.* The plaintext is not stored recoverably, so a lost
    response is not replayable. The agent restarts the flow and the approver
    revokes the orphaned token from the dashboard (its approval shows as
    delivered but unused). Re-delivering the same token for a bounded window to
@@ -162,7 +169,9 @@ message) and carry no state-dependent header:
   compare, the returned token cannot reach another Workspace and lacks the
   excluded scopes, expiry honoured, Workspace and token are created atomically
   (a failure after the Workspace insert leaves neither), the claim code is
-  single-use and exactly one concurrent claim wins, plaintext HTTP refused
+  single-use, expires, and exactly one concurrent claim wins; an expired,
+  unclaimed `claimCode` leaves the Workspace unclaimable and the documented
+  recovery applies, plaintext HTTP refused
   without processing the credential.
 - B: replay of a consumed or expired `deviceCode`, poll faster than the
   interval (`slow_down`), user-code guessing limited per code and per IP,
