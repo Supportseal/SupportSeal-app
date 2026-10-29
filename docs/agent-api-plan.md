@@ -124,7 +124,7 @@ checks and the existing cross-tenant tests.
 | Error messages | Generic; never echo foreign data; `details` names only fields of the caller's own request. |
 | Attachment URLs | Attachments are served only at `GET /api/v1/attachments/{id}/content` with the bearer token, scoped like every resource and `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`. No public, unauthenticated or presigned URL, and no storage key in any response or webhook. |
 | Webhook payloads | Built inside the delivery worker from scoped reads keyed by the subscription's `workspaceId`. A subscription only ever receives events carrying its own `workspaceId`. Payloads carry attachment metadata and ids, not fetchable URLs. |
-| Idempotency keys | Scoped to (Workspace, token, method, route); replays never cross Workspaces. |
+| Idempotency keys | Scoped to (Workspace, token, method, resolved path with its ids); replays never cross Workspaces or resources. |
 | Response caching | `private, no-store` on every response (existing). |
 | Logs | Request id, token id, Workspace id, operation id. Never tokens, secrets or message bodies (FR-OPS-01). |
 

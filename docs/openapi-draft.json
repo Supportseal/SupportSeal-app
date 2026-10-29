@@ -1488,6 +1488,11 @@
         "responses": {
           "200": {
             "description": "The file, sent with Content-Disposition: attachment and X-Content-Type-Options: nosniff.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
             "content": {
               "application/octet-stream": {
                 "schema": {
