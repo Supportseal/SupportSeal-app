@@ -222,8 +222,9 @@ SSRF-hardened. Decisions:
 
 API signup creates a user, Workspace and bootstrap token in one call, hosted
 only. Email verification and Stripe Checkout remain human gates. The bootstrap
-token starts restricted (reads plus Product and webhook setup) until the
-account email is verified; sensitive scopes, outbound replies and paid
+token starts restricted (reads plus Product and saved-reply setup; no
+webhooks, which relay to third-party URLs) until the account email is
+verified; sensitive scopes, outbound replies and paid
 features are unlocked only after the human gates. Abuse controls: per-IP and
 per-email rate limits, disposable-domain policy (open question), a Turnstile
 or proof-of-work challenge (open question) and a hard cap on unverified
@@ -242,8 +243,8 @@ A test fails if a server action is missing from the manifest, if a mapped
 ## Consequences
 
 - New tables (`ApiAuditLog`, `IdempotencyKey`, `WebhookEndpoint`,
-  the transactional outbox `webhook_events`, `WebhookDelivery`, plus `Message.authorTokenId` and assignment columns from
-  the V2 assignment design) arrive with their phases, each as a hand-written
+  the transactional outbox `webhook_events`, `WebhookDelivery`, plus
+  `Message.authorTokenId` and assignment columns from the V2 assignment design) arrive with their phases, each as a hand-written
   migration; this ADR only specifies them.
 - The existing Product routes and their drift test keep working. New routes
   extend the OpenAPI document in the phase that implements them; until then
