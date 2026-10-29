@@ -67,9 +67,13 @@ not RFC 8628's bare `{ "error": "..." }` body, so a client has one error parser.
    make the server refuse to enable the endpoint and log why.
 2. `POST /api/v1/bootstrap` with `Authorization: Bearer <setup secret>` and
    `{ workspaceName, adminEmail }` creates the single Workspace and returns
-   `{ workspaceId, token, expiresAt, scopes, claimCode }`. `claimCode` is a
-   separate high-entropy one-time value (hashed at rest) for the human to
-   become the Admin (AB3); it is not the setup secret.
+   `{ workspaceId, token, expiresAt, scopes }`. A separate high-entropy
+   one-time `claimCode` (hashed at rest, not the setup secret) lets a human
+   become the Admin (AB3). It is **not** in the response: the agent holds the
+   token, and giving it the claim code too would let it register the first
+   Admin itself. The code goes to `adminEmail` through the outbound email
+   adapter, and `/register` accepts it only for that same address, so the
+   human-only proof is control of the mailbox.
 3. It works exactly once: the check "no Workspace exists", the Workspace
    create, the token insert and the claim-code insert run in the **same**
    advisory-lock transaction `createWorkspace` already uses, so there is never
@@ -169,7 +173,9 @@ message) and carry no state-dependent header:
   compare, the returned token cannot reach another Workspace and lacks the
   excluded scopes, expiry honoured, Workspace and token are created atomically
   (a failure after the Workspace insert leaves neither), the claim code is
-  single-use, expires, and exactly one concurrent claim wins; an expired,
+  never in any bootstrap response or log, the bootstrap caller alone cannot
+  complete the Admin claim, registering with a different email than
+  `adminEmail` is refused, the claim code is single-use, expires, and exactly one concurrent claim wins; an expired,
   unclaimed `claimCode` leaves the Workspace unclaimable and the documented
   recovery applies, plaintext HTTP refused
   without processing the credential.
