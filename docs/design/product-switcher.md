@@ -58,18 +58,21 @@ INBOX
 ```
 
 - "All Products" is always first and is the default.
-- Products are sorted alphabetically (predictable positions beat
-  "most active" for muscle memory). Only **active** Products are listed;
-  archived ones live in the dropdown (entry point 2).
+- Products with Open Conversations come first, then the rest, each group
+  A–Z (the busy Products are the ones an agent wants within reach). Only
+  **active** Products are listed; archived ones live in the dropdown (entry
+  point 2).
 - Count = Open Conversations for that Product, as a right-aligned plain
   number in `text-muted`, bold when non-zero. It does not mean "unread";
   per-agent unread isn't specified in V1. Zero shows nothing.
 - Clicking navigates to `/inbox?product=<id>` (keeping the current status
   tab). Selecting from a non-inbox page (e.g. settings) also navigates to
   the inbox.
-- With more than 8 active Products, the list shows the first 8 plus "Show
-  all (n)", which expands in place. The expanded state persists in
-  localStorage.
+- Every active Product is listed. The Product list is its own scrollable
+  region, so the main nav and Settings links stay in place. With more than
+  8 active Products a "Filter products" input (client-side, case-insensitive
+  substring match) appears above the list; "Add Product" stays pinned below
+  it.
 - "Add Product" (Admin only) opens the new-Product flow
   (`product-settings.md`). Agents don't see it.
 - **Collapsed sidebar**: each entry becomes its `ProductMark` (md), centred,
