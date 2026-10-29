@@ -251,9 +251,18 @@ describe("scopedDb", () => {
     await expect(
       asBeta.tag.create({ data: { name: "n", workspace: { connect: { id: alpha.workspaceId } } } as never }),
     ).rejects.toBeInstanceOf(ScopeViolationError);
-    for (const denied of ["$extends", "$connect", "$disconnect", "$on", "$queryRaw", "$executeRawUnsafe", "user", "account", "session"]) {
-      expect(() => (asBeta as unknown as Record<string, unknown>)[denied], denied).toThrow(ScopeViolationError);
+    const escapes = ["$parent", "$extends", "$connect", "$disconnect", "$on", "$queryRaw", "$executeRawUnsafe", "user", "account", "session"];
+    const loose = (client: unknown) => client as Record<string, unknown>;
+    for (const denied of escapes) {
+      expect(() => loose(asBeta)[denied], denied).toThrow(ScopeViolationError);
     }
+    expect(() => loose(asBeta.tag).$parent).toThrow(ScopeViolationError);
+    await asBeta.$transaction(async (tx) => {
+      for (const denied of [...escapes, "$transaction"]) {
+        expect(() => loose(tx)[denied], denied).toThrow(ScopeViolationError);
+      }
+      expect(() => loose(tx.tag).$parent).toThrow(ScopeViolationError);
+    });
     await expect(asBeta.workspace.create({ data: { name: "x" } } as never)).rejects.toBeInstanceOf(ScopeViolationError);
     await expect(asBeta.workspace.deleteMany()).rejects.toBeInstanceOf(ScopeViolationError);
     expect((await asBeta.workspace.findMany()).map((w) => w.id)).toEqual([beta.workspaceId]);

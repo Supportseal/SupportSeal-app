@@ -296,26 +296,41 @@ export type ScopedDb = ScopedTx & {
 };
 
 const DELEGATES: ReadonlySet<string> = new Set(
-  Object.keys(TENANT_MODELS).map((model) => model[0].toLowerCase() + model.slice(1)),
+  Object.entries(TENANT_MODELS)
+    .filter(([, scoping]) => scoping.kind !== "global")
+    .map(([model]) => model[0].toLowerCase() + model.slice(1)),
 );
 
 function assertOutsideTx(): void {
   if (activeTx.getStore()) throw new ScopeViolationError("Inside a transaction, use the client its callback receives.");
 }
 
-const DENIED_AT_RUNTIME: ReadonlySet<string> = new Set([
-  "$queryRaw",
-  "$executeRaw",
-  "$queryRawUnsafe",
-  "$executeRawUnsafe",
-  "$extends",
-  "$connect",
-  "$disconnect",
-  "$on",
-  ...Object.entries(TENANT_MODELS)
-    .filter(([, scoping]) => scoping.kind === "global")
-    .map(([model]) => model[0].toLowerCase() + model.slice(1)),
+const OPERATIONS: ReadonlySet<string> = new Set([
+  "findUnique",
+  "findUniqueOrThrow",
+  "findFirst",
+  "findFirstOrThrow",
+  "findMany",
+  "create",
+  "createMany",
+  "createManyAndReturn",
+  "update",
+  "updateMany",
+  "updateManyAndReturn",
+  "upsert",
+  "delete",
+  "deleteMany",
+  "count",
+  "aggregate",
+  "groupBy",
+  "fields",
 ]);
+
+/** Allowlist, not denylist: Prisma clients and delegates expose escapes such as `$parent` back to the raw client. */
+function refuse(prop: string | symbol): undefined {
+  if (typeof prop === "symbol" || prop === "then") return undefined;
+  throw new ScopeViolationError(`${prop} is not available on a scoped client.`);
+}
 
 /** Prisma queries run when awaited, so a query built before a transaction is checked again when it starts. */
 function guardPending<T>(pending: T): T {
@@ -332,18 +347,29 @@ function guardPending<T>(pending: T): T {
   }) as T;
 }
 
-/** Checks at call and run time, so a delegate or query taken before a transaction cannot run outside it from within. */
-function guardDelegate<T extends object>(delegate: T): T {
+/** Outside a transaction, checks at call and run time so a delegate or query taken earlier cannot run outside one from within. */
+function guardDelegate<T extends object>(delegate: T, outside: boolean): T {
   return new Proxy(delegate, {
-    get(target, prop, receiver) {
-      const value: unknown = Reflect.get(target, prop, receiver);
+    get(target, prop) {
+      if (typeof prop !== "string" || !OPERATIONS.has(prop)) return refuse(prop);
+      const value: unknown = Reflect.get(target, prop, target);
       if (typeof value !== "function") return value;
       return (...args: unknown[]) => {
+        if (!outside) return (value as (...a: unknown[]) => unknown).apply(target, args);
         assertOutsideTx();
         return guardPending((value as (...a: unknown[]) => unknown).apply(target, args));
       };
     },
   });
+}
+
+function guardTx(tx: object): ScopedTx {
+  return new Proxy(tx, {
+    get(target, prop) {
+      if (typeof prop !== "string" || !DELEGATES.has(prop)) return refuse(prop);
+      return guardDelegate(Reflect.get(target, prop, target) as object, false);
+    },
+  }) as unknown as ScopedTx;
 }
 
 /** A Prisma client confined to one Workspace. `workspaceId` must come from an authenticated credential. */
@@ -352,19 +378,16 @@ export function scopedDb(workspaceId: string): ScopedDb {
   return new Proxy(scoped as unknown as ScopedDb, {
     get(target, prop, receiver) {
       if (prop === "workspaceId") return workspaceId;
-      if (typeof prop === "string" && DENIED_AT_RUNTIME.has(prop)) {
-        throw new ScopeViolationError(`${prop} is not available on a scoped client.`);
-      }
+      if (prop !== "$transaction" && (typeof prop !== "string" || !DELEGATES.has(prop))) return refuse(prop);
       assertOutsideTx();
       if (prop === "$transaction") {
         return <R>(fn: (tx: ScopedTx) => Promise<R>, options?: { maxWait?: number; timeout?: number }) => {
           assertOutsideTx();
           if (typeof fn !== "function") throw new ScopeViolationError("Use an interactive transaction on a scoped client.");
-          return scoped.$transaction((tx) => activeTx.run({ workspaceId, tx }, async () => await fn(tx as unknown as ScopedTx)), options);
+          return scoped.$transaction((tx) => activeTx.run({ workspaceId, tx }, async () => await fn(guardTx(tx))), options);
         };
       }
-      const value: unknown = Reflect.get(target, prop, receiver);
-      return typeof prop === "string" && DELEGATES.has(prop) ? guardDelegate(value as object) : value;
+      return guardDelegate(Reflect.get(target, prop, receiver) as object, true);
     },
   });
 }
