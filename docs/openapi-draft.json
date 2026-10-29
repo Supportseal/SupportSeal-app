@@ -1128,6 +1128,7 @@
         ],
         "summary": "Create a saved reply",
         "x-required-scope": "saved-replies:write",
+        "description": "A foreign or unknown id in productIds answers 404, exactly like an unknown id elsewhere.",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -1164,6 +1165,9 @@
           },
           "400": {
             "$ref": "#/components/responses/InvalidRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
@@ -2862,23 +2866,62 @@
         ]
       },
       "TokenCreated": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/Token"
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
           },
-          {
-            "type": "object",
-            "properties": {
-              "token": {
-                "type": "string",
-                "description": "The secret. Shown once; only its SHA-256 hash is stored."
-              }
-            },
-            "additionalProperties": false,
-            "required": [
-              "token"
-            ]
+          "name": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "lastFour": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastUsedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "revokedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "token": {
+            "type": "string",
+            "description": "The secret. Shown once; only its SHA-256 hash is stored."
           }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "scopes",
+          "lastFour",
+          "createdAt",
+          "token"
         ]
       },
       "AuditLogEntry": {
