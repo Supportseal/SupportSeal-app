@@ -62,6 +62,8 @@ Every token created in the dashboard has the `products:write` scope; it acts for
 the whole Workspace and cannot reach another one. A token without the scope an
 endpoint needs gets `403 insufficient_scope`.
 
+> **Planned, not yet available:** finer scopes (conversations, contacts, webhooks and others) and a `tokens:admin` scope that lets a token create and revoke other tokens through the API. Until it ships, tokens are created in the dashboard only. See the [agent-first API plan](agent-api-plan.md).
+
 ## Errors
 
 Every error from the Workspace API, for tokens and sessions alike, has one JSON
