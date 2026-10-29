@@ -173,7 +173,7 @@ function prepareRow(model: ModelName, row: Row, workspaceId: string, creating: b
   }
   const next = { ...row };
   if (scoping.kind === "direct") {
-    const current = "workspaceId" in next ? writtenId(model, "workspaceId", next.workspaceId) : undefined;
+    const current = next.workspaceId === undefined ? undefined : writtenId(model, "workspaceId", next.workspaceId);
     if (current === undefined && creating) next.workspaceId = workspaceId;
     else if (current !== undefined && current !== workspaceId) {
       throw new ScopeViolationError(`${model}.workspaceId may only be the scope's Workspace.`);
@@ -276,6 +276,9 @@ export function scopedDb(workspaceId: string): ScopedDb {
   return new Proxy(scoped as unknown as ScopedDb, {
     get(target, prop, receiver) {
       if (prop === "workspaceId") return workspaceId;
+      if (activeTx.getStore()) {
+        throw new ScopeViolationError("Inside a transaction, use the client its callback receives.");
+      }
       if (prop === "$transaction") {
         return <R>(fn: (tx: ScopedTx) => Promise<R>, options?: { maxWait?: number; timeout?: number }) => {
           if (typeof fn !== "function") throw new ScopeViolationError("Use an interactive transaction on a scoped client.");

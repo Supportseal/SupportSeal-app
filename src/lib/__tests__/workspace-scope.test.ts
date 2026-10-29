@@ -151,9 +151,15 @@ describe("scopedDb", () => {
     expect(await rows.findMany({ where: filter })).toEqual([]);
     expect(await rows.count({ where: filter })).toBe(0);
     await expect(rows.findUniqueOrThrow({ where })).rejects.toMatchObject({ code: "P2025" });
+    await expect(rows.findFirstOrThrow({ where: filter })).rejects.toMatchObject({ code: "P2025" });
+    expect(await rows.aggregate({ where: filter, _count: true })).toEqual({ _count: 0 });
     await expect(rows.update({ where, data: {} })).rejects.toMatchObject({ code: "P2025" });
-    if (model !== "Workspace") {
-      expect(await rows.updateMany({ where: filter, data: {} })).toEqual({ count: 0 });
+    expect(await rows.updateMany({ where: filter, data: {} })).toEqual({ count: 0 });
+    expect(await rows.updateManyAndReturn({ where: filter, data: {} })).toEqual([]);
+    if (model === "Workspace") {
+      await expect(rows.deleteMany({ where: filter })).rejects.toBeInstanceOf(ScopeViolationError);
+      await expect(rows.delete({ where })).rejects.toBeInstanceOf(ScopeViolationError);
+    } else {
       expect(await rows.deleteMany({ where: filter })).toEqual({ count: 0 });
       await expect(rows.delete({ where })).rejects.toMatchObject({ code: "P2025" });
     }
@@ -172,6 +178,49 @@ describe("scopedDb", () => {
     await expect(
       asBeta.tag.update({ where: { id: tag.id }, data: { workspaceId: alpha.workspaceId } }),
     ).rejects.toBeInstanceOf(ScopeViolationError);
+  });
+
+  it("confines upsert, bulk creates and groupBy", async () => {
+    const before = await snapshotAlpha();
+    const alphaTagId = (alpha.where.Tag as { id: string }).id;
+    const conversationId = (beta.where.Conversation as { id: string }).id;
+
+    const upserted = await asBeta.tag.upsert({
+      where: { id: alphaTagId },
+      create: { name: "upserted", workspaceId: undefined as never },
+      update: { name: "hijacked" },
+    });
+    expect(upserted).toMatchObject({ name: "upserted", workspaceId: beta.workspaceId });
+    expect(upserted.id).not.toBe(alphaTagId);
+    await expect(
+      asBeta.conversationTag.upsert({
+        where: { conversationId_tagId: { conversationId, tagId: alphaTagId } },
+        create: { conversationId, tagId: alphaTagId },
+        update: {},
+      }),
+    ).rejects.toEqual(new NotInScopeError("Tag"));
+
+    await expect(
+      asBeta.tag.createMany({ data: [{ name: "bulk-1" }, { name: "bulk-2", workspaceId: alpha.workspaceId }] } as never),
+    ).rejects.toBeInstanceOf(ScopeViolationError);
+    await expect(
+      asBeta.conversationTag.createManyAndReturn({
+        data: [
+          { conversationId, tagId: upserted.id },
+          { conversationId, tagId: alphaTagId },
+        ],
+      }),
+    ).rejects.toEqual(new NotInScopeError("Tag"));
+    expect(await db.prisma.tag.count({ where: { name: { startsWith: "bulk-" } } })).toBe(0);
+    expect(await db.prisma.conversationTag.count({ where: { tagId: upserted.id } })).toBe(0);
+
+    const createTags = asBeta.tag.createManyAndReturn as unknown as (args: unknown) => Promise<{ workspaceId: string }[]>;
+    const created = await createTags({ data: [{ name: "bulk-3" }] });
+    expect(created.map((tag) => tag.workspaceId)).toEqual([beta.workspaceId]);
+    const groups = await asBeta.tag.groupBy({ by: ["workspaceId"], _count: true });
+    expect(groups.map((group) => group.workspaceId)).toEqual([beta.workspaceId]);
+
+    expect(await snapshotAlpha()).toEqual(before);
   });
 
   it("answers a foreign reference like an unknown one and writes nothing", async () => {
@@ -236,6 +285,10 @@ describe("scopedDb", () => {
       ),
     ).rejects.toBeInstanceOf(ScopeViolationError);
     await expect(asBeta.$transaction(() => asAlpha.tag.findMany())).rejects.toBeInstanceOf(ScopeViolationError);
+    await expect(asBeta.$transaction(async () => asBeta.tag.findMany())).rejects.toBeInstanceOf(ScopeViolationError);
+    await expect(
+      asBeta.$transaction(async () => scopedDb(beta.workspaceId).tag.findMany()),
+    ).rejects.toBeInstanceOf(ScopeViolationError);
     expect(await db.prisma.message.count({ where: { body: "cross-scope" } })).toBe(0);
 
     const batch = asBeta.$transaction as unknown as (ops: unknown[]) => Promise<unknown>;
