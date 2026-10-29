@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { GET as getProduct, PATCH as patchProductRoute } from "@/app/api/products/[id]/route";
 import { GET as listProductsRoute, POST as createProductRoute } from "@/app/api/products/route";
 import { API_ERROR_STATUS, apiError, type ApiErrorBody } from "@/lib/api-errors";
+import { inboundDomain, managedSender } from "@/lib/email/addresses";
 import { generateApiToken } from "@/lib/api-tokens";
 import { getAuth } from "@/lib/auth";
 import { MAX_BODY_BYTES, MAX_DOMAINS_PER_LIST } from "@/lib/product-api";
@@ -193,7 +194,7 @@ describe("POST /api/products", () => {
 
   it("refuses an invalid or SupportSeal-owned supportEmail with a field detail and creates nothing", async () => {
     const { token } = await workspaceWithToken("Acme");
-    for (const supportEmail of ["not-an-email", "a b@acme.example", "a@acme", `${"x".repeat(250)}@a.io`, "reply+abc@mail.supportseal.app", "product_abc@inbound.supportseal.app"]) {
+    for (const supportEmail of ["not-an-email", "a b@acme.example", "a@acme", `${"x".repeat(250)}@a.io`, managedSender(), `reply+abc@${inboundDomain()}`]) {
       const error = await expectError(await post(token, { name: "Nope", supportEmail }), 400, "invalid_request");
       expect(error.details?.[0].field, supportEmail).toBe("supportEmail");
     }
@@ -519,7 +520,7 @@ describe("PATCH /api/products/:id", () => {
     const { token } = await workspaceWithToken("Acme");
     const product = await created(token);
     const stored = await db.prisma.product.findUniqueOrThrow({ where: { id: product.id } });
-    for (const supportEmail of ["nope", "a@b", stored.inboundEmail!, stored.inboundEmail!.toUpperCase(), "reply+x@mail.supportseal.app"]) {
+    for (const supportEmail of ["nope", "a@b", stored.inboundEmail!, stored.inboundEmail!.toUpperCase(), managedSender(), `reply+x@${inboundDomain()}`]) {
       const error = await expectError(await patch(token, product.id, { name: "Changed", supportEmail }), 400, "invalid_request");
       expect(error.details?.[0].field, supportEmail).toBe("supportEmail");
     }
