@@ -888,7 +888,11 @@ ${WIDGET_SOUND_JS}
     var ready = resetPending
       ? apiFetch('/api/widget/session', { method: 'DELETE', keepalive: true }).then(function (r) {
           if (!r.ok) return Promise.reject(r.status);
-          if (generation === sessionGeneration) { resetPending = false; clearResetFlag(); removeToken(); }
+          if (generation === sessionGeneration) {
+            resetPending = false; clearResetFlag(); removeToken();
+            // Revoked server-side: the host page may stop retrying the reset.
+            parent.postMessage({ type: 'ss:reset-ack' }, '*');
+          }
         })
       : Promise.resolve();
     ready.then(function () {

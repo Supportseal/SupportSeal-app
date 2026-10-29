@@ -250,6 +250,11 @@ const LOADER_JS = String.raw`
   window.addEventListener('message', function (event) {
     if (event.origin !== serviceOrigin || !event.data) return;
     if (event.data.type === 'ss:unread' && !open) setUnread(event.data.count || 1);
+    // The panel recorded a reset() durably: tell the host page so it can stop
+    // retrying (a reset still queued when a page unloads is otherwise lost).
+    if (event.data.type === 'ss:reset-ack') {
+      try { window.dispatchEvent(new CustomEvent('supportseal:reset-acknowledged')); } catch (e) { /* never surfaced */ }
+    }
     if (event.data.type === 'ss:close' && open) {
       toggle();
       if (launcher) launcher.focus();

@@ -25,7 +25,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { authClient } from "@/lib/auth-client";
-import { resetSupportWidget } from "@/components/support/support-widget-script";
+import { resetSupportWidget } from "@/lib/support-widget-session";
 import {
   useNotificationPreference,
   useNotificationSupport,

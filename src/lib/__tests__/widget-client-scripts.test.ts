@@ -190,6 +190,18 @@ describe("served widget scripts (issue #57)", () => {
     new Function(text);
   });
 
+  it("reset acknowledgement: the panel confirms once the session is revoked and the loader tells the host page", async () => {
+    const loader = await (await loaderJs()).text();
+    expect(loader).toMatch(/event\.data\.type === 'ss:reset-ack'\) \{\s*try \{ window\.dispatchEvent\(new CustomEvent\('supportseal:reset-acknowledged'\)\)/);
+    const html = await (
+      await panelHtml(new NextRequest("http://localhost:3000/widget?key=pk_test&host=http://localhost:3000"))
+    ).text();
+    const script = /<script>([\s\S]*)<\/script>/.exec(html)?.[1] ?? "";
+    // Acked only after the server revoked the session (not when the intent is merely stored).
+    expect(script).toMatch(/resetPending = false; clearResetFlag\(\); removeToken\(\);\s*\/\/[^\n]*\s*parent\.postMessage\(\{ type: 'ss:reset-ack' \}, '\*'\);/);
+    expect(script.match(/ss:reset-ack/g)).toHaveLength(1);
+  });
+
   it("panel resets on ss:reset: revokes server-side before re-booting and ignores the retired session (issue #151)", async () => {
     const html = await (
       await panelHtml(new NextRequest("http://localhost:3000/widget?key=pk_test&host=http://localhost:3000"))

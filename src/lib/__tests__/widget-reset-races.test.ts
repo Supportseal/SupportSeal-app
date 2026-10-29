@@ -76,7 +76,7 @@ ${await panelFunction("resetSession")}; resetSession`, scope);
     const apiFetch = vi.fn();
     const scope = {
       sessionStorage: storage, resetKey: "ss_reset_pk_test", previewMode: false, sessionGeneration: 0,
-      apiFetch, removeToken: vi.fn(), bootRetry: { success: vi.fn(), fail: vi.fn() },
+      parent: { postMessage: vi.fn() }, apiFetch, removeToken: vi.fn(), bootRetry: { success: vi.fn(), fail: vi.fn() },
       hideBanner: vi.fn(), persistToken: vi.fn(), probeCookieTransport: vi.fn(), applyConfig: vi.fn(),
       state: {}, lastCount: 0, render: vi.fn(), flushDevQueue: vi.fn(), startStream: vi.fn(),
     };
@@ -94,6 +94,8 @@ ${await panelFunction("resetSession")}; resetSession`, scope);
     expect(storage.data.get("ss_reset_pk_test")).toBe("1");
     expect(scope.removeToken).not.toHaveBeenCalled();
     expect(scope.bootRetry.fail).toHaveBeenCalledOnce();
+    // Not acknowledged yet: the host page keeps asking for the reset.
+    expect(scope.parent.postMessage).not.toHaveBeenCalled();
 
     // DELETE succeeds, then a fresh session is requested.
     apiFetch.mockResolvedValueOnce({ ok: true });
@@ -104,6 +106,7 @@ ${await panelFunction("resetSession")}; resetSession`, scope);
     expect(scope.removeToken).toHaveBeenCalledOnce();
     expect(apiFetch).toHaveBeenLastCalledWith("/api/widget/session", { method: "POST" });
     expect(boot.pending()).toBe(false);
+    expect(scope.parent.postMessage).toHaveBeenCalledExactlyOnceWith({ type: "ss:reset-ack" }, "*");
   });
 
   it("blocked storage degrades to in-memory intent without throwing", async () => {

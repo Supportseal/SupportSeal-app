@@ -71,4 +71,34 @@ test.describe.serial("own support widget in the dashboard", () => {
     await expect(fresh.locator("#statusline")).toBeVisible();
     await expect(fresh.locator("#thread")).not.toContainText("Own-support question");
   });
+
+  test("a reset that never reached the widget panel is retried on the next visit", async ({ page, context }) => {
+    await signIn(page, owner.email, owner.password);
+    await page.goto("/settings");
+    await launcher(page).click();
+    const frame = widgetFrame(page);
+    await frame.locator("#input").fill("Question that must not leak");
+    await frame.locator("#send").click();
+    await expect(frame.locator("#thread")).toContainText("Question that must not leak");
+
+    // The session lapses and the next person's first visit to the sign-in
+    // page ends before the widget panel loads (slow network, closed tab): the
+    // loader never builds, so the queued reset is lost with the document.
+    await context.clearCookies({ name: /better-auth/u });
+    await page.route("**/api/widget/config*", (route) => route.abort());
+    await page.goto("/login");
+    await expect(page.locator("#supportseal-widget-host")).toHaveCount(0);
+    await page.unroute("**/api/widget/config*");
+
+    await page.goto("/login");
+    await launcher(page).click();
+    const fresh = widgetFrame(page);
+    await expect(fresh.locator("#statusline")).toBeVisible();
+    await expect(fresh.locator("#thread")).not.toContainText("Question that must not leak");
+
+    // The panel revoked the session and told the page: no further resets.
+    await expect
+      .poll(() => page.evaluate(() => window.localStorage.getItem("supportseal:support-widget-reset-pending")))
+      .toBeNull();
+  });
 });
