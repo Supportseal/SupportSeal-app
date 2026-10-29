@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { IconCircle, IconPlus } from "@tabler/icons-react";
 
 import { cn } from "@/lib/cn";
@@ -11,14 +11,14 @@ import { useLayout } from "@/components/layout/layout-provider";
 import { Logo } from "@/components/layout/logo";
 import { ProductMark } from "@/components/product-identity";
 import { SetupChip, type SetupChecklist } from "@/components/layout/setup-chip";
+import { Input } from "@/components/ui/input";
+import {
+  filterSidebarProducts,
+  PRODUCT_FILTER_THRESHOLD,
+  sortSidebarProducts,
+  type SidebarProduct,
+} from "@/components/layout/sidebar-products";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-
-export type SidebarProduct = {
-  id: string;
-  name: string;
-  primaryColor: string;
-  openCount: number;
-};
 
 function isActive(pathname: string, href?: string) {
   if (!href) return false;
@@ -81,55 +81,64 @@ function ProductList({
   isAdmin: boolean;
   onNavigate: () => void;
 }) {
-  const pathname = usePathname();
-  const currentProduct = pathname.startsWith("/inbox?product=") ? null : null;
-  void currentProduct;
+  const [query, setQuery] = useState("");
+  const sorted = useMemo(() => sortSidebarProducts(products), [products]);
+  const visible = useMemo(() => filterSidebarProducts(sorted, query), [sorted, query]);
+  const showFilter = products.length > PRODUCT_FILTER_THRESHOLD;
 
-  const items = (
-    <ul className="space-y-0.5">
-      {products.slice(0, 8).map((product) => (
-        <li key={product.id}>
-          <Link
-            href={`/inbox?product=${product.id}`}
-            onClick={onNavigate}
-            aria-label={`${product.name}${product.openCount > 0 ? `, ${product.openCount} open` : ""}`}
-            className="flex items-center gap-2.5 rounded-md px-3 py-2 text-[0.9375rem] text-body transition-colors hover:bg-hover hover:text-heading"
-          >
-            <ProductMark name={product.name} color={product.primaryColor} size="sm" />
-            <span className={cn("truncate", collapsed && "lg:hidden")}>{product.name}</span>
-            {product.openCount > 0 ? (
-              <span className={cn("ms-auto text-sm font-semibold text-muted", collapsed && "lg:hidden")}>
-                {product.openCount}
-              </span>
-            ) : null}
-          </Link>
-        </li>
-      ))}
-      {isAdmin ? (
-        <li>
-          <Link
-            href="/settings/products"
-            onClick={onNavigate}
-            className="flex items-center gap-2.5 rounded-md px-3 py-2 text-[0.9375rem] text-body transition-colors hover:bg-hover hover:text-heading"
-          >
-            <span className="flex size-5 items-center justify-center text-primary">
-              <IconPlus className="size-4" />
-            </span>
-            <span className="truncate">Add Product</span>
-          </Link>
-        </li>
+  return (
+    <nav aria-label="Products" className="flex min-h-0 shrink flex-col">
+      {showFilter ? (
+        <div className={cn("px-1 pb-1.5", collapsed && "lg:hidden")}>
+          <Input
+            type="search"
+            size="sm"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Filter products"
+            aria-label="Filter products"
+          />
+        </div>
       ) : null}
-    </ul>
+      <ul className="min-h-24 space-y-0.5 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]">
+        {visible.map((product) => (
+          <li key={product.id}>
+            <Link
+              href={`/inbox?product=${product.id}`}
+              onClick={onNavigate}
+              aria-label={`${product.name}${product.openCount > 0 ? `, ${product.openCount} open` : ""}`}
+              className="flex items-center gap-2.5 rounded-md px-3 py-2 text-[0.9375rem] text-body transition-colors hover:bg-hover hover:text-heading"
+            >
+              <ProductMark name={product.name} color={product.primaryColor} size="sm" />
+              <span className={cn("min-w-0 truncate", collapsed && "lg:hidden")}>{product.name}</span>
+              {product.openCount > 0 ? (
+                <span
+                  className={cn("ms-auto shrink-0 ps-1 text-sm font-semibold text-muted", collapsed && "lg:hidden")}
+                >
+                  {product.openCount}
+                </span>
+              ) : null}
+            </Link>
+          </li>
+        ))}
+        {visible.length === 0 ? (
+          <li className={cn("px-3 py-2 text-sm text-muted", collapsed && "lg:hidden")}>No matching products</li>
+        ) : null}
+      </ul>
+      {isAdmin ? (
+        <Link
+          href="/settings/products"
+          onClick={onNavigate}
+          className="mt-0.5 flex items-center gap-2.5 rounded-md px-3 py-2 text-[0.9375rem] text-body transition-colors hover:bg-hover hover:text-heading"
+        >
+          <span className="flex size-5 items-center justify-center text-primary">
+            <IconPlus className="size-4" />
+          </span>
+          <span className={cn("truncate", collapsed && "lg:hidden")}>Add Product</span>
+        </Link>
+      ) : null}
+    </nav>
   );
-
-  if (collapsed) {
-    return (
-      <nav aria-label="Products" className="hidden lg:block">
-        {items}
-      </nav>
-    );
-  }
-  return <nav aria-label="Products">{items}</nav>;
 }
 
 export function Sidebar({
@@ -169,11 +178,11 @@ export function Sidebar({
         <div className={cn("flex h-header items-center px-4", collapsed && "lg:justify-center lg:px-0")}>
           <Logo collapsed={collapsed} />
         </div>
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           {checklist && role === "ADMIN" ? (
             <SetupChip checklist={checklist} collapsed={collapsed} onNavigate={onClose} />
           ) : null}
-          <div className={cn("px-2 pb-2", collapsed && "lg:px-1.5")}>
+          <div className={cn("flex min-h-0 shrink flex-col px-2 pb-2", collapsed && "lg:px-1.5")}>
             <ProductList
               products={products}
               collapsed={collapsed}
@@ -182,7 +191,7 @@ export function Sidebar({
             />
           </div>
           {sections.map((section) => (
-            <div key={section.id} className="px-2 pb-2">
+            <div key={section.id} className="shrink-0 px-2 pb-2">
               {section.label ? (
                 <p
                   className={cn(
