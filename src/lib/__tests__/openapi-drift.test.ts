@@ -292,6 +292,7 @@ const productShape = z.strictObject({
   name: z.string().min(1).max(60),
   archived: z.boolean(),
   primaryColor: z.string().regex(/^#[0-9a-f]{6}$/u),
+  supportEmail: z.string().email().nullable(),
   domains: z.array(z.string()),
   widgetKey: z.string().regex(/^pk_[A-Za-z0-9_-]+$/u),
   formKey: z.string().regex(/^fk_[A-Za-z0-9_-]+$/u).nullable(),

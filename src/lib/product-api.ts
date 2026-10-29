@@ -13,6 +13,7 @@ export function serializeProduct(product: ProductWithDomains) {
     name: product.name,
     archived: product.archivedAt !== null,
     primaryColor: product.primaryColor,
+    supportEmail: product.supportEmail,
     domains: product.domains.map((d) => d.domain),
     widgetKey: product.widgetPublicKey,
     formKey: product.formPublicKey,
@@ -40,9 +41,13 @@ const domainList = z
   .array(z.string())
   .max(MAX_DOMAINS_PER_LIST, { message: `At most ${MAX_DOMAINS_PER_LIST} domains per list.` });
 
+// Format and own-address rules are the dashboard's (`normalizeSupportEmail`, run by the core); blank or null means none.
+const supportEmail = z.string().nullable();
+
 export const createBody = z.strictObject({
   name: z.string(),
   primaryColor: colour.optional(),
+  supportEmail: supportEmail.optional(),
   domains: domainList.optional(),
   includeSiblings: z.boolean().optional(),
 });
@@ -51,6 +56,7 @@ export const patchBody = z
   .strictObject({
     name: z.string().optional(),
     primaryColor: colour.optional(),
+    supportEmail: supportEmail.optional(),
     addDomains: domainList.optional(),
     removeDomains: domainList.optional(),
     includeSiblings: z.boolean().optional(),
@@ -59,9 +65,10 @@ export const patchBody = z
     (body) =>
       body.name !== undefined ||
       body.primaryColor !== undefined ||
+      body.supportEmail !== undefined ||
       Boolean(body.addDomains?.length) ||
       Boolean(body.removeDomains?.length),
-    { message: "Send at least one of: name, primaryColor, addDomains (non-empty), removeDomains (non-empty)." },
+    { message: "Send at least one of: name, primaryColor, supportEmail, addDomains (non-empty), removeDomains (non-empty)." },
   );
 
 type ParsedBody<T> = { ok: true; body: T } | { ok: false; response: NextResponse };

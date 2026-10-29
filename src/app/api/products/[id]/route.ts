@@ -24,8 +24,8 @@ export function GET(request: Request, { params }: RouteContext) {
 }
 
 /**
- * Edit a Product in the token's own Workspace (issue #187): name, colour and
- * domains (`addDomains` / `removeDomains`), applied all-or-nothing. Token-only.
+ * Edit a Product in the token's own Workspace (issue #187): name, colour, support
+ * email and domains (`addDomains` / `removeDomains`), applied all-or-nothing. Token-only.
  * Another Workspace's id answers 404 exactly like an unknown id.
  */
 export function PATCH(request: Request, { params }: RouteContext) {
