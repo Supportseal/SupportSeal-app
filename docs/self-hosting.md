@@ -62,7 +62,10 @@ reference, the hosted tier reads `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`
 and one price id per paid plan and billing interval:
 `STRIPE_PRO_MONTHLY_PRICE_ID`, `STRIPE_PRO_ANNUAL_PRICE_ID`,
 `STRIPE_BUSINESS_MONTHLY_PRICE_ID` and `STRIPE_BUSINESS_ANNUAL_PRICE_ID`.
-`STRIPE_PRO_PRICE_ID` is retired.
+`STRIPE_PRO_PRICE_ID` is retired. All of them must come from the same Stripe
+mode (all test or all live): a key of one mode with a price or webhook secret
+of the other makes billing refuse with `billing_misconfigured` instead of
+failing confusingly at runtime (issue #25).
 
 ## GitHub sign-in (optional)
 

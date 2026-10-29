@@ -9,9 +9,10 @@ export function ManageSubscriptionButton() {
   async function openPortal() {
     setPending(true);
     setError(null);
+    let data = null as { url?: string; error?: string } | null;
     try {
       const response = await fetch("/api/billing/portal", { method: "POST" });
-      const data = (await response.json().catch(() => null)) as { url?: string } | null;
+      data = (await response.json().catch(() => null)) as { url?: string; error?: string } | null;
       if (data?.url) {
         window.location.assign(data.url);
         return;
@@ -20,7 +21,11 @@ export function ManageSubscriptionButton() {
       // offline / connection reset: fall through to the retryable error
     }
     setPending(false);
-    setError("Could not open the billing portal. Try again shortly.");
+    setError(
+      data?.error === "billing_misconfigured"
+        ? "This installation's billing is misconfigured. Its operator must fix the Stripe configuration."
+        : "Could not open the billing portal. Try again shortly.",
+    );
   }
 
   return (

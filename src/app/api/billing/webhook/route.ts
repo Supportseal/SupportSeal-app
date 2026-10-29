@@ -4,6 +4,7 @@ import { syncCustomerBilling } from "@/lib/billing";
 import { isHostedMode } from "@/lib/hosting";
 import { prisma } from "@/lib/prisma";
 import { verifyStripeSignature, type StripeEvent } from "@/lib/stripe";
+import { guardBillingConfig, logWebhookSignatureFailureHint } from "@/lib/stripe-config";
 
 export const dynamic = "force-dynamic";
 
@@ -54,10 +55,19 @@ export async function POST(request: NextRequest) {
   if (!secret) {
     return NextResponse.json({ error: "not_configured" }, { status: 503 });
   }
+  // Issue #25: a webhook secret that cannot belong to this key's mode (or a
+  // key pasted into it) can never verify a delivery — fail with a cause
+  // Stripe's dashboard can show, instead of endless invalid_signature 400s.
+  if (guardBillingConfig().status === "misconfigured") {
+    return NextResponse.json({ error: "billing_misconfigured" }, { status: 503 });
+  }
 
   const payload = await request.text();
   const signature = request.headers.get("stripe-signature");
   if (!verifyStripeSignature({ payload, header: signature, secret })) {
+    // Failing signatures are the only symptom of a mixed-mode webhook secret;
+    // say so (throttled — failures can be attacker-driven).
+    logWebhookSignatureFailureHint();
     return NextResponse.json({ error: "invalid_signature" }, { status: 400 });
   }
 

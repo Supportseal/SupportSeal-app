@@ -39,6 +39,7 @@ vi.mock("@/lib/prisma", () => ({ prisma: { processedStripeEvent } }));
 vi.mock("@/lib/billing", () => ({ syncCustomerBilling }));
 
 import { POST as webhook } from "@/app/api/billing/webhook/route";
+import { resetStripeConfigGuardForTest } from "@/lib/stripe-config";
 import {
   stripeEventPayload,
   stripeSignatureHeader,
@@ -63,6 +64,12 @@ function signedRequest(type: string, object: StripeEventObject, id = uniqueStrip
 beforeEach(() => {
   process.env.HOSTED_MODE = "1";
   process.env.STRIPE_WEBHOOK_SECRET = SECRET;
+  process.env.STRIPE_SECRET_KEY = "sk_test_1";
+  delete process.env.STRIPE_PRO_MONTHLY_PRICE_ID;
+  delete process.env.STRIPE_PRO_ANNUAL_PRICE_ID;
+  delete process.env.STRIPE_BUSINESS_MONTHLY_PRICE_ID;
+  delete process.env.STRIPE_BUSINESS_ANNUAL_PRICE_ID;
+  resetStripeConfigGuardForTest();
   syncCustomerBilling.mockReset();
   syncCustomerBilling.mockResolvedValue("ws_1");
   claims.clear();
@@ -148,5 +155,30 @@ describe("billing webhook route", () => {
     delete process.env.STRIPE_WEBHOOK_SECRET;
     const response = await webhook(signedRequest("customer.subscription.created", { customer: "cus_1" }));
     expect(response.status).toBe(503);
+  });
+
+  it.each([
+    ["an API key in STRIPE_WEBHOOK_SECRET", () => { process.env.STRIPE_WEBHOOK_SECRET = "sk_test_1"; }],
+    ["no STRIPE_SECRET_KEY to sync with", () => { delete process.env.STRIPE_SECRET_KEY; }],
+  ])("refuses a mixed configuration (%s) with billing_misconfigured", async (_name, misconfigure) => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    misconfigure();
+    const response = await webhook(signedRequest("customer.subscription.created", { customer: "cus_1" }));
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "billing_misconfigured" });
+    expect(syncCustomerBilling).not.toHaveBeenCalled();
+    logged.mockRestore();
+  });
+
+  it("logs the mixed-mode hint when signature verification fails", async () => {
+    resetStripeConfigGuardForTest();
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const response = await webhook(request("{}", "t=1700000000,v1=deadbeef"));
+    expect(response.status).toBe(400);
+    expect(logged).toHaveBeenCalledWith(
+      expect.stringContaining("[billing] webhook signature verification failed"),
+    );
+    expect(logged).toHaveBeenCalledWith(expect.stringContaining("test-mode"));
+    logged.mockRestore();
   });
 });

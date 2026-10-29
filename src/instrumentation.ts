@@ -1,6 +1,14 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
+  // Issue #25: surface a mixed test/live Stripe configuration loudly at boot.
+  // Logged, not fatal — billing routes refuse with billing_misconfigured; the
+  // operator fixes the environment, the rest of the app keeps serving.
+  // Environment-only: no database, no network, inert when Stripe is unset
+  // (FR-HOST-01).
+  const { guardBillingConfig } = await import("@/lib/stripe-config");
+  guardBillingConfig();
+
   if (!process.env.DATABASE_URL?.trim() && process.env.NODE_ENV !== "production") {
     const { initDevDb } = await import("@/lib/dev-pglite");
     await initDevDb();

@@ -5,7 +5,8 @@ import { clearStripeCustomerLink, reconcileWorkspacePlan } from "@/lib/billing";
 import { appConfig } from "@/lib/config";
 import { prisma } from "@/lib/prisma";
 import { createCheckoutSession, isMissingCustomerError, stripeSecret } from "@/lib/stripe";
-import { isBillingInterval, isPaidPlanId, stripePriceId } from "@/lib/stripe-prices";
+import { checkStripePriceMode, guardBillingConfig } from "@/lib/stripe-config";
+import { isBillingInterval, isPaidPlanId, PRICE_ENV, stripePriceId } from "@/lib/stripe-prices";
 import { getSessionUser } from "@/lib/session";
 import { getPrimaryMembership } from "@/lib/workspace";
 
@@ -34,6 +35,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "invalid_plan" }, { status: 400 });
   }
 
+  // Issue #25: refuse checkout on a mixed test/live Stripe configuration —
+  // never leak configuration state to unauthenticated callers, so this sits
+  // after the session and plan checks.
+  if (guardBillingConfig().status === "misconfigured") {
+    return NextResponse.json({ error: "billing_misconfigured" }, { status: 503 });
+  }
+
   // Lazy re-sync (issue #202): reconcile the plan from Stripe first, so a
   // workspace whose activation webhook was missed is not treated as Free
   // here — and a Workspace that already has a subscription cannot start a
@@ -46,6 +54,14 @@ export async function POST(request: NextRequest) {
   const priceId = stripePriceId(plan, interval);
   if (!stripeSecret() || !priceId) {
     return NextResponse.json({ error: "billing_not_configured" }, { status: 503 });
+  }
+
+  // Issue #25, mode half: a price the key's mode cannot see can never check
+  // out — refuse with a clear cause instead of Stripe's "No such price" 502.
+  const visibility = await checkStripePriceMode({ envVar: PRICE_ENV[plan][interval], priceId });
+  if (visibility.state === "missing") {
+    console.error("[billing] checkout refused", { workspaceId: membership.workspaceId, problem: visibility.problem });
+    return NextResponse.json({ error: "billing_misconfigured" }, { status: 503 });
   }
 
   const workspace = await prisma.workspace.findUniqueOrThrow({

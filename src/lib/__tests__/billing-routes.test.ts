@@ -4,6 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { createTestUser, startTestDb, stopTestDb, type TestDb } from "@/test/integration-db";
 import { fakeStripe } from "@/test/stripe-fake";
 import { resetSubscriptionResyncCacheForTest } from "@/lib/billing";
+import { resetStripeConfigGuardForTest } from "@/lib/stripe-config";
 
 const session = vi.hoisted(() => ({ user: null as null | { id: string; email: string } }));
 vi.mock("@/lib/session", () => ({ getSessionUser: async () => session.user }));
@@ -76,9 +77,11 @@ beforeEach(async () => {
   process.env.STRIPE_PRO_ANNUAL_PRICE_ID = "price_pro_y";
   process.env.STRIPE_BUSINESS_MONTHLY_PRICE_ID = "price_biz_m";
   process.env.STRIPE_BUSINESS_ANNUAL_PRICE_ID = "price_biz_y";
+  delete process.env.STRIPE_WEBHOOK_SECRET;
   session.user = null;
   missingCustomer = null;
   resetSubscriptionResyncCacheForTest();
+  resetStripeConfigGuardForTest();
   stripe = fakeStripe();
   await db.prisma.membership.deleteMany();
   await db.prisma.workspace.deleteMany();
@@ -305,5 +308,81 @@ describe("POST /api/billing/portal", () => {
     expect(await response.json()).toEqual({ error: "no portal config" });
     expect(logged).toHaveBeenCalledWith("[billing] portal session failed", expect.objectContaining({ error: "no portal config" }));
     logged.mockRestore();
+  });
+});
+
+describe("Stripe key-mode guard (issue #25)", () => {
+  it("checks out on a consistent live-mode configuration", async () => {
+    const writes = stubStripe();
+    process.env.STRIPE_SECRET_KEY = "sk_live_1";
+    await signIn("ADMIN");
+
+    expect((await checkout()).status).toBe(200);
+    expect(writes).toHaveLength(1);
+  });
+
+  it("refuses checkout when the price is invisible to the key's mode (live key, test price)", async () => {
+    const writes = stubStripe();
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    process.env.STRIPE_SECRET_KEY = "sk_live_1";
+    process.env.STRIPE_PRO_MONTHLY_PRICE_ID = "price_wrongmode";
+    stripe.missingPrices.add("price_wrongmode");
+    await signIn("ADMIN");
+
+    const response = await checkout();
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "billing_misconfigured" });
+    expect(writes).toHaveLength(0);
+    expect(stripe.calls).toEqual([expect.stringContaining("/v1/prices/price_wrongmode")]);
+    expect(logged).toHaveBeenCalledWith(
+      "[billing] checkout refused",
+      expect.objectContaining({ problem: expect.stringContaining("STRIPE_PRO_MONTHLY_PRICE_ID") }),
+    );
+    logged.mockRestore();
+  });
+
+  it.each([
+    ["a secret key without a mode marker", () => { process.env.STRIPE_SECRET_KEY = "pk_live_1"; }],
+    ["an API key in STRIPE_WEBHOOK_SECRET", () => { process.env.STRIPE_WEBHOOK_SECRET = "sk_test_1"; }],
+    ["a lookup key as a price id", () => { process.env.STRIPE_PRO_MONTHLY_PRICE_ID = "supportseal_pro_monthly"; }],
+  ])("refuses checkout on %s without calling Stripe", async (_name, misconfigure) => {
+    const writes = stubStripe();
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    misconfigure();
+    await signIn("ADMIN");
+
+    const response = await checkout();
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "billing_misconfigured" });
+    expect(writes).toHaveLength(0);
+    expect(stripe.calls).toHaveLength(0);
+    // the mismatch is logged loudly, naming variables and modes only
+    expect(logged).toHaveBeenCalledWith(
+      "[billing] Stripe configuration is inconsistent; billing is refused until it is fixed",
+      { problems: expect.any(Array) },
+    );
+    logged.mockRestore();
+  });
+
+  it("refuses the customer portal on a mixed configuration too", async () => {
+    const writes = stubStripe();
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    process.env.STRIPE_WEBHOOK_SECRET = "sk_test_1";
+    await signIn("ADMIN", { plan: "PRO", stripeCustomerId: "cus_p" });
+
+    const response = await portal();
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "billing_misconfigured" });
+    expect(writes).toHaveLength(0);
+    logged.mockRestore();
+  });
+
+  it("still answers 404 in self-hosted mode, whatever the Stripe configuration (FR-HOST-01)", async () => {
+    stubStripe();
+    process.env.HOSTED_MODE = "";
+    process.env.STRIPE_SECRET_KEY = "pk_live_1";
+    await signIn("ADMIN");
+
+    expect((await checkout()).status).toBe(404);
   });
 });

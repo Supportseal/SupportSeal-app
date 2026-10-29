@@ -81,6 +81,33 @@ Decided by the maintainer (2026-10-10, [#8](https://github.com/Supportseal/Suppo
 - **Email subject.** Outbound subjects become `Re: [SS-123] <subject>`; any `Re:` or `[SS-n]` already on the stored subject is normalised so replies never stack tags. Customers replying through their mail client keep the tag in the subject, but threading is unchanged: `Message-ID` / `In-Reply-To` / `References` or the reply token only.
 - **Backfill.** The migration numbers each Workspace's existing Conversations 1..n by `createdAt` (ties broken by id) and sets the counter past them.
 
+## Stripe test/live key guard (issue #25, 2026-10-29)
+
+`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and the four price ids are
+independent environment variables, and mixing Stripe modes (a live key with a
+test price, a webhook secret from the other mode's endpoint) fails confusingly
+or links test customers to production Workspaces. Working defaults the
+maintainer can override:
+
+- **What is detectable.** Only the secret key carries a mode marker
+  (`sk_test_…`/`sk_live_…`, restricted `rk_…`); webhook secrets (`whsec_…`)
+  and price ids (`price_…`) look identical in both modes, and Stripe never
+  returns endpoint secrets, so the key↔endpoint pairing has no offline or API
+  check. The guard therefore checks shapes statically (a key pasted into the
+  webhook var, a publishable key, a lookup key as a price id) and asks the
+  Stripe API, once per price and cached 5 minutes at first checkout use,
+  whether the key's mode can see each configured price ("No such price" =
+  mixed or deleted).
+- **Failure mode.** Refuse, don't crash: billing routes answer `503
+  billing_misconfigured`, the boot log states the problem once per problem
+  set, and a webhook delivery whose signatures keep failing logs a throttled
+  mixed-mode hint. Responses and logs name variables and modes ("test"/
+  "live"), never key values.
+- **Self-hosting (FR-HOST-01).** With no Stripe variable set the guard is
+  inert — "unconfigured", not "misconfigured" — and billing routes still
+  answer 404 in self-hosted mode first. The price check is network-failure
+  tolerant: a Stripe blip never blocks checkout (fail open, same as today).
+
 ## Workspace API: Products created through the API (2026-10-20)
 
 Raised by the token-authenticated `POST /api/products` ([FR-API-02](FRD.md)): a leaked `products:write` token could create about 43,000 Products a day at the 30 writes/minute limit.

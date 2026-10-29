@@ -53,9 +53,11 @@ export function UpgradePlans({
     setError(
       data?.error === "billing_not_configured"
         ? "Billing is not configured on this installation yet."
-        : data?.error === "already_subscribed"
-          ? "This Workspace already has a subscription. Reload the page to manage it."
-          : "Could not start checkout. Try again shortly.",
+        : data?.error === "billing_misconfigured"
+          ? "This installation's billing is misconfigured (Stripe test and live values mixed?). Its operator must fix it before checkout can start."
+          : data?.error === "already_subscribed"
+            ? "This Workspace already has a subscription. Reload the page to manage it."
+            : "Could not start checkout. Try again shortly.",
     );
   }
 
