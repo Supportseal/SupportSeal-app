@@ -190,6 +190,17 @@ describe("served widget scripts (issue #57)", () => {
     new Function(text);
   });
 
+  it("reset acknowledgement: the panel confirms once the intent is persisted and the loader tells the host page", async () => {
+    const loader = await (await loaderJs()).text();
+    expect(loader).toMatch(/event\.data\.type === 'ss:reset-ack'\) \{\s*try \{ window\.dispatchEvent\(new CustomEvent\('supportseal:reset-acknowledged'\)\)/);
+    const html = await (
+      await panelHtml(new NextRequest("http://localhost:3000/widget?key=pk_test&host=http://localhost:3000"))
+    ).text();
+    const script = /<script>([\s\S]*)<\/script>/.exec(html)?.[1] ?? "";
+    // Acked before the pending check, so a repeat reset is confirmed too.
+    expect(script).toMatch(/function resetSession\(\) \{\s*if \(previewMode\) return;\s*\/\/[^\n]*\s*\/\/[^\n]*\s*parent\.postMessage\(\{ type: 'ss:reset-ack' \}, '\*'\);\s*\/\/[^\n]*\s*\/\/[^\n]*\s*if \(resetPending\) return;/);
+  });
+
   it("panel resets on ss:reset: revokes server-side before re-booting and ignores the retired session (issue #151)", async () => {
     const html = await (
       await panelHtml(new NextRequest("http://localhost:3000/widget?key=pk_test&host=http://localhost:3000"))

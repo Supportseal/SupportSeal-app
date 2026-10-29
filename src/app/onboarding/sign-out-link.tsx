@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { resetSupportWidget } from "@/components/support/support-widget-script";
+import { resetSupportWidget } from "@/lib/support-widget-session";
 import { authClient } from "@/lib/auth-client";
 
 export function SignOutLink() {

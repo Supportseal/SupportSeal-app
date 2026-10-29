@@ -38,7 +38,7 @@ describe("widget reset intent survives navigation (#151, P2)", () => {
   it("resetSession persists the intent before anything async can be lost", async () => {
     const storage = fakeSessionStorage();
     const scope = {
-      sessionStorage: storage, resetKey: "ss_reset_pk_test", previewMode: false,
+      sessionStorage: storage, resetKey: "ss_reset_pk_test", previewMode: false, parent: { postMessage: vi.fn() },
       sessionGeneration: 0, resetPending: false, booted: true, devQueue: [1],
       streamRetry: { reset: vi.fn() }, stopPolling: vi.fn(), activeSource: null, streamActive: true,
       state: { messages: [{}] }, lastCount: 3, sending: true, pendingAttachments: [1],
@@ -49,13 +49,14 @@ describe("widget reset intent survives navigation (#151, P2)", () => {
     const reset = runInNewContext(`${await helpers()}\n${await panelFunction("resetSession")}; resetSession`, scope);
     reset();
     expect(storage.data.get("ss_reset_pk_test")).toBe("1");
+    expect(scope.parent.postMessage).toHaveBeenCalledWith({ type: "ss:reset-ack" }, "*");
     expect(scope.bootRetry.run).toHaveBeenCalledOnce();
   });
 
   it("a second reset while the revocation is still pending is the same operation", async () => {
     const storage = fakeSessionStorage();
     const scope = {
-      sessionStorage: storage, resetKey: "ss_reset_pk_test", previewMode: false,
+      sessionStorage: storage, resetKey: "ss_reset_pk_test", previewMode: false, parent: { postMessage: vi.fn() },
       sessionGeneration: 0, resetPending: false, booted: true, devQueue: [],
       streamRetry: { reset: vi.fn() }, stopPolling: vi.fn(), activeSource: null, streamActive: true,
       state: { messages: [] }, lastCount: 0, sending: false, pendingAttachments: [],
@@ -69,6 +70,8 @@ ${await panelFunction("resetSession")}; resetSession`, scope);
     reset();
     expect(scope.bootRetry.run).toHaveBeenCalledOnce();
     expect(scope.sessionGeneration).toBe(1);
+    // Both are acknowledged: the host stops retrying once the intent is stored.
+    expect(scope.parent.postMessage).toHaveBeenCalledTimes(2);
   });
 
   it("a fresh page with a stored intent revokes first and clears the intent only after the DELETE succeeds", async () => {

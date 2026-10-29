@@ -1205,6 +1205,9 @@ ${WIDGET_SOUND_JS}
   // after it wait for the new session like any pre-boot call.
   function resetSession() {
     if (previewMode) return;
+    // The intent is persisted below (or already was): the host page may stop
+    // retrying. Sent before the pending check so a repeat reset is acked too.
+    parent.postMessage({ type: 'ss:reset-ack' }, '*');
     // A revocation is already pending or retrying: that is the same operation.
     // A second DELETE could land after the first boot and clear the fresh cookie.
     if (resetPending) return;
