@@ -257,7 +257,31 @@ describe("scopedDb", () => {
       expect(() => loose(asBeta)[denied], denied).toThrow(ScopeViolationError);
     }
     expect(() => loose(asBeta.tag).$parent).toThrow(ScopeViolationError);
+    const rawClientsReachable = (root: object) => {
+      const seen = new Set<unknown>();
+      const walk = (value: unknown, depth: number): void => {
+        if ((typeof value !== "object" && typeof value !== "function") || value === null || seen.has(value)) return;
+        seen.add(value);
+        if (depth === 3) return;
+        walk(Object.getPrototypeOf(value), depth + 1);
+        for (const key of Reflect.ownKeys(value)) walk(Object.getOwnPropertyDescriptor(value, key)?.value, depth + 1);
+      };
+      walk(root, 0);
+      return [...seen].filter((value) => {
+        try {
+          return typeof (value as { $queryRawUnsafe?: unknown }).$queryRawUnsafe === "function";
+        } catch {
+          return false;
+        }
+      });
+    };
+    const pending = asBeta.tag.findMany();
+    for (const root of [asBeta, asBeta.tag, pending]) {
+      expect(rawClientsReachable(root).length, "raw clients reachable by reflection").toBe(0);
+    }
+    await pending;
     await asBeta.$transaction(async (tx) => {
+      expect(rawClientsReachable(tx).length, "raw clients reachable by reflection").toBe(0);
       for (const denied of [...escapes, "$transaction"]) {
         expect(() => loose(tx)[denied], denied).toThrow(ScopeViolationError);
       }

@@ -323,71 +323,88 @@ const OPERATIONS: ReadonlySet<string> = new Set([
   "count",
   "aggregate",
   "groupBy",
-  "fields",
 ]);
 
-/** Allowlist, not denylist: Prisma clients and delegates expose escapes such as `$parent` back to the raw client. */
-function refuse(prop: string | symbol): undefined {
-  if (typeof prop === "symbol" || prop === "then") return undefined;
-  throw new ScopeViolationError(`${prop} is not available on a scoped client.`);
-}
-
-/** Prisma queries run when awaited, so a query built before a transaction is checked again when it starts. */
-function guardPending<T>(pending: T): T {
-  if (typeof (pending as { then?: unknown } | null)?.then !== "function") return pending;
-  return new Proxy(pending as object, {
-    get(target, prop) {
-      const value: unknown = Reflect.get(target, prop, target);
-      if (typeof value !== "function") return value;
-      return (...args: unknown[]) => {
-        if (prop === "then" || prop === "catch" || prop === "finally") assertOutsideTx();
-        return (value as (...a: unknown[]) => unknown).apply(target, args);
-      };
+/**
+ * Scoped clients are null-prototype facades holding no Prisma object, so neither property access nor reflection
+ * (`$parent`, `_appliedParent`, descriptors) reaches the raw client. Unknown members throw.
+ */
+function facade<T>(members: PropertyDescriptorMap): T {
+  const target = Object.freeze(Object.create(null, members) as object);
+  return new Proxy(target, {
+    get(t, prop) {
+      if (prop in t) return Reflect.get(t, prop, t) as unknown;
+      if (typeof prop === "symbol" || prop === "then") return undefined;
+      throw new ScopeViolationError(`${prop} is not available on a scoped client.`);
     },
   }) as T;
 }
 
-/** Outside a transaction, checks at call and run time so a delegate or query taken earlier cannot run outside one from within. */
-function guardDelegate<T extends object>(delegate: T, outside: boolean): T {
-  return new Proxy(delegate, {
-    get(target, prop) {
-      if (typeof prop !== "string" || !OPERATIONS.has(prop)) return refuse(prop);
-      const value: unknown = Reflect.get(target, prop, target);
-      if (typeof value !== "function") return value;
-      return (...args: unknown[]) => {
-        if (!outside) return (value as (...a: unknown[]) => unknown).apply(target, args);
-        assertOutsideTx();
-        return guardPending((value as (...a: unknown[]) => unknown).apply(target, args));
-      };
-    },
+/** Prisma queries run when awaited, so outside a transaction a query built earlier is checked again when it starts. */
+function guardPending(pending: PromiseLike<unknown>, outside: boolean): PromiseLike<unknown> {
+  const start = () =>
+    new Promise<unknown>((resolve) => {
+      if (outside) assertOutsideTx();
+      resolve(pending);
+    });
+  return facade({
+    then: { value: (ok?: (v: unknown) => unknown, fail?: (e: unknown) => unknown) => start().then(ok, fail) },
+    catch: { value: (fail?: (e: unknown) => unknown) => start().catch(fail) },
+    finally: { value: (done?: () => void) => start().finally(done) },
+    [Symbol.toStringTag]: { value: "PrismaPromise" },
   });
 }
 
-function guardTx(tx: object): ScopedTx {
-  return new Proxy(tx, {
-    get(target, prop) {
-      if (typeof prop !== "string" || !DELEGATES.has(prop)) return refuse(prop);
-      return guardDelegate(Reflect.get(target, prop, target) as object, false);
-    },
-  }) as unknown as ScopedTx;
+type Operation = (...args: unknown[]) => PromiseLike<unknown>;
+
+function guardDelegate(delegate: Record<string, unknown>, outside: boolean): object {
+  const members: PropertyDescriptorMap = {};
+  for (const name of OPERATIONS) {
+    members[name] = {
+      value: (...args: unknown[]) => {
+        if (outside) assertOutsideTx();
+        return guardPending((delegate[name] as Operation)(...args), outside);
+      },
+    };
+  }
+  return facade(members);
+}
+
+function delegateGetters(client: Record<string, unknown>, outside: boolean): PropertyDescriptorMap {
+  const members: PropertyDescriptorMap = {};
+  for (const name of DELEGATES) {
+    members[name] = {
+      get: () => {
+        if (outside) assertOutsideTx();
+        return guardDelegate(client[name] as Record<string, unknown>, outside);
+      },
+    };
+  }
+  return members;
 }
 
 /** A Prisma client confined to one Workspace. `workspaceId` must come from an authenticated credential. */
 export function scopedDb(workspaceId: string): ScopedDb {
   const scoped = extendScoped(resolvePrisma(), workspaceId);
-  return new Proxy(scoped as unknown as ScopedDb, {
-    get(target, prop, receiver) {
-      if (prop === "workspaceId") return workspaceId;
-      if (prop !== "$transaction" && (typeof prop !== "string" || !DELEGATES.has(prop))) return refuse(prop);
-      assertOutsideTx();
-      if (prop === "$transaction") {
-        return <R>(fn: (tx: ScopedTx) => Promise<R>, options?: { maxWait?: number; timeout?: number }) => {
-          assertOutsideTx();
-          if (typeof fn !== "function") throw new ScopeViolationError("Use an interactive transaction on a scoped client.");
-          return scoped.$transaction((tx) => activeTx.run({ workspaceId, tx }, async () => await fn(guardTx(tx))), options);
-        };
-      }
-      return guardDelegate(Reflect.get(target, prop, receiver) as object, true);
+  const transaction = <R>(fn: (tx: ScopedTx) => Promise<R>, options?: { maxWait?: number; timeout?: number }) => {
+    assertOutsideTx();
+    if (typeof fn !== "function") throw new ScopeViolationError("Use an interactive transaction on a scoped client.");
+    return scoped.$transaction(
+      (tx) =>
+        activeTx.run({ workspaceId, tx }, async () =>
+          await fn(facade<ScopedTx>(delegateGetters(tx as unknown as Record<string, unknown>, false))),
+        ),
+      options,
+    );
+  };
+  return facade<ScopedDb>({
+    workspaceId: { value: workspaceId },
+    $transaction: {
+      get: () => {
+        assertOutsideTx();
+        return transaction;
+      },
     },
+    ...delegateGetters(scoped as unknown as Record<string, unknown>, true),
   });
 }
