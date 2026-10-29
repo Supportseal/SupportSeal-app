@@ -146,8 +146,8 @@ code reaches tenant tables.
   (no privilege escalation), and `tokens:admin` is never granted implicitly
   and never to an API-created token: only the dashboard grants it (AA9), so a
   leaked admin token cannot mint an unexpiring clone and revoke the original.
-- **Expiry**: new API-created tokens require an expiry (default 90 days,
-  maximum 1 year); `expiresAt: null` is refused through the API. Dashboard
+- **Expiry**: new API-created tokens require an explicit expiry (maximum
+  1 year; no server default, omission is a 400); `expiresAt: null` is refused through the API. Dashboard
   tokens keep today's optional expiry.
 - **Revocation** is immediate and by id, and a token can revoke itself.
 - **Rate limits**: per token (reads and writes separately) and per IP for

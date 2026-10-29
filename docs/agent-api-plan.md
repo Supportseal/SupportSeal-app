@@ -133,7 +133,7 @@ checks and the existing cross-tenant tests.
 | Control | Spec |
 | --- | --- |
 | Scopes | Least privilege, see [Scopes](#scopes). A created token's scopes must be a subset of its creator's scopes, and `tokens:admin` can never be put on an API-created token: it is granted only in the dashboard (AA9), so a leaked admin token cannot mint an unexpiring clone of itself and then revoke the original. |
-| Expiry | Tokens created through the API require `expiresAt` (default 90 days, maximum 365 days); `expiresAt: null` is refused through the API (AA8). Dashboard tokens keep their optional expiry. |
+| Expiry | Tokens created through the API require an explicit `expiresAt` (maximum 365 days; no server default, omission is `400`; 90 days is the documented example); `expiresAt: null` is refused through the API (AA8). Dashboard tokens keep their optional expiry. |
 | Revocation | Immediate (existing). A token may revoke itself. `DELETE /api/v1/tokens/{id}` is idempotent. |
 | Rate limits (defaults, AA11) | Per token: 120 reads/min, 30 writes/min (existing), 20 replies/min, 10 token-admin writes/min. Per IP: 20 failed auths/min (existing) and 300 requests/min across tokens. `429 rate_limited` with `Retry-After`. In-process (documented limitation). |
 | Body caps | 64 KiB JSON (existing). Attachment upload: FR-FILE-01 size and MIME rules. |
@@ -158,7 +158,7 @@ after 24 hours.
 
 Scopes are a registry (`src/lib/api-scopes.ts`) mapping each scope to the
 operations it allows; `scopesGrant(scopes, capability)` stays the single check.
-Implication is explicit and one-directional (`x:write` implies `x:read`).
+Implication is explicit and one-directional: `x:write` implies `x:read`, and `conversations:read` also implies `attachments:read` (Messages already expose attachment ids, so a reader must be able to fetch them).
 `products:write` keeps its meaning and keeps implying `products:read`, so
 existing tokens and the published quickstart are unaffected. Dashboard-created
 tokens keep getting only `products:write` unless an admin picks more (AA7).
@@ -175,7 +175,7 @@ tokens keep getting only `products:write` unless an admin picks more (AA7).
 | `contacts:read` | List/get Contacts | n/a |
 | `contacts:delete` | Delete a Contact (FR-SEC-02) | `contacts:read` |
 | `saved-replies:read` / `saved-replies:write` | List/get; create/edit/delete | write implies read |
-| `attachments:read` | Fetch attachment metadata and content | n/a |
+| `attachments:read` | Fetch attachment metadata and content | also implied by `conversations:read` |
 | `webhooks:read` / `webhooks:write` | List/get subscriptions and deliveries; create/edit/delete, rotate, replay, test | write implies read |
 | `tokens:admin` | List/create/revoke tokens | n/a |
 | `audit:read` | Read the audit log | n/a |
