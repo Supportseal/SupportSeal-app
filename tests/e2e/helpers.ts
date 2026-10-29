@@ -17,6 +17,10 @@ export function hostPageFor(appOrigin: string, supportOrigin = SUPPORT_ORIGIN): 
 export const HOST_PAGE = hostPageFor(APP_ORIGIN);
 
 export type Fixtures = {
+  support: {
+    workspace: { id: string };
+    product: { id: string; key: string };
+  };
   beta: {
     workspace: { id: string; name: string };
     product: { id: string; key: string; inboundEmail: string };

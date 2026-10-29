@@ -23,8 +23,10 @@ test.describe.serial("inbox is oldest-first and Close advances", () => {
     test.setTimeout(180_000);
     const agentContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     agentPage = await agentContext.newPage();
-    // First visit compiles the route under next dev; let it hydrate before the form is used.
-    await agentPage.goto("/register", { waitUntil: "networkidle" });
+    // First visit compiles the route under next dev (registration below
+    // loads it again). Not "networkidle": the dashboard's own support widget
+    // keeps a connection open on sign-in pages.
+    await agentPage.goto("/register", { waitUntil: "load" });
     productKey = await onboardWorkspaceWithProduct(agentPage, account, product);
 
     // One visitor per conversation, sent oldest first, so with the list

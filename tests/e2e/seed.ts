@@ -100,7 +100,24 @@ async function main() {
     },
   });
 
+  // The operator's own support desk: the dashboard embeds this Product's
+  // widget (SUPPORT_WIDGET_KEY, set by bootstrap.mjs to the same key).
+  const { E2E_SUPPORT_WIDGET_KEY } = await import("./shared-secret.mjs");
+  const supportWorkspace = await prisma.workspace.create({ data: { name: "Operator Support" } });
+  const supportProduct = await prisma.product.create({
+    data: {
+      workspaceId: supportWorkspace.id,
+      name: "Operator Help",
+      widgetPublicKey: E2E_SUPPORT_WIDGET_KEY,
+      domains: { create: [{ domain: "localhost" }] },
+    },
+  });
+
   const fixtures = {
+    support: {
+      workspace: { id: supportWorkspace.id },
+      product: { id: supportProduct.id, key: supportProduct.widgetPublicKey },
+    },
     beta: {
       workspace: { id: workspace.id, name: workspace.name },
       product: { id: product.id, key: product.widgetPublicKey, inboundEmail: "support@beta.test" },

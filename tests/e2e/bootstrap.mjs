@@ -18,7 +18,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { E2E_SHARED_SECRET } from "./shared-secret.mjs";
+import { E2E_SHARED_SECRET, E2E_SUPPORT_WIDGET_KEY } from "./shared-secret.mjs";
 
 const MODE = process.env.E2E_MODE === "selfhosted" ? "selfhosted" : "hosted";
 const PORT = process.env.E2E_PORT || (MODE === "selfhosted" ? "3200" : "3100");
@@ -42,7 +42,11 @@ const appEnv = {
   // Keep `next dev` from logging requests into Turbopack's watch scope
   // (see next.config.ts, mcpServer).
   NEXT_DEV_MCP: "0",
-  ...(MODE === "hosted" ? { HOSTED_MODE: "1", SMTP_URL: "smtp://127.0.0.1:1025" } : { HOSTED_MODE: "" }),
+  // Hosted: the dashboard embeds its own support chat (seeded Product).
+  // Self-hosted: never configured, so no widget renders.
+  ...(MODE === "hosted"
+    ? { HOSTED_MODE: "1", SMTP_URL: "smtp://127.0.0.1:1025", SUPPORT_WIDGET_KEY: E2E_SUPPORT_WIDGET_KEY }
+    : { HOSTED_MODE: "", SUPPORT_WIDGET_KEY: "" }),
 };
 
 async function main() {
