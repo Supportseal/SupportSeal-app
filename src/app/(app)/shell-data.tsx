@@ -9,6 +9,7 @@ import { sweepGraceRemindersLazily } from "@/lib/grace-reminders";
 import { isHostedMode } from "@/lib/hosting";
 import { getServicePause } from "@/lib/service-pause";
 import { SupportWidget } from "@/components/support/support-widget";
+import { sortSidebarProducts } from "@/components/layout/sidebar-products";
 import { setAvailabilityAction } from "./actions";
 
 /**
@@ -53,14 +54,16 @@ export async function Shell({
       availability={availability}
       onAvailabilityChange={setAvailabilityAction}
       mode={mode}
-      products={products
-        .filter((p) => p.archivedAt === null)
-        .map((p) => ({
-          id: p.id,
-          name: p.name,
-          primaryColor: p.primaryColor,
-          openCount: countByProduct.get(p.id) ?? 0,
-        }))}
+      products={sortSidebarProducts(
+        products
+          .filter((p) => p.archivedAt === null)
+          .map((p) => ({
+            id: p.id,
+            name: p.name,
+            primaryColor: p.primaryColor,
+            openCount: countByProduct.get(p.id) ?? 0,
+          })),
+      )}
       checklist={checklist}
       usageWarning={
         usage && (paused || (usage.overLimit && ctx.role === "ADMIN"))

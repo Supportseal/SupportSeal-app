@@ -8,7 +8,11 @@ export type SidebarProduct = {
 /** The filter input appears once the list is longer than this. */
 export const PRODUCT_FILTER_THRESHOLD = 8;
 
-/** Products with open conversations first, then A–Z within each group. */
+/**
+ * Products with open conversations first, then A–Z within each group.
+ * Runs on the server (shell-data) so the order is fixed before hydration;
+ * `localeCompare` with the default locale can differ between Node and a browser.
+ */
 export function sortSidebarProducts(products: SidebarProduct[]): SidebarProduct[] {
   return [...products].sort((a, b) => {
     const aHasOpen = a.openCount > 0;

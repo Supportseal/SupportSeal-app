@@ -15,7 +15,6 @@ import { Input } from "@/components/ui/input";
 import {
   filterSidebarProducts,
   PRODUCT_FILTER_THRESHOLD,
-  sortSidebarProducts,
   type SidebarProduct,
 } from "@/components/layout/sidebar-products";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -82,9 +81,17 @@ function ProductList({
   onNavigate: () => void;
 }) {
   const [query, setQuery] = useState("");
-  const sorted = useMemo(() => sortSidebarProducts(products), [products]);
-  const visible = useMemo(() => filterSidebarProducts(sorted, query), [sorted, query]);
   const showFilter = products.length > PRODUCT_FILTER_THRESHOLD;
+  // Drop a stale query when the input that controls it goes away, so the list
+  // never stays filtered with no way to clear it.
+  const filterKey = `${showFilter}:${collapsed}`;
+  const [seenFilterKey, setSeenFilterKey] = useState(filterKey);
+  if (seenFilterKey !== filterKey) {
+    setSeenFilterKey(filterKey);
+    setQuery("");
+  }
+  const activeQuery = showFilter ? query : "";
+  const visible = useMemo(() => filterSidebarProducts(products, activeQuery), [products, activeQuery]);
 
   return (
     <nav aria-label="Products" className="flex min-h-0 shrink flex-col">
@@ -121,7 +128,7 @@ function ProductList({
             </Link>
           </li>
         ))}
-        {visible.length === 0 ? (
+        {visible.length === 0 && activeQuery.trim() ? (
           <li className={cn("px-3 py-2 text-sm text-muted", collapsed && "lg:hidden")}>No matching products</li>
         ) : null}
       </ul>
