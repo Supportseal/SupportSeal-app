@@ -312,6 +312,14 @@ describe("scopedDb", () => {
     await expect(
       asBeta.$transaction(async () => scopedDb(beta.workspaceId).tag.findMany()),
     ).rejects.toBeInstanceOf(ScopeViolationError);
+    const { tag: capturedTag, $transaction: capturedTransaction } = asBeta;
+    await expect(
+      asBeta.$transaction(async () => capturedTag.create({ data: { name: "captured", workspaceId: beta.workspaceId } })),
+    ).rejects.toBeInstanceOf(ScopeViolationError);
+    await expect(asBeta.$transaction(async () => capturedTransaction(async () => 1))).rejects.toBeInstanceOf(
+      ScopeViolationError,
+    );
+    expect(await db.prisma.tag.count({ where: { name: "captured" } })).toBe(0);
     expect(await db.prisma.message.count({ where: { body: "cross-scope" } })).toBe(0);
 
     const batch = asBeta.$transaction as unknown as (ops: unknown[]) => Promise<unknown>;

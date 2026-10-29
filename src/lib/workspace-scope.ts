@@ -27,7 +27,7 @@ type Scoping =
  * models hold no tenant data and are unreachable through a scope.
  */
 export const TENANT_MODELS = {
-  User: { kind: "global", reason: "An account can belong to several Workspaces; reached only as a Membership's member." },
+  User: { kind: "global", reason: "Holds sign-in data and links to its sessions and credentials; reached only as a member's or author's scalars." },
   Session: { kind: "global", reason: "Dashboard sign-in sessions; never part of the API." },
   Account: { kind: "global", reason: "Sign-in credentials; never part of the API." },
   Verification: { kind: "global", reason: "Email verification and reset tokens; never part of the API." },
@@ -295,22 +295,44 @@ export type ScopedDb = ScopedTx & {
   $transaction<R>(fn: (tx: ScopedTx) => Promise<R>, options?: { maxWait?: number; timeout?: number }): Promise<R>;
 };
 
+const DELEGATES: ReadonlySet<string> = new Set(
+  Object.keys(TENANT_MODELS).map((model) => model[0].toLowerCase() + model.slice(1)),
+);
+
+function assertOutsideTx(): void {
+  if (activeTx.getStore()) throw new ScopeViolationError("Inside a transaction, use the client its callback receives.");
+}
+
+/** Checks at call time too, so a delegate taken before a transaction cannot run outside it from within. */
+function guardDelegate<T extends object>(delegate: T): T {
+  return new Proxy(delegate, {
+    get(target, prop, receiver) {
+      const value: unknown = Reflect.get(target, prop, receiver);
+      if (typeof value !== "function") return value;
+      return (...args: unknown[]) => {
+        assertOutsideTx();
+        return (value as (...a: unknown[]) => unknown).apply(target, args);
+      };
+    },
+  });
+}
+
 /** A Prisma client confined to one Workspace. `workspaceId` must come from an authenticated credential. */
 export function scopedDb(workspaceId: string): ScopedDb {
   const scoped = extendScoped(resolvePrisma(), workspaceId);
   return new Proxy(scoped as unknown as ScopedDb, {
     get(target, prop, receiver) {
       if (prop === "workspaceId") return workspaceId;
-      if (activeTx.getStore()) {
-        throw new ScopeViolationError("Inside a transaction, use the client its callback receives.");
-      }
+      assertOutsideTx();
       if (prop === "$transaction") {
         return <R>(fn: (tx: ScopedTx) => Promise<R>, options?: { maxWait?: number; timeout?: number }) => {
+          assertOutsideTx();
           if (typeof fn !== "function") throw new ScopeViolationError("Use an interactive transaction on a scoped client.");
           return scoped.$transaction((tx) => activeTx.run({ workspaceId, tx }, async () => await fn(tx as unknown as ScopedTx)), options);
         };
       }
-      return Reflect.get(target, prop, receiver);
+      const value: unknown = Reflect.get(target, prop, receiver);
+      return typeof prop === "string" && DELEGATES.has(prop) ? guardDelegate(value as object) : value;
     },
   });
 }
