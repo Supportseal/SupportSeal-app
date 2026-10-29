@@ -29,7 +29,7 @@ export const OWNER_KEY = "supportseal:support-widget-user";
  */
 export const RESET_PENDING_KEY = "supportseal:support-widget-reset-pending";
 
-/** Event the loader fires once the panel has durably recorded a reset. */
+/** Event the loader fires once the panel has revoked the visitor session server-side. */
 export const RESET_ACKNOWLEDGED_EVENT = "supportseal:reset-acknowledged";
 
 function readStorage(key: string): string | null {

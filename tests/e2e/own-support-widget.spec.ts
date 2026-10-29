@@ -95,5 +95,10 @@ test.describe.serial("own support widget in the dashboard", () => {
     const fresh = widgetFrame(page);
     await expect(fresh.locator("#statusline")).toBeVisible();
     await expect(fresh.locator("#thread")).not.toContainText("Question that must not leak");
+
+    // The panel revoked the session and told the page: no further resets.
+    await expect
+      .poll(() => page.evaluate(() => window.localStorage.getItem("supportseal:support-widget-reset-pending")))
+      .toBeNull();
   });
 });
