@@ -190,8 +190,8 @@ function prepareRow(model: ModelName, row: Row, workspaceId: string, creating: b
   return { row: next, checks };
 }
 
-/** Holds the transaction client while an interactive transaction runs, so reference checks join it. */
-const activeTx = new AsyncLocalStorage<unknown>();
+/** The running interactive transaction and its Workspace, so reference checks join it and other scopes stay out. */
+const activeTx = new AsyncLocalStorage<{ workspaceId: string; tx: unknown }>();
 
 type Counter = { count(args: { where: Record<string, unknown> }): Promise<number> };
 
@@ -210,6 +210,10 @@ function extendScoped(base: PrismaClient, workspaceId: string) {
     query: {
       async $allOperations({ model, operation, args, query }) {
         if (!model) throw new ScopeViolationError(`${operation} bypasses the Workspace scope.`);
+        const tx = activeTx.getStore();
+        if (tx && tx.workspaceId !== workspaceId) {
+          throw new ScopeViolationError("A scoped client cannot run inside another Workspace's transaction.");
+        }
         const name = model as ModelName;
         const scoping: Scoping = TENANT_MODELS[name];
         const filter = scopeFilter(name, workspaceId);
@@ -236,7 +240,7 @@ function extendScoped(base: PrismaClient, workspaceId: string) {
           input.update = prepare(input.update, false);
         }
         if (checks.length) {
-          await assertRefsInScope((activeTx.getStore() ?? scoped) as unknown as Record<string, Counter>, checks);
+          await assertRefsInScope((tx?.tx ?? scoped) as unknown as Record<string, Counter>, checks);
         }
         return query(input);
       },
@@ -275,7 +279,7 @@ export function scopedDb(workspaceId: string): ScopedDb {
       if (prop === "$transaction") {
         return <R>(fn: (tx: ScopedTx) => Promise<R>, options?: { maxWait?: number; timeout?: number }) => {
           if (typeof fn !== "function") throw new ScopeViolationError("Use an interactive transaction on a scoped client.");
-          return scoped.$transaction((tx) => activeTx.run(tx, () => fn(tx as unknown as ScopedTx)), options);
+          return scoped.$transaction((tx) => activeTx.run({ workspaceId, tx }, async () => await fn(tx as unknown as ScopedTx)), options);
         };
       }
       return Reflect.get(target, prop, receiver);

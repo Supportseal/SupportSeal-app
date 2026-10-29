@@ -230,6 +230,14 @@ describe("scopedDb", () => {
     ).rejects.toEqual(new NotInScopeError("Tag"));
     expect(await db.prisma.tag.count({ where: { name: "rolled-back" } })).toBe(0);
 
+    await expect(
+      asBeta.$transaction(() =>
+        asAlpha.message.create({ data: { conversationId, kind: "AGENT", body: "cross-scope" } }),
+      ),
+    ).rejects.toBeInstanceOf(ScopeViolationError);
+    await expect(asBeta.$transaction(() => asAlpha.tag.findMany())).rejects.toBeInstanceOf(ScopeViolationError);
+    expect(await db.prisma.message.count({ where: { body: "cross-scope" } })).toBe(0);
+
     const batch = asBeta.$transaction as unknown as (ops: unknown[]) => Promise<unknown>;
     expect(() => batch([])).toThrow(ScopeViolationError);
   });
