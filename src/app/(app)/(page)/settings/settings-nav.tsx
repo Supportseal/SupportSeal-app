@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 
 import { cn } from "@/lib/cn";
@@ -12,6 +13,13 @@ const BASE_TABS = [
 
 export function SettingsNav({ hosted = false, isAdmin = false }: { hosted?: boolean; isAdmin?: boolean }) {
   const pathname = usePathname();
+  const navRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    // The tab strip scrolls sideways on phones; keep the current tab visible.
+    const nav = navRef.current;
+    const active = nav?.querySelector<HTMLElement>("[aria-current=page]");
+    if (nav && active) nav.scrollLeft = active.offsetLeft - (nav.clientWidth - active.offsetWidth) / 2;
+  }, [pathname]);
   const tabs = [
     ...BASE_TABS,
     ...(isAdmin
@@ -24,7 +32,7 @@ export function SettingsNav({ hosted = false, isAdmin = false }: { hosted?: bool
   ];
 
   return (
-    <nav className="flex gap-1 overflow-x-auto border-b border-border" aria-label="Settings">
+    <nav ref={navRef} className="flex gap-1 overflow-x-auto border-b border-border" aria-label="Settings">
       {tabs.map((tab) => {
         const active = pathname === tab.href || pathname.startsWith(`${tab.href}/`);
         return (
@@ -32,7 +40,7 @@ export function SettingsNav({ hosted = false, isAdmin = false }: { hosted?: bool
             key={tab.href}
             href={tab.href}
             className={cn(
-              "-mb-px shrink-0 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
+              "-mb-px shrink-0 border-b-2 px-3 py-2.5 text-sm sm:px-4 font-medium transition-colors",
               active
                 ? "border-primary text-heading"
                 : "border-transparent text-body hover:text-heading",

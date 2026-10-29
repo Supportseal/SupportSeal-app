@@ -23,7 +23,7 @@ export function WizardShell({
         <SignOutLink />
       </header>
       <main className="mx-auto max-w-2xl px-6 pb-16">
-        <ol className="mb-8 flex items-center gap-2" aria-label="Setup steps">
+        <ol className="mb-8 flex items-center gap-1 sm:gap-2" aria-label="Setup steps">
           {STEPS.map((label, index) => {
             const number = index + 1;
             const state = number < step ? "done" : number === step ? "current" : "todo";
@@ -41,10 +41,10 @@ export function WizardShell({
                 >
                   {state === "done" ? "✓" : number}
                 </span>
-                <span className={`text-sm ${state === "current" ? "font-medium text-heading" : "text-muted"}`}>
+                <span className={`text-sm ${state === "current" ? "font-medium text-heading" : "hidden text-muted sm:inline"}`}>
                   {label}
                 </span>
-                {number < STEPS.length ? <span className="mx-1 h-px w-6 bg-border" aria-hidden /> : null}
+                {number < STEPS.length ? <span className="mx-1 h-px w-3 bg-border sm:w-6" aria-hidden /> : null}
               </li>
             );
           })}
