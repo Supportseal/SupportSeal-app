@@ -68,7 +68,7 @@ may use. It returns a Prisma client extended with a query extension
 | `findMany`, `findFirst`, `findFirstOrThrow`, `count`, `aggregate`, `groupBy`, `updateMany`, `deleteMany` | `workspaceId` ANDed into `where` |
 | `create`, `createMany` | `workspaceId` forced on `data` (a differing value throws) |
 | `findUnique`, `findUniqueOrThrow`, `update`, `delete`, `upsert` | Rewritten to the scoped `findFirst` / `updateMany` / `deleteMany` form, so an id alone never selects a row |
-| Models without `workspaceId`: `Message`, `ConversationTag`, `SavedReplyProduct`, `MessageReadReceipt`, `ChatVisitor` (via their Conversation or SavedReply) and `ProductDomain`, `ProductMailDomain`, `WidgetHostSignal` (via their Product). `DiagnosticSnapshot` has its own `workspaceId` and takes the direct filter | Reached only through the parent relation filter (`where: { conversation: { workspaceId } }`); a direct query without it throws |
+| Models without `workspaceId`: `Message`, `ConversationTag`, `SavedReplyProduct`, `MessageReadReceipt` (via their Conversation or SavedReply) and `ChatVisitor`, `ProductDomain`, `ProductMailDomain`, `WidgetHostSignal` (via their Product; `ChatVisitor.conversationId` is nullable, so a visitor with no Conversation is still reachable only through its Product). `DiagnosticSnapshot` has its own `workspaceId` and takes the direct filter | Reached only through the parent relation filter (`where: { conversation: { workspaceId } }`); a direct query without it throws |
 | Nested writes (`connect`, `connectOrCreate`, relation `create`) | The extension walks the args and rejects any `connect` to a row outside the scope (a foreign `productId` surfaces as the same `404` as an unknown one) |
 
 Rules that make the choke point a guarantee instead of a convention:
@@ -421,9 +421,11 @@ done until all hold.
    data is unchanged afterwards; and the number of statements issued equals the
    unknown-id baseline.
 2. **Coverage manifest test.** The suite records each `operationId` it
-   exercises; a final test fails if any operation in the OpenAPI document (or
-   draft, before it is promoted) is missing, so a new endpoint cannot ship
-   untested.
+   exercises; a final test fails if any operation implemented under
+   `src/app/api/v1` (a route file exists) was not exercised, so a new endpoint
+   cannot ship untested. Draft operations with no route yet and operations
+   marked `x-status: blocked` (`setAssignee`) are excluded until their slice
+   implements them, so the test is green from slice 1a.
 3. **Unscoped-Prisma gate.** The ESLint rule and the static test from
    [The choke point](#2-the-choke-point-scopeddb), plus the `TENANT_MODELS`
    classification test and the per-model property test. CI (and the local

@@ -76,9 +76,9 @@ code reaches tenant tables.
   selectors) it is rewritten to the scoped `findFirst`/`updateMany` form, or
   refused, so an id alone can never select a row.
 - Models without a `workspaceId` column (Message, ConversationTag,
-  SavedReplyProduct, MessageReadReceipt, ChatVisitor, and ProductDomain,
-  ProductMailDomain, WidgetHostSignal via Product) are
-  reached only through their Conversation/SavedReply/Product parent with the
+  SavedReplyProduct, MessageReadReceipt via their Conversation/SavedReply, and
+  ChatVisitor, ProductDomain, ProductMailDomain, WidgetHostSignal via Product)
+  are reached only through their parent with the
   scope applied (DiagnosticSnapshot has its own `workspaceId`) (`where: { conversation: { workspaceId } }`). The extension refuses
   a direct query on such a model that lacks the relation filter.
 - Raw SQL (`$queryRaw`, `$executeRaw`) is forbidden in `src/app/api/v1/**`;
