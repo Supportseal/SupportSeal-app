@@ -57,7 +57,20 @@ export const WIDGET_RATE_LIMITS = {
    * rewrites rows, so a leaked token cannot churn Products unthrottled.
    */
   apiTokenWrite: 30,
+  /** Read requests per API token (`/api/v1`, AA11). */
+  apiTokenRead: 120,
+  /** Agent replies per API token: each one emails or chats a customer (AA11). */
+  apiTokenReply: 20,
+  /** Token creation and revocation per API token (AA11). */
+  apiTokenAdmin: 10,
+  /** All `/api/v1` requests per client IP, across tokens, charged before authentication (AA11). */
+  apiIp: 300,
 } as const;
+
+export type ApiTokenBucket = keyof Pick<
+  typeof WIDGET_RATE_LIMITS,
+  "apiTokenRead" | "apiTokenWrite" | "apiTokenReply" | "apiTokenAdmin"
+>;
 
 export type WidgetRateBucket = keyof Pick<typeof WIDGET_RATE_LIMITS, "session" | "read" | "write" | "revoke">;
 
@@ -102,7 +115,7 @@ function windowHits(key: string, now: number): number[] {
  * and a request with no determinable IP (issue #219) is allowed rather than
  * collapsed into one shared bucket a single caller could exhaust.
  */
-function chargeIpBucket(request: NextRequest, keyPrefix: string, limit: number): boolean {
+function chargeIpBucket(request: Pick<Request, "headers">, keyPrefix: string, limit: number): boolean {
   const ip = clientIp(request);
   if (ip === null) return true;
   const now = Date.now();
@@ -189,17 +202,22 @@ export function recordApiTokenAuthFailure(request: Pick<Request, "headers">): vo
   hits.set(key, own);
 }
 
-/** Per-token budget for write endpoints; charged only after the token authenticated. */
-export function rateLimitApiTokenWrite(tokenId: string): boolean {
+/** Per-token budget for one request class; charged only after the token authenticated. */
+export function rateLimitApiToken(bucket: ApiTokenBucket, tokenId: string): boolean {
   const now = Date.now();
   pruneIfLarge(now);
-  const key = `api-token-write|${tokenId}`;
+  const key = `${bucket}|${tokenId}`;
   const own = windowHits(key, now);
-  const rejected = own.length >= WIDGET_RATE_LIMITS.apiTokenWrite;
+  const rejected = own.length >= WIDGET_RATE_LIMITS[bucket];
   // Rejected requests add no hit: they must not extend the saturation.
   if (!rejected) own.push(now);
   hits.set(key, own);
   return !rejected;
+}
+
+/** Per-IP umbrella for `/api/v1`, charged before the token lookup so floods never reach the database. */
+export function rateLimitApiIp(request: Pick<Request, "headers">): boolean {
+  return chargeIpBucket(request, "api-ip|", WIDGET_RATE_LIMITS.apiIp);
 }
 
 function pruneIfLarge(now: number) {

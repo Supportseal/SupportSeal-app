@@ -56,42 +56,6 @@
     }
   ],
   "paths": {
-    "/api/v1/whoami": {
-      "get": {
-        "operationId": "whoami",
-        "tags": [
-          "Auth"
-        ],
-        "summary": "Introspect the calling token",
-        "x-required-scope": "any valid token",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "headers": {
-              "Cache-Control": {
-                "$ref": "#/components/headers/CacheControl"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Whoami"
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/InsufficientScope"
-          },
-          "429": {
-            "$ref": "#/components/responses/RateLimited"
-          }
-        }
-      }
-    },
     "/api/v1/workspace": {
       "get": {
         "operationId": "getWorkspace",
@@ -2039,65 +2003,6 @@
         "additionalProperties": false,
         "required": [
           "error"
-        ]
-      },
-      "Whoami": {
-        "type": "object",
-        "properties": {
-          "workspace": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "name": {
-                "type": "string"
-              }
-            },
-            "additionalProperties": false,
-            "required": [
-              "id",
-              "name"
-            ]
-          },
-          "token": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "name": {
-                "type": "string"
-              },
-              "scopes": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "expiresAt": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "format": "date-time"
-              }
-            },
-            "additionalProperties": false,
-            "required": [
-              "id",
-              "name",
-              "scopes",
-              "expiresAt"
-            ]
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "workspace",
-          "token"
         ]
       },
       "Workspace": {

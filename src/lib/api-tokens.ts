@@ -1,5 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 
+import type { ApiScope } from "@/lib/api-scopes";
 import { prisma } from "@/lib/prisma";
 import type { MembershipRole } from "@/lib/workspace";
 
@@ -15,20 +16,8 @@ import type { MembershipRole } from "@/lib/workspace";
 export const API_TOKEN_PREFIX = "ss_live_";
 const TOKEN_PATTERN = /^ss_live_[A-Za-z0-9_-]{43}$/u;
 
-/** Scopes a token can be created with. `products:write` implies reading Products. */
-export const API_TOKEN_SCOPES = ["products:write"] as const;
-export type ApiTokenScope = (typeof API_TOKEN_SCOPES)[number];
-
-/** What an API route asks for; satisfied by any scope that grants it. */
-export type ApiCapability = "products:read" | "products:write";
-
-const SCOPE_GRANTS: Record<ApiTokenScope, readonly ApiCapability[]> = {
-  "products:write": ["products:read", "products:write"],
-};
-
-export function scopesGrant(scopes: readonly string[], capability: ApiCapability): boolean {
-  return scopes.some((scope) => SCOPE_GRANTS[scope as ApiTokenScope]?.includes(capability));
-}
+/** Scopes a dashboard-created token gets (AA7: unchanged until the scope picker lands). */
+export const API_TOKEN_SCOPES = ["products:write"] as const satisfies readonly ApiScope[];
 
 /** `lastUsedAt` is refreshed at most this often per token (write amplification). */
 export const LAST_USED_REFRESH_MS = 60 * 60 * 1000;

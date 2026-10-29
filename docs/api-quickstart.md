@@ -61,6 +61,23 @@ curl -sS "$SUPPORTSEAL_URL/api/products" -H "Authorization: Bearer $SUPPORTSEAL_
 { "products": [] }
 ```
 
+To see which Workspace the token acts in and which scopes it holds, ask
+`/api/v1/whoami`. Any valid token may call it:
+
+```sh
+curl -sS "$SUPPORTSEAL_URL/api/v1/whoami" -H "Authorization: Bearer $SUPPORTSEAL_TOKEN"
+```
+
+```json
+{
+  "workspace": { "id": "9b2d4c1e-7a3f-4e8b-9c1d-2f6a8e0b4d17", "name": "Acme Support" },
+  "token": { "id": "c4e8a2f0-1b3d-4f5a-8e7c-6d9b0a2e4f81", "name": "Provisioning script", "scopes": ["products:write"], "expiresAt": null }
+}
+```
+
+The `/api/v1` endpoints accept only the `Authorization` header, never a
+dashboard session cookie.
+
 ## 2. Create the Product
 
 Only `name` is required. `primaryColor` defaults to `#2563eb` and accepts `#rgb`
@@ -274,7 +291,7 @@ Every failure from the API has one JSON shape. Branch on `code`, never on
 | 404 | `not_found` | The id does not exist or belongs to another Workspace (indistinguishable). | Check `PRODUCT_ID` and that the token belongs to the right Workspace. |
 | 409 | `conflict` | `addDomains` names a domain already allowed, or `removeDomains` one that is not. Nothing was applied. The check is best-effort under concurrent requests (see below). | Drop the entry or `GET` the Product to see its current domains. |
 | 409 | `product_limit_reached` | `POST /api/products` when the Workspace already has 100 Products (archived ones count). Nothing was created. | Retrying will not help. Archive-and-recreate does not help either; create further Products in the dashboard, which has no cap. |
-| 429 | `rate_limited` | 20 failed token attempts from your IP in a minute, or more than 30 writes per minute with this token. | Wait `Retry-After` seconds (60), then retry. |
+| 429 | `rate_limited` | 20 failed token attempts from your IP in a minute, more than 30 writes per minute with this token, or on `/api/v1` more than 120 reads per minute with this token or 300 requests per minute from your IP. | Wait `Retry-After` seconds (60), then retry. |
 | 500 | `internal_error` | The server could not complete the request (an unexpected failure; the message is generic and the detail is only in the server log). Any endpoint can return it. | Retry with backoff; check the server logs if it persists. |
 
 A method a route does not have returns `405` from the framework with no JSON
@@ -297,7 +314,9 @@ body.
 - Retry `429` (after `Retry-After`) and `5xx` with backoff. Do not retry other
   `4xx`; fix the request.
 - **Limits:** 30 writes (`POST`/`PATCH`) per minute per token, and 20 failed
-  token attempts per minute per client IP. Successful reads are not rate-limited.
+  token attempts per minute per client IP. On `/api/v1`, reads are also limited
+  to 120 per minute per token, and all requests to 300 per minute per client IP.
+  Successful reads of `/api/products` are not rate-limited.
   Limits are in-process, so a multi-process self-hosted deployment enforces them
   per process.
 - Responses are `Cache-Control: private, no-store`.
