@@ -42,7 +42,7 @@ test.describe.serial("own support widget in the dashboard", () => {
     await expect(launcher(page)).toBeVisible();
   });
 
-  test("an expired dashboard session does not hand the support thread to the next person", async ({
+  test("a signed-in user keeps the thread; an expired session does not hand the support thread to the next person", async ({
     page,
     context,
   }) => {
@@ -54,6 +54,11 @@ test.describe.serial("own support widget in the dashboard", () => {
     await frame.locator("#input").fill("Own-support question from the beta owner");
     await frame.locator("#send").click();
     await expect(frame.locator("#thread")).toContainText("Own-support question");
+
+    // Sign-in pages that also render for signed-in users keep their thread.
+    await page.goto("/forgot-password");
+    await launcher(page).click();
+    await expect(widgetFrame(page).locator("#thread")).toContainText("Own-support question");
 
     // The dashboard session lapses (auth cookies gone); the widget's visitor
     // cookie and storage survive, as they do on a real shared device.
