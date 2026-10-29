@@ -41,10 +41,10 @@ export function WizardShell({
                 >
                   {state === "done" ? "✓" : number}
                 </span>
-                <span className={`text-sm ${state === "current" ? "font-medium text-heading" : "hidden text-muted sm:inline"}`}>
+                <span className={`text-sm ${state === "current" ? "font-medium text-heading" : "sr-only text-muted sm:not-sr-only"}`}>
                   {label}
                 </span>
-                {number < STEPS.length ? <span className="mx-1 h-px w-3 bg-border sm:w-6" aria-hidden /> : null}
+                {number < STEPS.length ? <span className="mx-1 hidden h-px w-6 bg-border sm:block" aria-hidden /> : null}
               </li>
             );
           })}

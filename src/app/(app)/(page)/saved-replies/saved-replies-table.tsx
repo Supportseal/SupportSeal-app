@@ -45,7 +45,7 @@ export function SavedRepliesTable({ replies, isAdmin }: { replies: Reply[]; isAd
                   )}
                 </div>
               </td>
-              <td className="max-w-md px-4 py-3 text-body max-sm:block max-sm:p-0">
+              <td className="max-w-md px-4 py-3 text-body max-sm:block max-sm:max-w-none max-sm:p-0">
                 <p className="line-clamp-2 whitespace-pre-wrap">{reply.body}</p>
               </td>
               {isAdmin ? (

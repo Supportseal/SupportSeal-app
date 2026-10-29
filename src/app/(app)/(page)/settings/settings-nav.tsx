@@ -18,7 +18,10 @@ export function SettingsNav({ hosted = false, isAdmin = false }: { hosted?: bool
     // The tab strip scrolls sideways on phones; keep the current tab visible.
     const nav = navRef.current;
     const active = nav?.querySelector<HTMLElement>("[aria-current=page]");
-    if (nav && active) nav.scrollLeft = active.offsetLeft - (nav.clientWidth - active.offsetWidth) / 2;
+    if (!nav || !active) return;
+    const n = nav.getBoundingClientRect();
+    const a = active.getBoundingClientRect();
+    nav.scrollLeft += a.left - n.left - (n.width - a.width) / 2;
   }, [pathname]);
   const tabs = [
     ...BASE_TABS,
