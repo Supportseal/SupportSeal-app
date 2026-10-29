@@ -242,7 +242,7 @@ A test fails if a server action is missing from the manifest, if a mapped
 ## Consequences
 
 - New tables (`ApiAuditLog`, `IdempotencyKey`, `WebhookEndpoint`,
-  `WebhookDelivery`, plus `Message.authorTokenId` and assignment columns from
+  the transactional outbox `webhook_events`, `WebhookDelivery`, plus `Message.authorTokenId` and assignment columns from
   the V2 assignment design) arrive with their phases, each as a hand-written
   migration; this ADR only specifies them.
 - The existing Product routes and their drift test keep working. New routes
