@@ -6,7 +6,7 @@ import { API_ERROR_STATUS, apiError, type ApiErrorBody } from "@/lib/api-errors"
 import { generateApiToken } from "@/lib/api-tokens";
 import { getAuth } from "@/lib/auth";
 import { MAX_BODY_BYTES, MAX_DOMAINS_PER_LIST } from "@/lib/product-api";
-import { getActiveProductByWidgetKey, MAX_API_PRODUCTS_PER_WORKSPACE } from "@/lib/products";
+import { getActiveProductByWidgetKey, MAX_API_PRODUCTS_PER_WORKSPACE, setProductSupportEmail } from "@/lib/products";
 import { WIDGET_RATE_LIMITS } from "@/lib/widget-rate-limit";
 import { startTestDb, stopTestDb, type TestDb } from "@/test/integration-db";
 
@@ -47,6 +47,7 @@ type ProductJson = {
   name: string;
   archived: boolean;
   primaryColor: string;
+  supportEmail: string | null;
   domains: string[];
   widgetKey: string;
   formKey: string | null;
@@ -160,6 +161,7 @@ describe("POST /api/products", () => {
       name: "Acme App",
       archived: false,
       primaryColor: "#aabbcc",
+      supportEmail: null,
       domains: ["example.com", "*.example.org", "www.example.com"],
       widgetKey: expect.stringMatching(/^pk_[A-Za-z0-9_-]{32}$/u),
       formKey: expect.stringMatching(/^fk_[A-Za-z0-9_-]{32}$/u),
@@ -170,6 +172,33 @@ describe("POST /api/products", () => {
     expect(stored.formPublicKey).toBe(product.formKey);
     expect(stored.inboundEmail).toMatch(/^product_/u);
     expect((await db.prisma.apiToken.findUniqueOrThrow({ where: { id: row.id } })).lastUsedAt).toBeInstanceOf(Date);
+  });
+
+  it("stores a supportEmail trimmed and lower-cased, like the dashboard, and returns it", async () => {
+    const { token } = await workspaceWithToken("Acme");
+    const response = await post(token, { name: "Acme App", supportEmail: "  Help@Acme.Example " });
+    expect(response.status).toBe(201);
+    const product = (await response.json()) as ProductJson;
+    expect(product.supportEmail).toBe("help@acme.example");
+    expect((await db.prisma.product.findUniqueOrThrow({ where: { id: product.id } })).supportEmail).toBe("help@acme.example");
+    expect(((await (await get(token, product.id)).json()) as ProductJson).supportEmail).toBe("help@acme.example");
+  });
+
+  it.each([["null", null], ["blank", "  "]])("stores no supportEmail for a %s value", async (_label, value) => {
+    const { token } = await workspaceWithToken("Acme");
+    const response = await post(token, { name: "Acme App", supportEmail: value });
+    expect(response.status).toBe(201);
+    expect(((await response.json()) as ProductJson).supportEmail).toBeNull();
+  });
+
+  it("refuses an invalid or SupportSeal-owned supportEmail with a field detail and creates nothing", async () => {
+    const { token } = await workspaceWithToken("Acme");
+    for (const supportEmail of ["not-an-email", "a b@acme.example", "a@acme", `${"x".repeat(250)}@a.io`, "reply+abc@mail.supportseal.app", "product_abc@inbound.supportseal.app"]) {
+      const error = await expectError(await post(token, { name: "Nope", supportEmail }), 400, "invalid_request");
+      expect(error.details?.[0].field, supportEmail).toBe("supportEmail");
+    }
+    await expectError(await post(token, { name: "Nope", supportEmail: 7 }), 400, "invalid_request");
+    expect(await db.prisma.product.count()).toBe(0);
   });
 
   it("defaults the colour and domains, and never exposes the inbound address", async () => {
@@ -468,6 +497,74 @@ describe("PATCH /api/products/:id", () => {
     expect(await (await get(token, product.id)).json()).toEqual(product);
   });
 
+  it("sets, changes and clears supportEmail, leaving it alone when omitted", async () => {
+    const { token } = await workspaceWithToken("Acme");
+    const product = await created(token);
+    expect(product.supportEmail).toBeNull();
+
+    const set = (await (await patch(token, product.id, { supportEmail: "Help@Acme.Example" })).json()) as ProductJson;
+    expect(set).toEqual({ ...product, supportEmail: "help@acme.example" });
+
+    const renamed = (await (await patch(token, product.id, { name: "Renamed" })).json()) as ProductJson;
+    expect(renamed.supportEmail).toBe("help@acme.example");
+
+    const cleared = (await (await patch(token, product.id, { supportEmail: null })).json()) as ProductJson;
+    expect(cleared.supportEmail).toBeNull();
+    await patch(token, product.id, { supportEmail: "again@acme.example" });
+    const blank = (await (await patch(token, product.id, { supportEmail: "" })).json()) as ProductJson;
+    expect(blank.supportEmail).toBeNull();
+  });
+
+  it("applies the dashboard's rules to supportEmail, including the Product's own generated address", async () => {
+    const { token } = await workspaceWithToken("Acme");
+    const product = await created(token);
+    const stored = await db.prisma.product.findUniqueOrThrow({ where: { id: product.id } });
+    for (const supportEmail of ["nope", "a@b", stored.inboundEmail!, stored.inboundEmail!.toUpperCase(), "reply+x@mail.supportseal.app"]) {
+      const error = await expectError(await patch(token, product.id, { name: "Changed", supportEmail }), 400, "invalid_request");
+      expect(error.details?.[0].field, supportEmail).toBe("supportEmail");
+    }
+    expect(await (await get(token, product.id)).json()).toEqual(product);
+  });
+
+  it("matches the dashboard action: the same input yields the same stored address or refusal", async () => {
+    const { workspace, token } = await workspaceWithToken("Acme");
+    const product = await created(token);
+    const ctx = { workspace, role: "ADMIN", user: { id: "u" } } as unknown as Parameters<typeof setProductSupportEmail>[0]["ctx"];
+    for (const input of ["Help@Acme.Example", "   ", "bad", "a@b.c "]) {
+      const dashboard = await setProductSupportEmail({ ctx, productId: product.id, supportEmail: input });
+      const api = await patch(token, product.id, { supportEmail: input });
+      if (dashboard.ok) expect(((await api.json()) as ProductJson).supportEmail, input).toBe(dashboard.supportEmail);
+      else expect(((await api.json()) as ApiErrorBody).error.message, input).toBe(dashboard.error);
+    }
+  });
+
+  it("refuses a cross-Workspace supportEmail change exactly like an unknown id, and changes nothing (FR-SEC-01)", async () => {
+    const alpha = await workspaceWithToken("Alpha");
+    const beta = await workspaceWithToken("Beta");
+    const betaProduct = await created(beta.token, { name: "Beta App", supportEmail: "help@beta.example" });
+    const attack = { supportEmail: "attacker@evil.example" };
+
+    const cross = await patch(alpha.token, betaProduct.id, attack);
+    const unknown = await patch(alpha.token, "00000000-0000-4000-8000-000000000000", attack);
+    expect(cross.status).toBe(404);
+    expect(await cross.json()).toEqual(await unknown.json());
+    const clear = await patch(alpha.token, betaProduct.id, { supportEmail: null });
+    expect(clear.status).toBe(404);
+    expect(await (await get(beta.token, betaProduct.id)).json()).toEqual(betaProduct);
+    expect((await db.prisma.product.findUniqueOrThrow({ where: { id: betaProduct.id } })).supportEmail).toBe("help@beta.example");
+    expect(JSON.stringify(await (await get(alpha.token, betaProduct.id)).json())).not.toContain("beta.example");
+  });
+
+  it("does not leak another Workspace's supportEmail through the list", async () => {
+    const alpha = await workspaceWithToken("Alpha");
+    const beta = await workspaceWithToken("Beta");
+    await created(alpha.token, { name: "Alpha App", supportEmail: "help@alpha.example" });
+    await created(beta.token, { name: "Beta App", supportEmail: "help@beta.example" });
+    const list = await (await listProductsRoute(send("GET", "/api/products", { token: alpha.token }))).json();
+    expect(JSON.stringify(list)).toContain("help@alpha.example");
+    expect(JSON.stringify(list)).not.toContain("beta.example");
+  });
+
   it("answers 400 for an empty patch, unknown fields, bad values and add+remove of one domain", async () => {
     const { token } = await workspaceWithToken("Acme");
     const product = await created(token);
@@ -476,6 +573,8 @@ describe("PATCH /api/products/:id", () => {
       { archived: true },
       { name: "" },
       { primaryColor: "red" },
+      { supportEmail: "nope" },
+      { supportEmail: 5 },
       { addDomains: ["not a domain"] },
       { removeDomains: [3] },
       { addDomains: ["x.example.com"], removeDomains: ["X.example.com"] },

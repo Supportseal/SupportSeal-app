@@ -47,7 +47,7 @@ returns:
   "products": [
     {
       "id": "3f6c0a52-...", "name": "Acme App", "archived": false,
-      "primaryColor": "#7367f0", "domains": ["acme.example"], "widgetKey": "pk_...", "formKey": "fk_..."
+      "primaryColor": "#7367f0", "supportEmail": null, "domains": ["acme.example"], "widgetKey": "pk_...", "formKey": "fk_..."
     }
   ]
 }

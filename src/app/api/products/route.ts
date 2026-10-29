@@ -25,7 +25,7 @@ export function GET(request: Request) {
 /**
  * Create a Product in the token's own Workspace (issue #187). Token-only:
  * `authorizeAdminApi` refuses session cookies for `products:write`. The body is
- * `{ name, primaryColor?, domains?, includeSiblings? }`; the core is the
+ * `{ name, primaryColor?, supportEmail?, domains?, includeSiblings? }`; the core is the
  * dashboard's `createProduct`, so validation, normalisation and key generation
  * are identical. Unlike the dashboard it refuses a create at
  * MAX_API_PRODUCTS_PER_WORKSPACE (`409 product_limit_reached`). See docs/add-product.md.
@@ -37,12 +37,13 @@ export function POST(request: Request) {
 
     const parsed = await parseCreateBody(request);
     if (!parsed.ok) return parsed.response;
-    const { name, primaryColor, domains, includeSiblings } = parsed.body;
+    const { name, primaryColor, supportEmail, domains, includeSiblings } = parsed.body;
 
     const result = await createProduct({
       ctx: { workspace: { id: auth.ctx.workspaceId }, role: "ADMIN" },
       name,
       primaryColor,
+      supportEmail,
       domains,
       includeSiblings: includeSiblings ? siblingsOf(domains ?? []) : undefined,
       maxProducts: MAX_API_PRODUCTS_PER_WORKSPACE,

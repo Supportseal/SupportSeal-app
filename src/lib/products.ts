@@ -167,6 +167,16 @@ function parseDomains(
   return { ok: true, domains };
 }
 
+/** The dashboard's support-address rules (`normalizeSupportEmail`) as a field-tagged API failure. `null` clears. */
+function parseProductSupportEmail(
+  input: string | null,
+  product: { inboundEmail: string | null },
+): { ok: true; supportEmail: string | null } | ProductFailure {
+  const parsed = normalizeSupportEmail(input ?? "", product);
+  if (!parsed.ok) return fail("invalid", parsed.error, "supportEmail");
+  return { ok: true, supportEmail: parsed.email };
+}
+
 const ADMIN_ONLY = "Only Workspace admins can manage Products.";
 
 function assertAdmin(ctx: ProductWriteContext): void {
@@ -251,6 +261,8 @@ export async function createProduct(input: {
    * counterpart of a submitted domain is honoured, so a forged checkbox
    * value cannot add an unrelated host. */
   includeSiblings?: string[];
+  /** Public support address, validated like the dashboard's; blank or null stores none. */
+  supportEmail?: string | null;
   /** Refuse the create when the Workspace already holds this many Products
    * (every row counts, archived included). Unset means no limit; only the
    * API route sets it. */
@@ -276,6 +288,10 @@ export async function createProduct(input: {
 
   const allocated = await generateUniqueInboundEmail();
   if (!allocated.ok) return fail("internal", allocated.error);
+  const supportEmail = parseProductSupportEmail(input.supportEmail ?? null, {
+    inboundEmail: allocated.inboundEmail,
+  });
+  if (!supportEmail.ok) return supportEmail;
 
   const workspaceId = input.ctx.workspace.id;
   const data = {
@@ -286,6 +302,7 @@ export async function createProduct(input: {
     formPublicKey: generateFormPublicKey(),
     inboundEmail: allocated.inboundEmail,
     inboundEmailVerified: new Date(),
+    supportEmail: supportEmail.supportEmail,
     domains: { create: normalizedDomains.map((domain) => ({ domain })) },
   };
 
@@ -388,7 +405,7 @@ export async function updateProduct(input: {
 }
 
 /**
- * Edit a Product's name, colour and domain list in one all-or-nothing write.
+ * Edit a Product's name, colour, support address and domain list in one all-or-nothing write.
  * Domains are edited, not replaced, exactly like the dashboard's Domains card:
  * `addDomains` adds hostnames (an already-allowed one is a `conflict`, as in the
  * dashboard), `removeDomains` removes them (one that is not allowed is a
@@ -404,10 +421,12 @@ export async function patchProduct(input: {
   addDomains?: string[];
   removeDomains?: string[];
   includeSiblings?: boolean;
+  /** Public support address, validated like the dashboard's; blank or null removes it, undefined leaves it. */
+  supportEmail?: string | null;
 }): Promise<{ ok: true; product: ProductWithDomains } | ProductFailure> {
   if (input.ctx.role !== "ADMIN") return fail("forbidden", ADMIN_ONLY);
 
-  const data: { name?: string; primaryColor?: string } = {};
+  const data: { name?: string; primaryColor?: string; supportEmail?: string | null } = {};
   if (input.name !== undefined) {
     const name = parseProductName(input.name);
     if (!name.ok) return name;
@@ -430,6 +449,12 @@ export async function patchProduct(input: {
   const workspaceId = input.ctx.workspace.id;
   const product = await getProductForWorkspace(workspaceId, input.productId);
   if (!product) return fail("not_found", "Product not found.");
+
+  if (input.supportEmail !== undefined) {
+    const supportEmail = parseProductSupportEmail(input.supportEmail, product);
+    if (!supportEmail.ok) return supportEmail;
+    data.supportEmail = supportEmail.supportEmail;
+  }
 
   const existing = new Set(product.domains.map((d) => d.domain));
   const alreadyAllowed = adding.domains.find((domain) => existing.has(domain));

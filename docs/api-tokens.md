@@ -80,7 +80,7 @@ that names a field. Responses are `private, no-store`.
 
 | Status | `code` | Meaning |
 | --- | --- | --- |
-| `400` | `invalid_request` | The body is not valid JSON, is too large (64 KiB), has an unknown field, a domain list longer than 100 entries, a value fails validation, or a `PATCH` changes nothing (none of `name`, `primaryColor`, a non-empty `addDomains` or a non-empty `removeDomains`). `details` names the offending field. |
+| `400` | `invalid_request` | The body is not valid JSON, is too large (64 KiB), has an unknown field, a domain list longer than 100 entries, a value fails validation, or a `PATCH` changes nothing (none of `name`, `primaryColor`, `supportEmail`, a non-empty `addDomains` or a non-empty `removeDomains`). `details` names the offending field. |
 | `401` | `unauthorized` | The token is missing the `Bearer` scheme, malformed, unknown, revoked or expired, or a write came without a token. All token failures look identical on purpose. Carries `WWW-Authenticate: Bearer`. |
 | `403` | `insufficient_scope` | The token is valid but lacks the scope the endpoint needs. |
 | `403` | `forbidden` | A signed-in session that is not a Workspace admin (reads only). |

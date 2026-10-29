@@ -64,7 +64,10 @@ curl -sS "$SUPPORTSEAL_URL/api/products" -H "Authorization: Bearer $SUPPORTSEAL_
 ## 2. Create the Product
 
 Only `name` is required. `primaryColor` defaults to `#2563eb` and accepts `#rgb`
-or `#rrggbb`.
+or `#rrggbb`. `supportEmail` is the public address your customers write to, with
+the dashboard's rules: trimmed, lower-cased, never the Product's generated
+forwarding address. Blank or `null` stores none; send `{"supportEmail":null}` in a
+`PATCH` later to remove it.
 
 ```sh
 curl --fail-with-body -sS -X POST "$SUPPORTSEAL_URL/api/products" \
@@ -89,6 +92,7 @@ on.
   "name": "Acme App",
   "archived": false,
   "primaryColor": "#7367f0",
+  "supportEmail": null,
   "domains": [],
   "widgetKey": "pk_AbCdEfGhIjKlMnOpQrStUvWxYz012345",
   "formKey": "fk_ZyXwVuTsRqPoNmLkJiHgFeDcBa987654"
@@ -121,6 +125,7 @@ curl --fail-with-body -sS -X PATCH "$SUPPORTSEAL_URL/api/products/$PRODUCT_ID" \
   "name": "Acme App",
   "archived": false,
   "primaryColor": "#7367f0",
+  "supportEmail": null,
   "domains": ["acme.example", "www.acme.example"],
   "widgetKey": "pk_AbCdEfGhIjKlMnOpQrStUvWxYz012345",
   "formKey": "fk_ZyXwVuTsRqPoNmLkJiHgFeDcBa987654"

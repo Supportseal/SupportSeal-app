@@ -91,8 +91,8 @@ describe("admin Products API (issue #170)", () => {
     expect(response.headers.get("cache-control")).toBe("private, no-store");
     expect(await response.json()).toEqual({
       products: [
-        { id: live.id, name: "Alpha Live", archived: false, primaryColor: "#7367f0", domains: [], widgetKey: "pk_Alpha_Live", formKey: "fk_Alpha_Live" },
-        { id: archived.id, name: "Alpha Old", archived: true, primaryColor: "#7367f0", domains: [], widgetKey: "pk_Alpha_Old", formKey: "fk_Alpha_Old" },
+        { id: live.id, name: "Alpha Live", archived: false, primaryColor: "#7367f0", supportEmail: null, domains: [], widgetKey: "pk_Alpha_Live", formKey: "fk_Alpha_Live" },
+        { id: archived.id, name: "Alpha Old", archived: true, primaryColor: "#7367f0", supportEmail: null, domains: [], widgetKey: "pk_Alpha_Old", formKey: "fk_Alpha_Old" },
       ],
     });
   });
@@ -109,6 +109,7 @@ describe("admin Products API (issue #170)", () => {
       name: "One Prod",
       archived: false,
       primaryColor: "#7367f0",
+      supportEmail: null,
       domains: [],
       widgetKey: "pk_One_Prod",
       formKey: "fk_One_Prod",
