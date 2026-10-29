@@ -6,7 +6,7 @@ FR-API-01 (amended) and FR-API-04..FR-API-17 in [FRD.md](FRD.md). Draft contract
 [openapi-draft.json](openapi-draft.json) (phase 1 only; see
 [Contract and drift test](#contract-and-drift-test)). Questions that need the
 maintainer: [open-questions.md](open-questions.md#agent-first-workspace-api-2026-10-29)
-(AA1..AA21 below).
+(AA2..AA21 below; AA1 is resolved).
 
 **Goal.** An AI agent can onboard a Workspace and run support (conversations,
 replies, notes, tags, status, contacts, saved replies, products, webhooks,
@@ -52,8 +52,9 @@ in-process (per process on a multi-process self-hosted deployment).
   created by the auth wrapper, never a bare string they could replace.
 - Writes accept tokens only. A request with an `Authorization` header is
   judged on the token alone (existing rule). A dashboard session cookie is
-  never accepted on `/api/v1` writes; reads accept it only where FR-API-02
-  already does (Products), to keep today's behaviour.
+  never accepted anywhere on `/api/v1`, reads included. Only the frozen
+  `/api/products` alias keeps the cookie reads FR-API-02 already allows, to
+  keep today's behaviour.
 
 ### 2. The choke point: `scopedDb`
 
@@ -67,7 +68,7 @@ may use. It returns a Prisma client extended with a query extension
 | `findMany`, `findFirst`, `findFirstOrThrow`, `count`, `aggregate`, `groupBy`, `updateMany`, `deleteMany` | `workspaceId` ANDed into `where` |
 | `create`, `createMany` | `workspaceId` forced on `data` (a differing value throws) |
 | `findUnique`, `findUniqueOrThrow`, `update`, `delete`, `upsert` | Rewritten to the scoped `findFirst` / `updateMany` / `deleteMany` form, so an id alone never selects a row |
-| Models without `workspaceId` (`Message`, `ConversationTag`, `SavedReplyProduct`, `MessageReadReceipt`, `DiagnosticSnapshot`, `ChatVisitor`) | Reached only through the parent relation filter (`where: { conversation: { workspaceId } }`); a direct query without it throws |
+| Models without `workspaceId`: `Message`, `ConversationTag`, `SavedReplyProduct`, `MessageReadReceipt`, `ChatVisitor` (via their Conversation or SavedReply) and `ProductDomain`, `ProductMailDomain`, `WidgetHostSignal` (via their Product). `DiagnosticSnapshot` has its own `workspaceId` and takes the direct filter | Reached only through the parent relation filter (`where: { conversation: { workspaceId } }`); a direct query without it throws |
 | Nested writes (`connect`, `connectOrCreate`, relation `create`) | The extension walks the args and rejects any `connect` to a row outside the scope (a foreign `productId` surfaces as the same `404` as an unknown one) |
 
 Rules that make the choke point a guarantee instead of a convention:
@@ -118,7 +119,7 @@ checks and the existing cross-tenant tests.
 | Channel | Control |
 | --- | --- |
 | Ids | Random UUIDs. Human references (`SS-123`) are accepted only as a filter inside the scope. |
-| Pagination cursors | Opaque. `base64url(payload) + "." + HMAC-SHA256(key, workspaceId \| route \| filterHash \| payload)`. The key is derived (HKDF, fixed context label) from the existing `BETTER_AUTH_SECRET`; no new required environment variable. Wrong Workspace, route, filters, tampering or truncation all yield the same `400 invalid_cursor`. The payload carries only sort keys of rows the caller can already see. |
+| Pagination cursors | Opaque. `base64url(payload) + "." + HMAC-SHA256(key, workspaceId \| route \| resolved path ids \| filterHash \| payload)`. The key is derived (HKDF, fixed context label) from the existing `BETTER_AUTH_SECRET`; no new required environment variable. Wrong Workspace, route, parent id (a cursor minted under one Conversation is useless under another), filters, tampering or truncation all yield the same `400 invalid_cursor`. The payload carries only sort keys of rows the caller can already see. |
 | List totals | None. Lists return `items` and `nextCursor`, never a total. |
 | Error messages | Generic; never echo foreign data; `details` names only fields of the caller's own request. |
 | Attachment URLs | Attachments are served only at `GET /api/v1/attachments/{id}/content` with the bearer token, scoped like every resource and `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`. No public, unauthenticated or presigned URL, and no storage key in any response or webhook. |
@@ -131,20 +132,21 @@ checks and the existing cross-tenant tests.
 
 | Control | Spec |
 | --- | --- |
-| Scopes | Least privilege, see [Scopes](#scopes). A created token's scopes must be a subset of its creator's scopes. |
-| Expiry | Tokens created through the API require `expiresAt` (default 90 days, maximum 365 days); `expiresAt: null` needs `tokens:admin` and is audit-logged (AA8). Dashboard tokens keep their optional expiry. |
+| Scopes | Least privilege, see [Scopes](#scopes). A created token's scopes must be a subset of its creator's scopes, and `tokens:admin` can never be put on an API-created token: it is granted only in the dashboard (AA9), so a leaked admin token cannot mint an unexpiring clone of itself and then revoke the original. |
+| Expiry | Tokens created through the API require `expiresAt` (default 90 days, maximum 365 days); `expiresAt: null` is refused through the API (AA8). Dashboard tokens keep their optional expiry. |
 | Revocation | Immediate (existing). A token may revoke itself. `DELETE /api/v1/tokens/{id}` is idempotent. |
 | Rate limits (defaults, AA11) | Per token: 120 reads/min, 30 writes/min (existing), 20 replies/min, 10 token-admin writes/min. Per IP: 20 failed auths/min (existing) and 300 requests/min across tokens. `429 rate_limited` with `Retry-After`. In-process (documented limitation). |
 | Body caps | 64 KiB JSON (existing). Attachment upload: FR-FILE-01 size and MIME rules. |
-| Audit log | Append-only `api_audit_log`: workspace, token, operation id, resource type and id, request id, client IP, status, timestamp. Written for every token-authenticated write, token create/revoke and denied cross-scope attempts. No bodies, no secrets. Read through `GET /api/v1/audit-log` (`audit:read`, cursor-paged, scoped) and later the dashboard (AA10). |
+| Audit log | Append-only `api_audit_log`: workspace, token, operation id, resource type and id, request id, client IP, status, timestamp. Written for every token-authenticated write, token create/revoke and denied cross-scope attempts. Denied attempts are bounded so a flood of foreign ids cannot grow the table: the first 20 per token per hour are stored in full, later ones only increment a `suppressedCount` on the last stored row. The 90-day retention (AA10) covers every row. No bodies, no secrets. Read through `GET /api/v1/audit-log` (`audit:read`, cursor-paged, scoped) and later the dashboard (AA10). |
 | Idempotency | `Idempotency-Key` on every create/send write; below. |
 
 ### Idempotency spec
 
 `Idempotency-Key: <1-128 chars, [A-Za-z0-9_-]>` is honoured on `POST` and on
 `PUT`/`PATCH`/`DELETE` that are not naturally idempotent. A key is stored for 24
-hours as (workspace, token, method, route template, key, request hash, response
-status and body). Same key and same body: the stored response is replayed with
+hours as (workspace, token, method, resolved path with its ids, key, request hash,
+response status and body), so the same key on a different Conversation never
+replays another resource's response. Same key and same body: the stored response is replayed with
 `Idempotent-Replayed: true`. Same key, different body: `409
 idempotency_conflict`. Same key while the first request is still running: `409
 idempotency_in_flight` with `Retry-After`. Replies and webhook test pings
@@ -205,8 +207,8 @@ is in [openapi-draft.json](openapi-draft.json).
 | `listContacts` / `getContact` | `GET /contacts`, `/contacts/{id}` | `contacts:read` | n/a | Contact panel |
 | `deleteContact` | `DELETE /contacts/{id}` | `contacts:delete` | n/a | FR-SEC-02 |
 | `listSavedReplies`, `getSavedReply`, `createSavedReply`, `updateSavedReply`, `deleteSavedReply` | `/saved-replies`, `/saved-replies/{id}` | `saved-replies:*` | create | Saved replies page |
-| `getAttachment` / `getAttachmentContent` | `GET /attachments/{id}`, `/attachments/{id}/content` | `attachments:read` | n/a | Attachment download |
-| `createAttachment` | `POST /attachments` (multipart, staged until referenced) | `conversations:reply` | required | Composer upload |
+| `getAttachment` / `getAttachmentContent` | `GET /attachments/{id}`, `/attachments/{id}/content` | `attachments:read` (also implied by `conversations:read`) | n/a | Attachment download |
+| `createAttachment` | `POST /attachments` (multipart `file` plus `conversationId`; the Product comes from the Conversation, a foreign id is `404`; staged until referenced) | `conversations:reply` or `conversations:write` | optional | Composer upload |
 | `listTokens` / `createToken` / `revokeToken` | `/tokens`, `/tokens/{id}` | `tokens:admin` | create | Settings → API tokens |
 | `getWorkspace` / `setAvailability` | `GET /workspace`, `PATCH /workspace` | `workspace:read`/`write` | optional | Availability toggle |
 | `listAuditLog` | `GET /audit-log` | `audit:read` | n/a | n/a (new) |
@@ -252,11 +254,11 @@ phase 1 cannot honestly fit in one, so it is sliced (AA2). Every slice ends with
 | Slice | Content | Notes |
 | --- | --- | --- |
 | 1a Foundation | `workspace-scope.ts` + `TENANT_MODELS` registry + lint rule + static test; scope registry (`api-scopes.ts`) with the existing scope unchanged; `v1Route` wrapper; the Alpha/Beta API harness and the coverage-manifest test; `whoami` | No endpoints with data yet, so the harness lands before anything it must protect |
-| 1b Cross-cutting | `/api/v1` router and the `/api/products` alias; cursor signing helper; idempotency store; `api_audit_log`; new error codes (`invalid_cursor`, `idempotency_conflict`, `idempotency_in_flight`, `service_paused`) added to `API_ERROR_STATUS` and the drift test | Migration: two tables |
+| 1b Cross-cutting | `/api/v1` router and the `/api/products` alias; cursor signing helper; idempotency store; `api_audit_log`; no new error code yet: `openapi-drift.test.ts` fails when an `API_ERROR_STATUS` code has no documented response, so each code lands with the slice that first emits and documents it (`invalid_cursor` in 1c, `idempotency_conflict`, `idempotency_in_flight` and `service_paused` in 1d) | Migration: two tables |
 | 1c Read API | `listConversations`, `getConversation`, `listMessages`, `listTags`, `listContacts`, `getContact`, `getAttachment`(+content) | Migration: none |
 | 1d Write API | `createMessage` (reply and note), `updateConversation`; `Message.authorTokenId` | Migration: one column; inbox label for token authors |
-| 1e Saved replies, attachments, tokens | saved-replies CRUD, `createAttachment`, `listTokens`/`createToken`/`revokeToken`, `getWorkspace`/`setAvailability`, `listAuditLog`, delete operations | If this exceeds 600 lines, split tokens and audit read into 1f |
-| 1f Assign | `setAssignee` and the `assigneeId` field in responses | Depends on the V2 assignment/priority schema (AA4); can ship later without blocking 1a-1e |
+| 1e Saved replies, attachments, tokens | saved-replies CRUD, `createAttachment`, `listTokens`/`createToken`/`revokeToken`, `getWorkspace`/`setAvailability`, `listAuditLog`, delete operations | If this exceeds 600 lines, split tokens and audit read into a further slice (1e2) |
+| 1f Assign | `setAssignee` and the `assigneeId` field in responses | Not part of phase 1 delivery: depends on the V2 assignment/priority schema (AA4) and ships with it. Phase 1 is slices 1a-1e; the draft contract marks the operation `blocked` |
 
 Phase 1 exit criteria: every dashboard Conversation capability except sign-in
 flows is reachable by a scoped token, the parity test (below) passes for
@@ -290,8 +292,9 @@ sanity-check which Workspace a shared endpoint is serving (AA12).
 HMAC-SHA256 over `"<t>.<raw body>"` with the subscription secret
 (`whsec_` + 32 random bytes base64url, shown once, stored encrypted-at-rest
 or as a keyed hash is not possible because the server must sign: stored with
-application-level encryption using a key derived from `BETTER_AUTH_SECRET`; AA12
-notes the key-rotation consequence). Receivers reject `t` older than 5 minutes
+application-level encryption using `WEBHOOK_SECRET_KEY` when set (hosted
+requires it, so rotating the auth secret never breaks receivers) and otherwise
+a key derived from `BETTER_AUTH_SECRET`; AA12 notes the rotation consequence). Receivers reject `t` older than 5 minutes
 (documented replay window) and compare in constant time. `SupportSeal-Delivery`
 carries a unique delivery id receivers use to deduplicate (delivery is
 at-least-once). Secret rotation sends both `v1` signatures (old and new) for a
@@ -361,10 +364,11 @@ learns nothing.
 **Human gates.**
 
 1. *Email verification.* Until verified, the bootstrap token holds only
-   `products:write`, `webhooks:write`, `conversations:read`, `contacts:read`,
+   `products:write`, `conversations:read`, `contacts:read`,
    `saved-replies:write`, `workspace:read`: it can set up and read, but cannot
-   send customer email (`conversations:reply`), create tokens, invite members
-   or start checkout. Verification adds the scopes the human approves.
+   send customer email (`conversations:reply`), create webhooks (an outbound
+   relay to third-party URLs), create tokens, invite members or start
+   checkout. Verification adds the scopes the human approves.
 2. *Payment.* The agent calls `POST /billing/checkout` and hands the returned
    Stripe URL to the human. The Free plan needs no payment. Stripe Checkout is
    hosted-only; self-hosted deployments return `404` for billing routes and never
@@ -380,7 +384,8 @@ audit-logged at the IP level.
 
 **Self-hosted.** `POST /signup` and billing return `404`. A self-hosted
 installation has exactly one Workspace created at first run; its first token is
-minted in the dashboard, then agents continue through `tokens:admin`.
+minted in the dashboard with `tokens:admin`; agents then mint narrower
+tokens (never `tokens:admin` themselves) through the API.
 
 **Spike required before 3a.** Workspaces are currently created only with an
 owning user and an ADMIN membership (`createWorkspace`). An ownerless pending
@@ -503,8 +508,9 @@ free of numbers that would then need to match the draft.
 - **In-process rate limits** weaken per-token limits on multi-process
   deployments (documented; no Redis without need).
 - **Stored webhook secrets** must be recoverable to sign, so they are encrypted
-  with a key derived from the server secret; rotating `BETTER_AUTH_SECRET`
-  invalidates them, which the rotation docs must call out.
+  with `WEBHOOK_SECRET_KEY` (hosted, required) or a key derived from the
+  server secret (self-hosted default); rotating `BETTER_AUTH_SECRET` then
+  invalidates self-hosted secrets, which the rotation docs must call out.
 - **Prisma extension coverage** depends on Prisma 7 behaviour for nested
   writes; slice 1a includes a proof test per operation family before any
   endpoint relies on it. If a family cannot be enforced in the extension, the

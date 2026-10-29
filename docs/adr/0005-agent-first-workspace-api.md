@@ -29,8 +29,8 @@ and scopes; it gets no capability the API lacks.
 5. **`/api/v1` is canonical** for the new surface. `/api/products` stays as a
    permanent alias that shares the same handlers, so published quickstarts and
    existing tokens keep working.
-6. **Phased delivery**, one PR per phase (each under 600 meaningful lines),
-   each phase gated by a cross-tenant test suite over every new endpoint.
+6. **Phased delivery**, each phase a stack of slice PRs (each under 600
+   meaningful lines), each phase gated by a cross-tenant test suite over every new endpoint.
    See [agent-api-plan.md](../agent-api-plan.md).
 
 ## Why
@@ -76,9 +76,10 @@ code reaches tenant tables.
   selectors) it is rewritten to the scoped `findFirst`/`updateMany` form, or
   refused, so an id alone can never select a row.
 - Models without a `workspaceId` column (Message, ConversationTag,
-  SavedReplyProduct, MessageReadReceipt, DiagnosticSnapshot, ChatVisitor) are
-  reached only through their Conversation/SavedReply parent with the scope
-  applied (`where: { conversation: { workspaceId } }`). The extension refuses
+  SavedReplyProduct, MessageReadReceipt, ChatVisitor, and ProductDomain,
+  ProductMailDomain, WidgetHostSignal via Product) are
+  reached only through their Conversation/SavedReply/Product parent with the
+  scope applied (DiagnosticSnapshot has its own `workspaceId`) (`where: { conversation: { workspaceId } }`). The extension refuses
   a direct query on such a model that lacks the relation filter.
 - Raw SQL (`$queryRaw`, `$executeRaw`) is forbidden in `src/app/api/v1/**`;
   the extension cannot see it.
@@ -114,7 +115,7 @@ code reaches tenant tables.
   lookup key that could confirm existence across Workspaces.
 - **Cursors** are opaque, signed and bound to the Workspace and the query
   shape. A cursor is `base64url(payload).HMAC-SHA256(serverSecret,
-  workspaceId | route | filterHash | payload)`. A cursor from another
+  workspaceId | route | resolved path ids | filterHash | payload)`. A cursor from another
   Workspace, another route, other filters, or a tampered cursor fails with the
   same `400 invalid_cursor` regardless of cause. Payload holds only sort-key
   values of rows already visible to the caller.
@@ -142,11 +143,12 @@ code reaches tenant tables.
 
 - **Scopes**: least privilege, listed in [agent-api-plan.md](../agent-api-plan.md#scopes).
   A token created through the API can never hold a scope its creator lacks
-  (no privilege escalation), and `tokens:admin` is never granted implicitly.
+  (no privilege escalation), and `tokens:admin` is never granted implicitly
+  and never to an API-created token: only the dashboard grants it (AA9), so a
+  leaked admin token cannot mint an unexpiring clone and revoke the original.
 - **Expiry**: new API-created tokens require an expiry (default 90 days,
-  maximum 1 year) unless the creator explicitly sets `expiresAt: null`, which
-  needs `tokens:admin` and is audit-logged. Dashboard tokens keep today's
-  optional expiry.
+  maximum 1 year); `expiresAt: null` is refused through the API. Dashboard
+  tokens keep today's optional expiry.
 - **Revocation** is immediate and by id, and a token can revoke itself.
 - **Rate limits**: per token (reads and writes separately) and per IP for
   failed auth, extending `widget-rate-limit`-style buckets already used for
@@ -158,7 +160,9 @@ code reaches tenant tables.
   creation/revocation) writes an append-only `ApiAuditLog` row: Workspace,
   token id, operation id, resource type and id, request id, IP, outcome,
   timestamp. No request bodies, no secrets. Readable by `audit:read` and in
-  the dashboard. Retention is an open question.
+  the dashboard. Refused scope and cross-Workspace attempts are logged too,
+  bounded per token per hour so a flood of foreign ids cannot grow the table.
+  Retention is an open question (AA10).
 
 ### Tokens through the API (the FR-API-01 change)
 
@@ -177,14 +181,16 @@ Why it is safe enough:
   creator's, from the token.
 - Creation and revocation are audit-logged and rate-limited more tightly than
   other writes.
-- Open question (recommendation given): whether `tokens:admin` can be
-  requested at all in the dashboard UI, or only granted deliberately.
+- Open question (recommendation given, AA9): whether `tokens:admin` can be
+  requested in the dashboard UI behind a warning. Either way the API never
+  grants it.
 
 ## Idempotency
 
 Writes that create or send accept an `Idempotency-Key` header. A key is scoped
-to (Workspace, token, method, route) and remembered for 24 hours with a hash of
-the request body. A replay with the same key and body returns the original
+to (Workspace, token, method, resolved path with its ids) and remembered for
+24 hours with a hash of the request body, so the same key against another
+Conversation never replays a stored response. A replay with the same key and body returns the original
 response; the same key with a different body is `409 idempotency_conflict`.
 Keys never cross Workspaces. This also makes agent retries safe for replies,
 which are the one write with an outbound side effect (email delivery).

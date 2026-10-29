@@ -67,6 +67,11 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -98,6 +103,11 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -142,6 +152,11 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -188,6 +203,11 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -217,7 +237,7 @@
         ],
         "summary": "Create a Product",
         "x-required-scope": "products:write",
-        "description": "Phase 2 adds the `installation` block (widget snippet, script URL, inbound email address, form endpoint), with origins derived from the request.",
+        "description": "409 is idempotency_conflict, idempotency_in_flight or product_limit_reached (100 Products per Workspace). Phase 2 adds the `installation` block (widget snippet, script URL, inbound email address, form endpoint), with origins derived from the request.",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -236,6 +256,14 @@
         "responses": {
           "201": {
             "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              },
+              "Location": {
+                "$ref": "#/components/headers/Location"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -248,7 +276,7 @@
             "$ref": "#/components/responses/InvalidRequest"
           },
           "409": {
-            "$ref": "#/components/responses/Conflict"
+            "$ref": "#/components/responses/ProductConflict"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -285,6 +313,11 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -342,6 +375,11 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -377,7 +415,7 @@
         "tags": [
           "Conversations"
         ],
-        "summary": "List Conversations, newest activity first",
+        "summary": "List Conversations, oldest first (the inbox order)",
         "x-required-scope": "conversations:read",
         "parameters": [
           {
@@ -392,6 +430,7 @@
             "schema": {
               "enum": [
                 "OPEN",
+                "PENDING",
                 "CLOSED"
               ]
             }
@@ -442,6 +481,11 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -491,6 +535,11 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -548,6 +597,11 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -597,7 +651,12 @@
         ],
         "responses": {
           "204": {
-            "description": "Deleted. Deleting again answers 404."
+            "description": "Deleted. Deleting again answers 404.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            }
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
@@ -643,6 +702,11 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -704,6 +768,14 @@
         "responses": {
           "201": {
             "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              },
+              "Location": {
+                "$ref": "#/components/headers/Location"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -744,6 +816,7 @@
         ],
         "summary": "Assign or unassign (slice 1f, after the assignment schema)",
         "x-required-scope": "conversations:assign",
+        "description": "BLOCKED: not part of phase 1. Depends on the V2 assignment schema (open question AA4) and ships with it.",
         "parameters": [
           {
             "name": "conversationId",
@@ -772,6 +845,11 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -798,7 +876,8 @@
           "429": {
             "$ref": "#/components/responses/RateLimited"
           }
-        }
+        },
+        "x-status": "blocked"
       }
     },
     "/api/v1/tags": {
@@ -820,6 +899,11 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -870,6 +954,11 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -916,6 +1005,11 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -959,7 +1053,12 @@
         ],
         "responses": {
           "204": {
-            "description": "OK"
+            "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            }
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
@@ -995,6 +1094,11 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -1042,6 +1146,14 @@
         "responses": {
           "201": {
             "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              },
+              "Location": {
+                "$ref": "#/components/headers/Location"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -1091,6 +1203,11 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -1145,6 +1262,11 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -1191,7 +1313,12 @@
         ],
         "responses": {
           "204": {
-            "description": "OK"
+            "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            }
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
@@ -1215,16 +1342,49 @@
           "Attachments"
         ],
         "summary": "Upload a staged attachment, then reference it from a message",
-        "x-required-scope": "conversations:reply",
-        "description": "multipart/form-data with one `file` part. MIME is validated server-side, never by extension; size limits follow FR-FILE-01. A staged attachment that is never referenced is removed.",
+        "x-required-scope": "conversations:reply or conversations:write",
+        "description": "multipart/form-data with a `file` part and a `conversationId` part; the Product comes from the Conversation and a foreign conversationId answers 404. MIME is validated server-side, never by extension; size limits follow FR-FILE-01. A staged attachment that is never referenced is removed.",
         "parameters": [
           {
-            "$ref": "#/components/parameters/IdempotencyKeyRequired"
+            "$ref": "#/components/parameters/IdempotencyKey"
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "file",
+                  "conversationId"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "conversationId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "201": {
             "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              },
+              "Location": {
+                "$ref": "#/components/headers/Location"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -1235,6 +1395,9 @@
           },
           "400": {
             "$ref": "#/components/responses/InvalidRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
@@ -1274,6 +1437,11 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -1363,6 +1531,11 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -1411,6 +1584,14 @@
         "responses": {
           "201": {
             "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              },
+              "Location": {
+                "$ref": "#/components/headers/Location"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -1459,7 +1640,12 @@
         ],
         "responses": {
           "204": {
-            "description": "OK"
+            "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            }
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
@@ -1495,6 +1681,11 @@
         "responses": {
           "200": {
             "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -1534,6 +1725,12 @@
           "type": "string",
           "const": "private, no-store"
         }
+      },
+      "Location": {
+        "description": "URL of the created resource.",
+        "schema": {
+          "type": "string"
+        }
       }
     },
     "parameters": {
@@ -1560,7 +1757,7 @@
         "name": "Idempotency-Key",
         "in": "header",
         "required": false,
-        "description": "1-128 chars [A-Za-z0-9_-]. Scoped to Workspace, token, method and route; kept 24 hours. Same key and body replays the stored response (Idempotent-Replayed: true); same key and a different body is 409 idempotency_conflict.",
+        "description": "1-128 chars [A-Za-z0-9_-]. Scoped to Workspace, token, method and resolved path (ids included); kept 24 hours. Same key and body replays the stored response (Idempotent-Replayed: true); same key and a different body is 409 idempotency_conflict.",
         "schema": {
           "type": "string",
           "pattern": "^[A-Za-z0-9_-]{1,128}$"
@@ -1709,6 +1906,31 @@
           }
         }
       },
+      "ProductConflict": {
+        "description": "idempotency_conflict, idempotency_in_flight, or product_limit_reached (the Workspace already has 100 Products).",
+        "headers": {
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "error": {
+                "value": {
+                  "error": {
+                    "code": "product_limit_reached",
+                    "message": "idempotency_conflict, idempotency_in_flight, or product_limit_reached (the Workspace already has 100 Products)."
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       "ServicePaused": {
         "description": "Free-plan pause: agent replies are refused until the Workspace upgrades. Notes, tags and status still work.",
         "headers": {
@@ -1779,7 +2001,23 @@
                 "type": "string"
               },
               "details": {
-                "type": "object"
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "field": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "field",
+                    "message"
+                  ]
+                }
               }
             },
             "additionalProperties": true,
@@ -2156,6 +2394,7 @@
           "status": {
             "enum": [
               "OPEN",
+              "PENDING",
               "CLOSED"
             ]
           },
@@ -2222,6 +2461,7 @@
           "status": {
             "enum": [
               "OPEN",
+              "PENDING",
               "CLOSED"
             ]
           },
@@ -2271,10 +2511,11 @@
           },
           "kind": {
             "enum": [
-              "CUSTOMER",
-              "REPLY",
-              "NOTE"
-            ]
+              "customer",
+              "reply",
+              "note"
+            ],
+            "description": "Lower-case in the API; mapped from the internal CUSTOMER/REPLY/NOTE values."
           },
           "body": {
             "type": "string"
@@ -2438,7 +2679,7 @@
             "type": "string",
             "format": "uuid"
           },
-          "title": {
+          "name": {
             "type": "string"
           },
           "body": {
@@ -2455,14 +2696,14 @@
         "additionalProperties": false,
         "required": [
           "id",
-          "title",
+          "name",
           "body"
         ]
       },
       "SavedReplyInput": {
         "type": "object",
         "properties": {
-          "title": {
+          "name": {
             "type": "string"
           },
           "body": {
@@ -2478,7 +2719,7 @@
         },
         "additionalProperties": false,
         "required": [
-          "title",
+          "name",
           "body"
         ]
       },
