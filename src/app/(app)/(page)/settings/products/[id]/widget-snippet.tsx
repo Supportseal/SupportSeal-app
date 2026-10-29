@@ -41,9 +41,9 @@ export function WidgetSnippet({ snippet, widgetKey }: { snippet: string; widgetK
             {copied === "snippet" ? "Copied" : "Copy"}
           </Button>
         </div>
-        <div className="flex items-center gap-2 text-sm">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
           <span className="text-muted">Widget key:</span>
-          <code className="font-mono">{widgetKey}</code>
+          <code className="min-w-0 break-all font-mono">{widgetKey}</code>
           <Button type="button" variant="text" size="xs" onClick={() => copy(widgetKey, "key")}>
             {copied === "key" ? <IconCheck className="size-3.5" /> : <IconCopy className="size-3.5" />}
             {copied === "key" ? "Copied" : "Copy"}

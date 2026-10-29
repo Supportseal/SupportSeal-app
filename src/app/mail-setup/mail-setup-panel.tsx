@@ -72,7 +72,7 @@ export function MailSetupPanel({ productId, isAdmin, domain }: MailSetupPanelPro
             placeholder="support.acme.com"
             autoComplete="off"
             spellCheck={false}
-            className="min-w-0 flex-1"
+            className="min-w-48 flex-1"
             aria-describedby="mail-domain-hint"
           />
           <Button type="submit" disabled={saving}>
