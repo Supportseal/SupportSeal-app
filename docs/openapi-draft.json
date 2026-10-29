@@ -1565,7 +1565,7 @@
         ],
         "summary": "Create a token; the secret is returned once",
         "x-required-scope": "tokens:admin",
-        "description": "Scopes must be a subset of the caller's. expiresAt is required; null needs tokens:admin and is audit-logged.",
+        "description": "Scopes must be a subset of the caller's and never include tokens:admin (granted only in the dashboard). expiresAt is required (default 90 days, maximum 365 days); null is refused.",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKey"
@@ -2839,10 +2839,7 @@
             "minItems": 1
           },
           "expiresAt": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": "string",
             "format": "date-time"
           }
         },
