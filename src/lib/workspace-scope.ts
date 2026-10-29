@@ -99,12 +99,36 @@ export function isNotInScope(error: unknown): boolean {
   );
 }
 
-const RELATION_FIELDS: ReadonlyMap<string, ReadonlySet<string>> = new Map(
+/** Each model's relation fields and the model each leads to. */
+const RELATIONS: ReadonlyMap<string, ReadonlyMap<string, ModelName>> = new Map(
   Prisma.dmmf.datamodel.models.map((model) => [
     model.name,
-    new Set(model.fields.filter((field) => field.kind === "object").map((field) => field.name)),
+    new Map(
+      model.fields.filter((field) => field.kind === "object").map((field) => [field.name, field.type as ModelName]),
+    ),
   ]),
 );
+
+/**
+ * A global model (a member's User) may be read, but no select, include, filter
+ * or ordering may step from it into another relation: a User links to every
+ * Workspace it belongs to and to its sign-in credentials.
+ */
+function assertNoGlobalEscape(model: ModelName, value: unknown): void {
+  if (typeof value !== "object" || value === null) return;
+  if (Array.isArray(value)) {
+    for (const item of value) assertNoGlobalEscape(model, item);
+    return;
+  }
+  const relations = RELATIONS.get(model);
+  for (const [key, inner] of Object.entries(value)) {
+    const target = relations?.get(key);
+    if (target && TENANT_MODELS[model].kind === "global") {
+      throw new ScopeViolationError(`${model}.${key} leads out of a global model; select its scalar fields only.`);
+    }
+    assertNoGlobalEscape(target ?? model, inner);
+  }
+}
 
 export function scopeFilter(model: ModelName, workspaceId: string): Record<string, unknown> {
   const scoping: Scoping = TENANT_MODELS[model];
@@ -165,7 +189,7 @@ type RefCheck = { target: ModelName; id: string };
 
 function prepareRow(model: ModelName, row: Row, workspaceId: string, creating: boolean): { row: Row; checks: RefCheck[] } {
   const scoping: Scoping = TENANT_MODELS[model];
-  const relations = RELATION_FIELDS.get(model);
+  const relations = RELATIONS.get(model);
   for (const key of Object.keys(row)) {
     if (relations?.has(key)) {
       throw new ScopeViolationError(`Nested write through ${model}.${key}; set the scalar foreign key instead.`);
@@ -220,6 +244,7 @@ function extendScoped(base: PrismaClient, workspaceId: string) {
         if (scoping.kind === "root" && (CREATES.has(operation) || operation.startsWith("delete") || operation === "upsert")) {
           throw new ScopeViolationError(`A scope cannot ${operation} its Workspace.`);
         }
+        assertNoGlobalEscape(name, args);
         const input = { ...(args as Args) };
         if (READ_OR_FILTERED.has(operation)) input.where = andWhere(input.where, filter);
 

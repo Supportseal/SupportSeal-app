@@ -260,6 +260,29 @@ describe("scopedDb", () => {
     expect((await asBeta.workspace.findMany()).map((w) => w.id)).toEqual([beta.workspaceId]);
   });
 
+  it("reads a member's user but never walks out of a global model", async () => {
+    const members = await asBeta.membership.findMany({ include: { user: { select: { id: true, name: true } } } });
+    expect(members.map((m) => m.user.id)).toEqual([beta.userId]);
+
+    const escapes = [
+      { include: { user: { include: { accounts: true } } } },
+      { include: { user: { include: { memberships: { include: { workspace: true } } } } } },
+      { select: { user: { select: { sessions: { select: { token: true } } } } } },
+      { select: { user: { select: { _count: { select: { memberships: true } } } } } },
+      { where: { user: { memberships: { some: { workspaceId: alpha.workspaceId } } } } },
+      { where: { AND: [{ user: { is: { accounts: { some: {} } } } }] } },
+      { orderBy: { user: { memberships: { _count: "desc" } } } },
+    ];
+    for (const args of escapes) {
+      await expect(asBeta.membership.findMany(args as never), JSON.stringify(args)).rejects.toBeInstanceOf(
+        ScopeViolationError,
+      );
+    }
+    await expect(
+      asBeta.workspace.findFirst({ include: { memberships: { include: { user: { include: { accounts: true } } } } } }),
+    ).rejects.toBeInstanceOf(ScopeViolationError);
+  });
+
   it("keeps the scope inside interactive transactions and checks references there", async () => {
     const conversationId = (beta.where.Conversation as { id: string }).id;
     const link = await asBeta.$transaction(async (tx) => {
