@@ -37,9 +37,22 @@ browser session.
 
 ## Proposal
 
-Two mechanisms, independent, either can be rejected. Neither adds a CLI, a
-second auth scheme or a second error shape; both end in an ordinary `ss_live_`
-token validated by the existing path.
+Two mechanisms, independent, either can be rejected. Neither adds a CLI or a
+second auth scheme; both end in an ordinary `ss_live_` token validated by the
+existing path.
+
+**Transport.** Both flows carry credentials in request and response bodies, so
+they are HTTPS-only. The routes reject plaintext requests (`403`, no
+credential processing) when the request is not secure, judged from the request
+origin (`x-forwarded-proto`, as the widget code reads it), and the self-hosting guide requires a
+TLS-terminating proxy before either is enabled. Responses carry
+`Cache-Control: private, no-store`.
+
+**Error shape.** Every response, success or failure, uses the shared envelope
+`{ "error": { "code", "message" } }` from `src/lib/api-errors.ts`. The device
+poll states (`authorization_pending`, `slow_down`, `access_denied`,
+`expired_token`) become additional stable `code` values in that table (`400`),
+not RFC 8628's bare `{ "error": "..." }` body, so a client has one error parser.
 
 ### A. Setup secret: headless first run (self-hosted only)
 
@@ -48,11 +61,21 @@ token validated by the existing path.
    make the server refuse to enable the endpoint and log why.
 2. `POST /api/v1/bootstrap` with `Authorization: Bearer <setup secret>` and
    `{ workspaceName, adminEmail }` creates the single Workspace and returns
-   `{ workspaceId, token, expiresAt, scopes }` once.
-3. It works exactly once: the check "no Workspace exists" and the create run in
-   the same advisory-lock transaction `createWorkspace` already uses. After the
+   `{ workspaceId, token, expiresAt, scopes, claimCode }`. `claimCode` is a
+   separate high-entropy one-time value (hashed at rest) for the human to
+   become the Admin (AB3); it is not the setup secret.
+3. It works exactly once: the check "no Workspace exists", the Workspace
+   create, the token insert and the claim-code insert run in the **same**
+   advisory-lock transaction `createWorkspace` already uses, so there is never
+   a Workspace without a token, or a token without its Workspace. After the
    first Workspace exists the route answers like an unknown route (`404`), with
    or without the secret, so it cannot be probed for state.
+   *Lost response.* The server cannot tell whether the client received the one
+   response. Recovery is operator-owned and needs no second unauthenticated
+   path: the operator recreates an empty database (no in-app
+   reset exists today) and calls again (the lost response also lost the
+   `claimCode`, so the Workspace is unclaimable). A bounded re-issue window authenticated by the
+   same secret is the alternative (AB6); the recommendation is not to build it.
 4. The secret is compared as `timingSafeEqual` of SHA-256 digests. It is never
    logged, echoed, or stored in the database. Failed attempts count against the
    existing per-IP failed-auth bucket and a tighter dedicated one.
@@ -65,8 +88,9 @@ token validated by the existing path.
    `isHostedMode()` alone, never by whether `SETUP_TOKEN` is set, so a hosted
    misconfiguration cannot turn it on.
 
-Unresolved inside A: who the Admin user is (AB3) and whether a configured
-secret also gates `/register` (AB5).
+Unresolved inside A: who the Admin user is and how it is claimed (AB3),
+whether a configured secret also gates `/register` (AB5), and the lost-response
+recovery window (AB6).
 
 ### B. Device-code approval (existing Workspace, both modes)
 
@@ -81,8 +105,17 @@ Admin already exists:
    expiry, and approves or denies. The Workspace is the approver's session
    Workspace; nothing in the agent's request names one.
 3. `POST /api/v1/device/token { deviceCode }` answers `authorization_pending`,
-   `slow_down`, `access_denied`, `expired_token`, or the token, delivered once
-   on the first successful poll. Any later poll answers like an unknown code.
+   `slow_down`, `access_denied`, `expired_token`, or the token.
+   *Atomic claim.* On approval the token is stored hashed with the approved
+   request; the first poll to flip `deliveredAt` from null in a conditional
+   update (`... WHERE deliveredAt IS NULL`) wins and the response carries the
+   token. Concurrent polls lose and answer like an unknown code, so a token is
+   never issued twice.
+   *Lost response.* The token itself is not stored recoverably, so a lost
+   response is not replayable. The agent restarts the flow and the approver
+   revokes the orphaned token from the dashboard (its approval shows as
+   delivered but unused). Re-delivering the same token for a bounded window to
+   the same `deviceCode` would need the plaintext at rest and is rejected.
 4. It cannot create a tenant, so it adds no hosted signup path. Its extra
    abuse surface is unauthenticated pending requests (table-filling) and
    approver phishing (an attacker shows a victim Admin a code); see AB7.
@@ -117,20 +150,25 @@ proposed before AB1..AB3 are answered.
 
 ## Required tests for the implementing slice
 
-Alpha/Beta fixture (FR-SEC-01) plus the following abuse cases, each
-byte-identical to the unknown-route/invalid-credential baseline:
+Alpha/Beta fixture (FR-SEC-01) plus the following abuse cases. Wherever the
+text says "answers like an unknown route/code", the status and body match the
+unknown-route or invalid-credential baseline (the same envelope code and
+message) and carry no state-dependent header:
 
 - A: replay (second use after success), wrong secret, short secret refused,
   concurrent double claim (exactly one wins), route absent in hosted mode even
   with the secret set, route `404` once a Workspace exists, secret never in
   logs or responses, rate limit `429` with `Retry-After`, constant-time
   compare, the returned token cannot reach another Workspace and lacks the
-  excluded scopes, expiry honoured.
+  excluded scopes, expiry honoured, Workspace and token are created atomically
+  (a failure after the Workspace insert leaves neither), the claim code is
+  single-use and exactly one concurrent claim wins, plaintext HTTP refused
+  without processing the credential.
 - B: replay of a consumed or expired `deviceCode`, poll faster than the
   interval (`slow_down`), user-code guessing limited per code and per IP,
   approver in Workspace B cannot complete or read a request approved in
   Workspace A, agent-requested scopes never exceed approved scopes, the token
-  is delivered once, pending-row cap and expiry purge, `tokens:admin` never
+  is delivered once even under concurrent polls, plaintext HTTP refused, pending-row cap and expiry purge, `tokens:admin` never
   grantable.
 - Audit rows for each success, denial and rate-limited attempt, bounded per
   the plan's denied-attempt rule.
