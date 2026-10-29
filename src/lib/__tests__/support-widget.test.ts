@@ -27,6 +27,10 @@ describe("supportWidgetConfig", () => {
     ).toEqual({ origin: "https://dashboard.supportseal.app", widgetKey: KEY });
   });
 
+  it('treats "off" as disabled (hosted compose opt-out)', () => {
+    expect(supportWidgetConfig({ SUPPORT_WIDGET_KEY: "off" })).toBeNull();
+  });
+
   it("refuses secrets and malformed values", () => {
     // An API token or form key must never reach the page.
     expect(supportWidgetConfig({ SUPPORT_WIDGET_KEY: "ss_live_secret" })).toBeNull();

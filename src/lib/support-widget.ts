@@ -8,6 +8,8 @@ import { appConfig } from "@/lib/config";
  * SUPPORT_WIDGET_ORIGIN points at another installation's widget server; it
  * defaults to this deployment's own public URL.
  *
+ * Any value that is not a pk_ key (for example "off") disables it.
+ *
  * Read at request time, not build time, so one image serves any key.
  */
 export function supportWidgetConfig(

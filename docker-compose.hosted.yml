@@ -44,7 +44,9 @@ services:
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       # Own support chat: the public widget key of the hosted "SupportSeal"
       # Product (the same one the marketing site embeds). Public by design;
-      # set SUPPORT_WIDGET_KEY in Coolify to override.
+      # set SUPPORT_WIDGET_KEY in Coolify to override, or to "off" to disable
+      # (an empty value falls back to this default: Coolify may pre-fill
+      # compose variables as empty, so ":-" keeps the widget on by default).
       SUPPORT_WIDGET_KEY: ${SUPPORT_WIDGET_KEY:-pk_plbDP7iSd3DjHJ1bZ0eOCppMxFbg5_b_}
     expose:
       - "3000"
