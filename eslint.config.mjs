@@ -14,13 +14,7 @@ const eslintConfig = [
     rules: {
       "no-restricted-imports": [
         "error",
-        {
-          paths: [
-            { name: "@/lib/prisma", message: SCOPE_FIX },
-            { name: "@prisma/client", message: SCOPE_FIX },
-          ],
-          patterns: [{ group: ["@/generated/prisma", "@/generated/prisma/*", "@prisma/client/*", "**/prisma", "**/generated/prisma", "**/generated/prisma/*"], message: SCOPE_FIX }],
-        },
+        { patterns: [{ regex: "prisma", message: SCOPE_FIX }] },
       ],
       "no-restricted-syntax": [
         "error",

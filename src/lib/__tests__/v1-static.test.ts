@@ -13,8 +13,7 @@ import { describe, expect, it } from "vitest";
 const ROOTS = ["src/app/api/v1", "src/lib/api"];
 const FORBIDDEN = [
   {
-    pattern:
-      /\b(?:from|import)\s*\(?\s*["'](?:@\/lib\/prisma|@prisma\/client(?:\/[^"']*)?|@\/generated\/prisma(?:\/[^"']*)?|(?:\.\.?\/)+(?:[^"']*\/)?(?:prisma|generated\/prisma(?:\/[^"']*)?))["']/u,
+    pattern: /\b(?:from|import|require)\s*\(?\s*["'][^"']*prisma/iu,
     what: "a Prisma import",
   },
   { pattern: /\bimport\s*\(/u, what: "a dynamic import" },
@@ -41,6 +40,19 @@ describe("Workspace API data access", () => {
     expect(offences, "use scopedDb from @/lib/workspace-scope").toEqual([]);
   });
 
+  it("recognises every spelling of a Prisma import", () => {
+    const spellings = [
+      'import { prisma } from "@/lib/prisma";',
+      'import { prisma } from "@/lib/prisma.js";',
+      'import type { Prisma } from "@/generated/prisma/client.js";',
+      'import { PrismaClient } from "@PRISMA/client";',
+      'export { prisma } from "../../lib/prisma";',
+      "const { prisma } = require('@/lib/prisma');",
+    ];
+    for (const line of spellings) expect(FORBIDDEN[0].pattern.test(line), line).toBe(true);
+    expect(FORBIDDEN[0].pattern.test('import { scopedDb } from "@/lib/workspace-scope";')).toBe(false);
+  });
+
   it("exports every route handler through v1Route", () => {
     const offences = files
       .filter((file) => file.endsWith("route.ts") && file.startsWith("src/app/api/v1"))
@@ -64,14 +76,17 @@ describe("Workspace API data access", () => {
         'import { prisma } from "@/lib/prisma";',
         'import type { Prisma } from "@/generated/prisma/client";',
         'import { prisma as relative } from "../../../../lib/prisma";',
+        'import { prisma as suffixed } from "@/lib/prisma.js";',
+        'import { PrismaClient } from "@PRISMA/client.mjs";',
         'export * from "./impl";',
         "export type Probe = Prisma.ModelName;",
         "export const probe = () => prisma.$queryRawUnsafe('select 1');",
-        "export const lazy = () => import('@/lib/prisma').then(() => relative);",
+        "export const lazy = () => import('@/lib/prisma').then(() => [relative, suffixed, PrismaClient]);",
       ].join("\n"),
       { filePath: path.join(process.cwd(), "src/app/api/v1/probe/route.ts") },
     );
     expect(result.messages.map((message) => message.ruleId).sort()).toEqual([
+      "no-restricted-imports",
       "no-restricted-imports",
       "no-restricted-imports",
       "no-restricted-imports",
