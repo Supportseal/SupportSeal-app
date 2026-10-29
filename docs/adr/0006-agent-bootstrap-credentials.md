@@ -50,9 +50,12 @@ listener is not reachable except through that proxy; a client that can reach
 the listener directly can forge `X-Forwarded-Proto: https`. The self-hosting
 guide therefore requires a TLS-terminating proxy that sets the header and a
 listener bound to the proxy only before either flow is enabled; where that
-cannot be assured, the flows stay disabled (AB1 records this as a precondition,
-not an option). Responses carry
-`Cache-Control: private, no-store`.
+cannot be assured, the flows stay disabled (recorded in AB1 as a precondition
+of adopting either mechanism). The one exemption is a loopback request
+(`localhost`, `127.0.0.1`, `::1`) with no forwarded headers, so local
+development and the plain-HTTP E2E servers keep working; the guide's current
+"no proxy" mode (port 3000 published directly) does not qualify and does not get
+these flows. Responses carry `Cache-Control: private, no-store`.
 
 **Error shape.** Every response, success or failure, uses the shared envelope
 `{ "error": { "code", "message" } }` from `src/lib/api-errors.ts`. The device
