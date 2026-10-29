@@ -19,12 +19,12 @@ const FORBIDDEN = [
 const files = ROOTS.flatMap((root) =>
   readdirSync(path.join(process.cwd(), root), { recursive: true, encoding: "utf8" })
     .filter((file) => /\.tsx?$/u.test(file))
-    .map((file) => path.join(root, file)),
+    .map((file) => path.posix.join(root, file.split(path.sep).join("/"))),
 );
 
 describe("Workspace API data access", () => {
   it("finds the API source files", () => {
-    expect(files).toContain(path.join("src/lib/api", "v1-route.ts"));
+    expect(files).toContain("src/lib/api/v1-route.ts");
     expect(files.some((file) => file.endsWith("route.ts") && file.startsWith("src/app/api/v1"))).toBe(true);
   });
 
