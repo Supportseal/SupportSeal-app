@@ -386,6 +386,8 @@ audit-logged at the IP level.
 installation has exactly one Workspace created at first run; its first token is
 minted in the dashboard with `tokens:admin`; agents then mint narrower
 tokens (never `tokens:admin` themselves) through the API.
+An agent-assisted first-credential path for self-hosted installations is
+proposed, not decided, in [ADR-0006](adr/0006-agent-bootstrap-credentials.md).
 
 **Spike required before 3a.** Workspaces are currently created only with an
 owning user and an ADMIN membership (`createWorkspace`). An ownerless pending
