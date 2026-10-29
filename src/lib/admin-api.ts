@@ -1,32 +1,48 @@
 import type { NextResponse } from "next/server";
 
 import { apiError } from "@/lib/api-errors";
-import { authenticateApiToken, scopesGrant, type ApiCapability } from "@/lib/api-tokens";
+import { scopesGrant, type ApiScope } from "@/lib/api-scopes";
+import { authenticateApiToken } from "@/lib/api-tokens";
 import { getSessionUser } from "@/lib/session";
 import {
   apiTokenAuthBlocked,
-  rateLimitApiTokenWrite,
+  rateLimitApiToken,
   recordApiTokenAuthFailure,
   WIDGET_RATE_LIMITS,
+  type ApiTokenBucket,
 } from "@/lib/widget-rate-limit";
 import { getPrimaryMembership } from "@/lib/workspace";
 
-const RETRY_AFTER = { "retry-after": String(WIDGET_RATE_LIMITS.windowMs / 1000) };
+export const RETRY_AFTER = { "retry-after": String(WIDGET_RATE_LIMITS.windowMs / 1000) };
+
+const BUCKET_NOUN: Record<ApiTokenBucket, string> = {
+  apiTokenRead: "read requests",
+  apiTokenWrite: "write requests",
+  apiTokenReply: "replies",
+  apiTokenAdmin: "token changes",
+};
 
 export type AdminApiContext = { workspaceId: string };
 
+/** The credential a token-authenticated request carries; its Workspace comes from the token row alone. */
+export type TokenContext = { workspaceId: string; tokenId: string; scopes: readonly string[] };
+
 /** Same body and headers for malformed, unknown, revoked and expired tokens. */
-function denyToken(): NextResponse {
-  return apiError("unauthorized", "Missing, malformed, unknown, revoked or expired API token.", {
-    headers: { "www-authenticate": "Bearer" },
-  });
+export function denyToken(message = "Missing, malformed, unknown, revoked or expired API token."): NextResponse {
+  return apiError("unauthorized", message, { headers: { "www-authenticate": "Bearer" } });
 }
 
-async function authorizeBearer(
+/**
+ * Authenticate an `Authorization: Bearer` header: brute-force guard, token
+ * lookup, then the `scope` check (null: any valid token) and the per-token
+ * `bucket` (null: not rate-limited per token).
+ */
+export async function authorizeBearer(
   request: Request,
   authorization: string,
-  capability: ApiCapability,
-): Promise<{ ok: true; ctx: AdminApiContext } | { ok: false; response: NextResponse }> {
+  scope: ApiScope | null,
+  bucket: ApiTokenBucket | null,
+): Promise<{ ok: true; ctx: TokenContext } | { ok: false; response: NextResponse }> {
   if (apiTokenAuthBlocked(request)) {
     return {
       ok: false,
@@ -41,21 +57,24 @@ async function authorizeBearer(
     recordApiTokenAuthFailure(request);
     return { ok: false, response: denyToken() };
   }
-  if (!scopesGrant(result.scopes, capability)) {
+  if (scope !== null && !scopesGrant(result.scopes, scope)) {
     return {
       ok: false,
-      response: apiError("insufficient_scope", `This API token does not have the ${capability} scope.`),
+      response: apiError(
+        "insufficient_scope",
+        `This API token does not have the ${scope} scope. Create a token that includes ${scope} and retry.`,
+      ),
     };
   }
-  if (capability === "products:write" && !rateLimitApiTokenWrite(result.tokenId)) {
+  if (bucket !== null && !rateLimitApiToken(bucket, result.tokenId)) {
     return {
       ok: false,
-      response: apiError("rate_limited", "Too many write requests for this API token. Retry later.", {
+      response: apiError("rate_limited", `Too many ${BUCKET_NOUN[bucket]} for this API token. Retry later.`, {
         headers: RETRY_AFTER,
       }),
     };
   }
-  return { ok: true, ctx: { workspaceId: result.workspaceId } };
+  return { ok: true, ctx: { workspaceId: result.workspaceId, tokenId: result.tokenId, scopes: result.scopes } };
 }
 
 /**
@@ -72,10 +91,18 @@ async function authorizeBearer(
  */
 export async function authorizeAdminApi(
   request: Request,
-  capability: ApiCapability,
+  capability: ApiScope,
 ): Promise<{ ok: true; ctx: AdminApiContext } | { ok: false; response: NextResponse }> {
   const authorization = request.headers.get("authorization");
-  if (authorization !== null) return authorizeBearer(request, authorization, capability);
+  if (authorization !== null) {
+    const bearer = await authorizeBearer(
+      request,
+      authorization,
+      capability,
+      capability === "products:write" ? "apiTokenWrite" : null,
+    );
+    return bearer.ok ? { ok: true, ctx: { workspaceId: bearer.ctx.workspaceId } } : bearer;
+  }
 
   // Writes never accept a session cookie: a cookie is sent by the browser on
   // cross-site requests, a Bearer token is not, so token-only writes need no CSRF defence.
@@ -85,9 +112,7 @@ export async function authorizeAdminApi(
     return {
       ok: false,
       response: tokenOnly
-        ? apiError("unauthorized", "Writes require an API token: send Authorization: Bearer <token>.", {
-            headers: { "www-authenticate": "Bearer" },
-          })
+        ? denyToken("Writes require an API token: send Authorization: Bearer <token>.")
         : apiError("unauthorized", "Sign in or send an API token."),
     };
   }

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import { API_ERROR_STATUS } from "@/lib/api-errors";
+import { API_SCOPES, type ApiScope } from "@/lib/api-scopes";
 import { createBody, MAX_BODY_BYTES, MAX_DOMAINS_PER_LIST, parseCreateBody, parsePatchBody, patchBody, serializeProduct } from "@/lib/product-api";
 import { MAX_API_PRODUCTS_PER_WORKSPACE, type ProductWithDomains } from "@/lib/products";
 import { WIDGET_RATE_LIMITS } from "@/lib/widget-rate-limit";
@@ -41,7 +42,7 @@ const operations: Operation[] = Object.entries<Json>(spec.paths).flatMap(([route
 );
 
 describe("openapi.json vs the route files", () => {
-  const routeModules = import.meta.glob("../../app/api/products/**/route.ts");
+  const routeModules = import.meta.glob(["../../app/api/products/**/route.ts", "../../app/api/v1/**/route.ts"]);
 
   it("documents exactly the methods each route file exports, and every documented path has a route", async () => {
     const exported = new Map<string, string[]>();
@@ -59,7 +60,7 @@ describe("openapi.json vs the route files", () => {
     }
     expect(
       Object.fromEntries([...documented].sort()),
-      `docs/openapi.json documents different paths/methods than the route files under src/app/api/products export. ${SPEC_FIX}`,
+      `docs/openapi.json documents different paths/methods than the route files under src/app/api/products and src/app/api/v1 export. ${SPEC_FIX}`,
     ).toEqual(Object.fromEntries([...exported].sort()));
   });
 });
@@ -115,6 +116,7 @@ describe("openapi.json success contract", () => {
       "POST /api/products": ["201"],
       "GET /api/products/{id}": ["200"],
       "PATCH /api/products/{id}": ["200"],
+      "GET /api/v1/whoami": ["200"],
     });
   });
 });
@@ -127,6 +129,7 @@ describe("openapi.json status codes per operation", () => {
     "POST /api/products": ["201", "400", "401", "403", "409", "429", "500"],
     "GET /api/products/{id}": ["200", "401", "403", "404", "429", "500"],
     "PATCH /api/products/{id}": ["200", "400", "401", "403", "404", "409", "429", "500"],
+    "GET /api/v1/whoami": ["200", "401", "429", "500"],
   };
 
   it("documents exactly the statuses each operation can return", () => {
@@ -227,7 +230,7 @@ describe("openapi.json schemas vs the real zod schemas", () => {
 });
 
 /** Every request/response example in the spec and the quickstart, tagged with what it must satisfy. */
-type Example = { where: string; kind: "create" | "patch" | "product" | "list" | "error"; value: unknown };
+type Example = { where: string; kind: "create" | "patch" | "product" | "list" | "whoami" | "error"; value: unknown };
 
 function specExamples(): Example[] {
   const out: Example[] = [];
@@ -239,7 +242,7 @@ function specExamples(): Example[] {
     for (const [status, rawResponse] of Object.entries<Json>(op.responses)) {
       const example = resolve(rawResponse).content?.["application/json"]?.example;
       if (example === undefined) continue;
-      const kind = Number(status) >= 400 ? "error" : "products" in example ? "list" : "product";
+      const kind = Number(status) >= 400 ? "error" : bodyKind(example);
       out.push({ where: `openapi ${method} ${route} ${status} response`, kind, value: example });
     }
   }
@@ -270,12 +273,14 @@ function quickstartExamples(): Example[] {
     if ("availability" in value) continue; // GET /api/widget/config: the public widget endpoint, not this API
     out.push({
       where: `quickstart json block #${i + 1}`,
-      kind: "error" in value ? "error" : "products" in value ? "list" : "product",
+      kind: "error" in value ? "error" : bodyKind(value),
       value,
     });
   }
   return out;
 }
+
+const bodyKind = (value: object): Example["kind"] => ("products" in value ? "list" : "workspace" in value ? "whoami" : "product");
 
 const json = (value: unknown, method: string) =>
   new Request("http://localhost/api/products", { method, body: JSON.stringify(value), headers: { "content-type": "application/json" } });
@@ -288,6 +293,10 @@ const productShape = z.strictObject({
   domains: z.array(z.string()),
   widgetKey: z.string().regex(/^pk_[A-Za-z0-9_-]+$/u),
   formKey: z.string().regex(/^fk_[A-Za-z0-9_-]+$/u).nullable(),
+});
+const whoamiShape = z.strictObject({
+  workspace: z.strictObject({ id: z.uuid(), name: z.string().min(1) }),
+  token: z.strictObject({ id: z.uuid(), name: z.string().min(1), scopes: z.array(z.enum(Object.keys(API_SCOPES) as [ApiScope])), expiresAt: z.iso.datetime().nullable() }),
 });
 const errorShape = z.strictObject({
   error: z.strictObject({
@@ -309,14 +318,15 @@ describe.each([
 
   it("request bodies pass the real parsers and responses match the real shapes", async () => {
     for (const { where, kind, value } of examples) {
-      const hint = `${where} is out of date. Update docs/${file} to match src/lib/product-api.ts.`;
+      const hint = `${where} is out of date. Update docs/${file} to match the route that serves it (src/lib/product-api.ts, src/app/api/v1).`;
       if (kind === "create") expect((await parseCreateBody(json(value, "POST"))).ok, hint).toBe(true);
       else if (kind === "patch") expect((await parsePatchBody(json(value, "PATCH"))).ok, hint).toBe(true);
       else if (kind === "product") expect(productShape.safeParse(value).error?.message, hint).toBeUndefined();
       else if (kind === "list") {
         const list = z.strictObject({ products: z.array(productShape) }).safeParse(value);
         expect(list.error?.message, hint).toBeUndefined();
-      } else expect(errorShape.safeParse(value).error?.message, hint).toBeUndefined();
+      } else if (kind === "whoami") expect(whoamiShape.safeParse(value).error?.message, hint).toBeUndefined();
+      else expect(errorShape.safeParse(value).error?.message, hint).toBeUndefined();
     }
   });
 });

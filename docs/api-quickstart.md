@@ -61,6 +61,23 @@ curl -sS "$SUPPORTSEAL_URL/api/products" -H "Authorization: Bearer $SUPPORTSEAL_
 { "products": [] }
 ```
 
+To see which Workspace the token acts in and which scopes it holds, ask
+`/api/v1/whoami`. Any valid token may call it:
+
+```sh
+curl -sS "$SUPPORTSEAL_URL/api/v1/whoami" -H "Authorization: Bearer $SUPPORTSEAL_TOKEN"
+```
+
+```json
+{
+  "workspace": { "id": "9b2d4c1e-7a3f-4e8b-9c1d-2f6a8e0b4d17", "name": "Acme Support" },
+  "token": { "id": "c4e8a2f0-1b3d-4f5a-8e7c-6d9b0a2e4f81", "name": "Provisioning script", "scopes": ["products:write"], "expiresAt": null }
+}
+```
+
+The `/api/v1` endpoints accept only the `Authorization` header, never a
+dashboard session cookie.
+
 ## 2. Create the Product
 
 Only `name` is required. `primaryColor` defaults to `#2563eb` and accepts `#rgb`
