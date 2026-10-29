@@ -80,6 +80,7 @@ docs/open-questions.md — never guess an answer to an open question.
 - Workspace isolation is a security boundary: every tenant-aware operation
   must prove Workspace ownership (FR-SEC-01, ADR-0001). A self-hosted
   deployment serves exactly one Workspace; additional Workspaces are blocked.
+- Agent-first API (planned, ADR-0005): the tenant comes only from the token; new API behaviour follows [docs/agent-api-plan.md](docs/agent-api-plan.md), and every UI action needs an API counterpart or a recorded exemption (parity rule).
 - Licence is AGPLv3 (LICENSE at the root).
 - SupportSeal is the product name; use the central configurable brand name
   (application config), never scattered hard-coded names.

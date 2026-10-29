@@ -20,6 +20,8 @@ The delivery direction — a server-to-client event stream for new chat/inbox ev
 
 Put email providers behind inbound/outbound adapters. Authenticate inbound webhooks, deduplicate provider deliveries, parse and sanitise mail, and thread by validated headers or secure reply identifiers. Persist outgoing work and delivery outcome so failures are visible and retriable. Compare providers for both hosted and self-hosted use; do not require the managed provider for self-hosters. See [ADR-0004](adr/0004-email-boundary.md).
 
+Agent access and outbound webhooks follow [ADR-0005](adr/0005-agent-first-workspace-api.md): one `/api/v1` surface whose tenant comes only from the token and whose data access goes through a single Workspace-scoped layer; phases and tests are in [agent-api-plan.md](agent-api-plan.md).
+
 Hosted-only modules provide Stripe billing and optional analytics. Core support behaviour never calls those modules in self-hosted mode. Keep external telemetry off there by default. Authentication is local to this deployment; see [ADR-0002](adr/0002-independent-authentication.md).
 
 ## Verification and operations
