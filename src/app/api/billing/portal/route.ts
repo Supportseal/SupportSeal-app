@@ -6,6 +6,7 @@ import { isHostedMode } from "@/lib/hosting";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/session";
 import { createBillingPortalSession, isMissingCustomerError, stripeSecret } from "@/lib/stripe";
+import { guardBillingConfig } from "@/lib/stripe-config";
 import { getPrimaryMembership } from "@/lib/workspace";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +28,10 @@ export async function POST() {
   }
   if (!stripeSecret()) {
     return NextResponse.json({ error: "billing_not_configured" }, { status: 503 });
+  }
+  // Issue #25: same mixed test/live guard as checkout, for the same reasons.
+  if (guardBillingConfig().status === "misconfigured") {
+    return NextResponse.json({ error: "billing_misconfigured" }, { status: 503 });
   }
 
   const workspace = await prisma.workspace.findUniqueOrThrow({

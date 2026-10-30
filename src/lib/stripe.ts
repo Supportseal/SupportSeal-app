@@ -155,6 +155,17 @@ export async function fetchStripeCheckoutSession(
   return { status: session.status, customerId: session.customer || null };
 }
 
+/**
+ * One configured price by id. A price is only readable through a key of its
+ * own mode, so "No such price" here is how a mixed test/live configuration
+ * surfaces (issue #25; see src/lib/stripe-config.ts).
+ */
+export async function fetchStripePrice(priceId: string): Promise<{ lookupKey: string | null } | { error: string }> {
+  const price = await stripeGet<{ lookup_key?: string | null }>(`/v1/prices/${encodeURIComponent(priceId)}`);
+  if ("error" in price) return price;
+  return { lookupKey: price.lookup_key ?? null };
+}
+
 /** Stripe Customer Portal session: cancel, update card, view invoices. */
 export async function createBillingPortalSession(input: {
   customerId: string;
