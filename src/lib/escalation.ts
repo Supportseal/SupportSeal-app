@@ -90,7 +90,7 @@ function renderThread(messages: Escalation["messages"]): string[] {
   let chars = 0;
   let shown = 0;
   for (const { at, body } of bodies) {
-    const text = body.length > MESSAGE_PREVIEW_CHARS ? `${body.slice(0, MESSAGE_PREVIEW_CHARS)}…` : body;
+    const text = body.length > MESSAGE_PREVIEW_CHARS ? `${body.slice(0, MESSAGE_PREVIEW_CHARS - 1)}…` : body;
     if (shown >= MAX_EMAIL_MESSAGES || (shown > 0 && chars + text.length > MAX_EMAIL_BODY_CHARS)) break;
     blocks.push(`[${at.toISOString().slice(11, 16)} UTC]`, text, ``);
     chars += text.length;

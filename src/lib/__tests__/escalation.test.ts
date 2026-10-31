@@ -343,8 +343,8 @@ describe("unanswered-request escalation sweep", () => {
 
     it("truncates a very long message with an ellipsis", () => {
       const text = thread(["x".repeat(2500)]);
-      expect(text).toContain(`${"x".repeat(2000)}…`);
-      expect(text).not.toContain("x".repeat(2001));
+      expect(text).toContain(`${"x".repeat(1999)}…`);
+      expect(text).not.toContain("x".repeat(2000));
     });
 
     it("shows at most 20 messages and counts the rest", () => {
@@ -359,6 +359,13 @@ describe("unanswered-request escalation sweep", () => {
       expect(text).toContain("5".repeat(2000));
       expect(text).not.toContain("6".repeat(2000));
       expect(text).toContain("(+3 more messages in the Conversation.)");
+    });
+
+    it("counts the ellipsis inside the per-message cap, so five truncated messages fit the budget", () => {
+      const text = thread(Array.from({ length: 6 }, (_, i) => `${i + 1}`.repeat(2500)));
+      expect(text).toContain(`${"5".repeat(1999)}…`);
+      expect(text).not.toContain("6".repeat(100));
+      expect(text).toContain("(+1 more message in the Conversation.)");
     });
 
     it("uses the singular for exactly one omitted message", () => {
