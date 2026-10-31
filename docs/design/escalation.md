@@ -2,7 +2,7 @@
 
 Covers FR-INBOX-05. When a new support request (live chat or inbound email)
 has had no agent reply for the Product's wait time, every Workspace admin
-gets one email with the customer's message and a link to the Conversation.
+gets one email with the customer's messages and a link to the Conversation.
 
 ## Behaviour
 
@@ -16,6 +16,11 @@ gets one email with the customer's message and a link to the Conversation.
   If every send fails the claim is released and the next sweep retries; a
   crash between claim and send loses that one alert (at-most-once wins over
   duplicates).
+- **Email body:** every customer Message in the Conversation, oldest first,
+  each with its UTC send time (empty Messages are skipped). Each Message is
+  capped at 2,000 characters; the email shows at most 20 Messages and about
+  10,000 characters in total, then ends with "(+N more messages in the
+  Conversation.)". The subject is the email subject or the first message.
 - **Settings** (per Product, Admin-only, Product → Email): enable switch
   (default on) and wait time in minutes (default 20, range 5–1440). One value
   covers chat and email. The card shows a note when the server has no outbound

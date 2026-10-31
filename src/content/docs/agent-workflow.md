@@ -38,5 +38,6 @@ An Admin sets support to **Live** or **Away** in the header.
 ## Unanswered-request alerts
 
 If a new Conversation gets no agent reply within its Product's wait time
-(default 20 minutes), Admins get one email with a link. Adjust or switch it off
-in the Product's settings. It needs an outbound mail provider.
+(default 20 minutes), Admins get one email with the customer's messages and a
+link. Adjust or switch it off in the Product's settings. It needs an outbound
+mail provider.

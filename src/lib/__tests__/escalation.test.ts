@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createTestUser, startTestDb, stopTestDb, type TestDb } from "@/test/integration-db";
+import { appConfig } from "@/lib/config";
 import { addCustomerMessage } from "@/lib/conversations";
 import { setTransportForTest } from "@/lib/email/outbound";
 import { escalationEmail, sweepEscalations } from "@/lib/escalation";
@@ -253,7 +254,127 @@ describe("unanswered-request escalation sweep", () => {
     expect(sent[0].text).toContain("Anyone there?");
   });
 
-  it("sanitises the subject and truncates a very long query", () => {
+  it("includes every customer message, oldest first, each with its UTC time", async () => {
+    await seed();
+    const c = await db.prisma.conversation.create({
+      data: {
+        workspaceId,
+        ticketNumber: await allocateTicketNumber(db.prisma, workspaceId),
+        productId,
+        contactId,
+        channel: "CHAT",
+        createdAt: T0,
+        messages: {
+          create: [
+            { kind: "CUSTOMER", body: "Morning", createdAt: minutesAfter(0) },
+            { kind: "CUSTOMER", body: "", createdAt: minutesAfter(1) },
+            { kind: "CUSTOMER", body: "My invoice PDF is blank", createdAt: minutesAfter(2) },
+            { kind: "CUSTOMER", body: "Order #1234 if that helps", createdAt: minutesAfter(11) },
+          ],
+        },
+      },
+    });
+
+    await sweepEscalations({ now: minutesAfter(20) });
+    const { text, subject } = sent[0];
+    expect(subject).toBe("[Widgetly] Morning");
+    expect(text).toContain(`/inbox/${c.id}`);
+    const body = text.slice(text.indexOf("[10:00 UTC]"), text.indexOf("Reply in the dashboard"));
+    expect(body).toBe(
+      [
+        "[10:00 UTC]",
+        "Morning",
+        "",
+        "[10:02 UTC]",
+        "My invoice PDF is blank",
+        "",
+        "[10:11 UTC]",
+        "Order #1234 if that helps",
+        "",
+        "",
+      ].join("\n"),
+    );
+    expect(text).not.toContain("more message");
+  });
+
+  it("keeps the single-message shape: header, one timed message, footer", () => {
+    const mail = escalationEmail(
+      {
+        id: "c1",
+        channel: "CHAT",
+        subject: null,
+        createdAt: T0,
+        productName: "Widgetly",
+        contact: { name: "Cass", email: "cust@example.com" },
+        messages: [{ body: "Anyone there?", createdAt: T0 }],
+      },
+      minutesAfter(20),
+    );
+    expect(mail.subject).toBe("[Widgetly] Anyone there?");
+    expect(mail.text.split("\n")).toEqual([
+      "A new live chat request for Widgetly has had no reply for 20 min.",
+      "",
+      "From: Cass · cust@example.com",
+      `Received: ${T0.toUTCString()}`,
+      "",
+      "[10:00 UTC]",
+      "Anyone there?",
+      "",
+      `Reply in the dashboard: ${appConfig.url}/inbox/c1`,
+      "",
+      "You are receiving this because you are an admin of this Workspace. Change the wait time, or turn these alerts off, in the Product's Email settings.",
+    ]);
+  });
+
+  describe("email size caps", () => {
+    const thread = (bodies: string[]) =>
+      escalationEmail(
+        {
+          id: "c1",
+          channel: "EMAIL",
+          subject: "Help",
+          createdAt: T0,
+          productName: "Widgetly",
+          contact: { name: null, email: null },
+          messages: bodies.map((body, i) => ({ body, createdAt: minutesAfter(i) })),
+        },
+        minutesAfter(30),
+      ).text;
+
+    it("truncates a very long message with an ellipsis", () => {
+      const text = thread(["x".repeat(2500)]);
+      expect(text).toContain(`${"x".repeat(1999)}…`);
+      expect(text).not.toContain("x".repeat(2000));
+    });
+
+    it("shows at most 20 messages and counts the rest", () => {
+      const text = thread(Array.from({ length: 23 }, (_, i) => `msg-${i + 1}.`));
+      expect(text).toContain("msg-20.");
+      expect(text).not.toContain("msg-21.");
+      expect(text).toContain("(+3 more messages in the Conversation.)");
+    });
+
+    it("stops at the total character budget, always showing the first message", () => {
+      const text = thread(Array.from({ length: 8 }, (_, i) => `${i + 1}`.repeat(2000)));
+      expect(text).toContain("5".repeat(2000));
+      expect(text).not.toContain("6".repeat(2000));
+      expect(text).toContain("(+3 more messages in the Conversation.)");
+    });
+
+    it("counts the ellipsis inside the per-message cap, so five truncated messages fit the budget", () => {
+      const text = thread(Array.from({ length: 6 }, (_, i) => `${i + 1}`.repeat(2500)));
+      expect(text).toContain(`${"5".repeat(1999)}…`);
+      expect(text).not.toContain("6".repeat(100));
+      expect(text).toContain("(+1 more message in the Conversation.)");
+    });
+
+    it("uses the singular for exactly one omitted message", () => {
+      const text = thread(Array.from({ length: 21 }, (_, i) => `msg-${i + 1}.`));
+      expect(text).toContain("(+1 more message in the Conversation.)");
+    });
+  });
+
+  it("sanitises the subject and handles an anonymous contact", () => {
     const mail = escalationEmail(
       {
         id: "c1",
@@ -262,15 +383,13 @@ describe("unanswered-request escalation sweep", () => {
         createdAt: T0,
         productName: "Widgetly",
         contact: { name: null, email: null },
-        query: "x".repeat(2000),
-        customerMessages: 3,
+        messages: [{ body: "x".repeat(2000), createdAt: T0 }],
       },
       minutesAfter(90),
     );
     expect(mail.subject).toBe("[Widgetly] Help Bcc: evil@example.com");
     expect(mail.text).toContain("1 h 30 min");
     expect(mail.text).toContain("Anonymous visitor");
-    expect(mail.text).toContain("2 more messages");
   });
 });
 

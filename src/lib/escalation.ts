@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 /**
  * Unanswered-request escalation (docs/design/escalation.md). When a new
  * Conversation (chat or email) has had no agent reply for the Product's
- * threshold, every Workspace admin gets one email with the customer's query
+ * threshold, every Workspace admin gets one email with the customer's messages
  * and a dashboard link.
  *
  * There is no background worker (self-hosted must work with zero external
@@ -26,7 +26,10 @@ export const ESCALATION_MAX_MINUTES = 1440;
 const OVERDUE_WINDOW_MS = 24 * 60 * 60_000;
 const BATCH_PER_PRODUCT = 25;
 const LAZY_SWEEP_INTERVAL_MS = 60_000;
-const QUERY_PREVIEW_CHARS = 2000;
+/** Email size guards: a pathological thread must not produce a giant email. */
+const MESSAGE_PREVIEW_CHARS = 2000;
+const MAX_EMAIL_MESSAGES = 20;
+const MAX_EMAIL_BODY_CHARS = 10_000;
 
 export function isValidEscalationMinutes(value: number): boolean {
   return (
@@ -72,13 +75,35 @@ type Escalation = {
   createdAt: Date;
   productName: string;
   contact: { name: string | null; email: string | null };
-  query: string;
-  customerMessages: number;
+  /** Every customer Message, oldest first. */
+  messages: { body: string; createdAt: Date }[];
 };
+
+/**
+ * The customer thread as plain text, oldest first, each Message headed by its
+ * UTC send time. Empty Messages are skipped; per-Message and total caps end
+ * with a count of what was left out.
+ */
+function renderThread(messages: Escalation["messages"]): string[] {
+  const blocks: string[] = [];
+  const bodies = messages.map((m) => ({ at: m.createdAt, body: m.body.trim() })).filter((m) => m.body);
+  let chars = 0;
+  let shown = 0;
+  for (const { at, body } of bodies) {
+    const text = body.length > MESSAGE_PREVIEW_CHARS ? `${body.slice(0, MESSAGE_PREVIEW_CHARS - 1)}…` : body;
+    if (shown >= MAX_EMAIL_MESSAGES || (shown > 0 && chars + text.length > MAX_EMAIL_BODY_CHARS)) break;
+    blocks.push(`[${at.toISOString().slice(11, 16)} UTC]`, text, ``);
+    chars += text.length;
+    shown += 1;
+  }
+  const omitted = bodies.length - shown;
+  if (omitted > 0) blocks.push(`(+${omitted} more message${omitted === 1 ? "" : "s"} in the Conversation.)`, ``);
+  return blocks;
+}
 
 export function escalationEmail(input: Escalation, now: Date): { subject: string; text: string } {
   const channel = input.channel === "CHAT" ? "live chat" : "email";
-  const headline = oneLine(input.subject ?? input.query, 80);
+  const headline = oneLine(input.subject ?? input.messages[0]?.body ?? "", 80);
   const who = [input.contact.name, input.contact.email].filter(Boolean).join(" · ") || "Anonymous visitor";
   const waited = waitingLabel(now.getTime() - input.createdAt.getTime());
   return {
@@ -89,11 +114,7 @@ export function escalationEmail(input: Escalation, now: Date): { subject: string
       `From: ${who}`,
       `Received: ${input.createdAt.toUTCString()}`,
       ``,
-      input.query.length >= QUERY_PREVIEW_CHARS ? `${input.query}…` : input.query,
-      ...(input.customerMessages > 1
-        ? [``, `(${input.customerMessages - 1} more message${input.customerMessages === 2 ? "" : "s"} in the Conversation.)`]
-        : []),
-      ``,
+      ...renderThread(input.messages),
       `Reply in the dashboard: ${appConfig.url}/inbox/${input.id}`,
       ``,
       `You are receiving this because you are an admin of this Workspace. Change the wait time, or turn these alerts off, in the Product's Email settings.`,
@@ -139,7 +160,7 @@ export async function sweepEscalations(input: { now?: Date } = {}): Promise<Swee
         messages: {
           where: { kind: "CUSTOMER" },
           orderBy: { createdAt: "asc" },
-          select: { body: true },
+          select: { body: true, createdAt: true },
         },
       },
     });
@@ -176,8 +197,7 @@ export async function sweepEscalations(input: { now?: Date } = {}): Promise<Swee
           createdAt: candidate.createdAt,
           productName: product.name,
           contact: candidate.contact,
-          query: candidate.messages[0]?.body.slice(0, QUERY_PREVIEW_CHARS) ?? "",
-          customerMessages: candidate.messages.length,
+          messages: candidate.messages,
         },
         now,
       );
