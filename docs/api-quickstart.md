@@ -272,6 +272,49 @@ has its own, simpler error shape):
 
 Probe `acme.example` and `www.acme.example` separately: they are distinct entries.
 
+## 6. Reply to a conversation
+
+A token with `conversations:reply` can answer a customer, and one with
+`conversations:write` can add a note or change status and tags. Set
+`CONVERSATION_ID` to the Conversation's id. Sending a reply needs an
+`Idempotency-Key` (1-128 characters of `A-Za-z0-9_-`), so a retry after a
+timeout cannot email the customer twice:
+
+```sh
+curl -sS -X POST "$SUPPORTSEAL_URL/api/v1/conversations/$CONVERSATION_ID/messages" -H "Authorization: Bearer $SUPPORTSEAL_TOKEN" -H "Idempotency-Key: reply-2026-10-31-001" -H "Content-Type: application/json" -d '{"kind":"reply","body":"Thanks for reaching out. The fix is live; please refresh and tell us if it persists."}'
+```
+
+The `201` response shows how the reply travelled. `delivery.state` is `sent`
+(emailed), `not_applicable` (a chat-only reply, or a note) or `failed` (the
+email could not be sent; the reply is stored and the failure is recorded in the
+dashboard):
+
+```json
+{
+  "id": "5d1f7c3a-92b4-4e6d-8a10-3b7c9e2f4a68",
+  "conversationId": "e0a4b6c8-1d2f-4a35-9c7e-8b1d3f5a7c92",
+  "kind": "reply",
+  "body": "Thanks for reaching out. The fix is live; please refresh and tell us if it persists.",
+  "author": { "type": "token", "id": "c4e8a2f0-1b3d-4f5a-8e7c-6d9b0a2e4f81", "name": "Support agent" },
+  "attachments": [],
+  "delivery": { "state": "sent" },
+  "createdAt": "2026-10-31T04:12:09.000Z"
+}
+```
+
+Sending the same key and body again returns the stored response with
+`Idempotent-Replayed: true`; the same key with a different body is
+`409 idempotency_conflict`. A reply to a Closed Conversation reopens it, and
+replies answer `402 service_paused` while a Free-plan Workspace is paused (notes
+still work). The inbox shows the reply as `Support agent (API)`.
+
+Close a Conversation and tag it in one call; either both changes apply or
+neither does:
+
+```sh
+curl -sS -X PATCH "$SUPPORTSEAL_URL/api/v1/conversations/$CONVERSATION_ID" -H "Authorization: Bearer $SUPPORTSEAL_TOKEN" -H "Content-Type: application/json" -d '{"status":"CLOSED","addTags":["billing"]}'
+```
+
 ## Errors
 
 Every failure from the API has one JSON shape. Branch on `code`, never on
@@ -291,11 +334,14 @@ Every failure from the API has one JSON shape. Branch on `code`, never on
 | --- | --- | --- | --- |
 | 400 | `invalid_request` | Body is not JSON, is over 64 KiB, has an unknown field, a domain list longer than 100 entries, a bad value, the same domain in `addDomains` and `removeDomains`, or (`PATCH`) changes nothing. `details[].field` names the field when one is at fault (not for invalid JSON or an oversized body). | Fix the named field and resend. |
 | 401 | `unauthorized` | Token missing, malformed, unknown, revoked or expired (all look identical), or a write came without a token. Carries `WWW-Authenticate: Bearer` (except for a cookie read that is not signed in). | Send `Authorization: Bearer $SUPPORTSEAL_TOKEN`; if it was revoked or expired, create a new token (step 1). |
-| 403 | `insufficient_scope` | The token lacks `products:write`, the only scope there is. Tokens created in the dashboard already carry it, so seeing this means an older or modified deployment. | Create a fresh token in **Settings → API tokens** and use that. |
+| 403 | `insufficient_scope` | The token lacks the scope the call needs (`products:write` for Products, `conversations:reply` for replies, `conversations:write` for notes, status and tags). Tokens created in the dashboard carry all three, so seeing this means a token created before the conversation scopes existed, or a modified deployment. | Create a fresh token in **Settings → API tokens** and use that. |
 | 403 | `forbidden` | A signed-in session that is not a Workspace admin (reads with a cookie only). | Use an admin account, or a token. |
-| 404 | `not_found` | The id does not exist or belongs to another Workspace (indistinguishable). | Check `PRODUCT_ID` and that the token belongs to the right Workspace. |
+| 402 | `service_paused` | `POST …/messages` with `kind: "reply"` while a Free-plan Workspace has used its monthly allowance. Nothing was stored. Notes keep working. | Show the `message` to your user; the Workspace must upgrade or wait for the next period. |
+| 404 | `not_found` | The id does not exist or belongs to another Workspace (indistinguishable). | Check the id and that the token belongs to the right Workspace. |
 | 409 | `conflict` | `addDomains` names a domain already allowed, or `removeDomains` one that is not. Nothing was applied. The check is best-effort under concurrent requests (see below). | Drop the entry or `GET` the Product to see its current domains. |
 | 409 | `product_limit_reached` | `POST /api/products` when the Workspace already has 100 Products (archived ones count). Nothing was created. | Retrying will not help. Archive-and-recreate does not help either; create further Products in the dashboard, which has no cap. |
+| 409 | `idempotency_conflict` | The `Idempotency-Key` was already used with a different body, method or path. | Use a new key for a new request; resend the identical request to get the stored answer. |
+| 409 | `idempotency_in_flight` | A request with the same key is still running. Carries `Retry-After`. | Wait `Retry-After` seconds and send the same request again. |
 | 429 | `rate_limited` | 20 failed token attempts from your IP in a minute, more than 30 writes per minute with this token, or on `/api/v1` more than 120 reads per minute with this token or 300 requests per minute from your IP. | Wait `Retry-After` seconds (60), then retry. |
 | 500 | `internal_error` | The server could not complete the request (an unexpected failure; the message is generic and the detail is only in the server log). Any endpoint can return it. | Retry with backoff; check the server logs if it persists. |
 
@@ -310,7 +356,11 @@ body.
   `409` check is best-effort under concurrent requests: two simultaneous requests
   adding the same domain can both succeed, and the data stays consistent (a domain
   is stored once per Product).
-- **`POST` is not idempotent** and has no idempotency key. After a timeout, call
+- **Replies are idempotent when you send a key.** `POST …/messages` with `kind: "reply"` requires an
+  `Idempotency-Key` (400 without one); notes and `PATCH /api/v1/conversations/{id}` accept one. A key is remembered
+  for 24 hours. Replaying it with the same request returns the stored response plus `Idempotent-Replayed: true`
+  and sends nothing again. Reuse a key only to retry the same request. Replies are limited to 20 per minute per token.
+- **`POST /api/products` is not idempotent** and has no idempotency key. After a timeout, call
   `GET /api/products` and look for the name before posting again, or you create a
   duplicate.
 - **A Workspace can hold at most 100 Products through the API** (`POST`

@@ -66,7 +66,11 @@ export const TENANT_MODELS = {
   WidgetHostSignal: { kind: "via", path: ["product"], refs: { productId: "Product" } },
   ProductDomain: { kind: "via", path: ["product"], refs: { productId: "Product" } },
   ProductMailDomain: { kind: "via", path: ["product"], refs: { productId: "Product" } },
-  Message: { kind: "via", path: ["conversation"], refs: { conversationId: "Conversation", agentUserId: "User" } },
+  Message: {
+    kind: "via",
+    path: ["conversation"],
+    refs: { conversationId: "Conversation", agentUserId: "User", authorTokenId: "ApiToken" },
+  },
   ConversationTag: { kind: "via", path: ["conversation"], refs: { conversationId: "Conversation", tagId: "Tag" } },
   MessageReadReceipt: {
     kind: "via",

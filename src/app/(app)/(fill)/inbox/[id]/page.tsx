@@ -62,7 +62,7 @@ export default async function ConversationPage({
           kind: message.kind,
           body: message.body,
           createdAt: message.createdAt.toISOString(),
-          authorName: message.author?.name ?? null,
+          authorName: message.author?.name ?? (message.authorToken ? `${message.authorToken.name} (API)` : null),
           channel: message.channel,
           attachments: message.attachments.map((a) => ({
             id: a.id,

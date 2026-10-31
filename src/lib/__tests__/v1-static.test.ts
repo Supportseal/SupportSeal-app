@@ -62,7 +62,7 @@ describe("Workspace API data access", () => {
         const reexports =
           /export\s*\{[^}]*\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b/u.test(source) || /export\s*\*/u.test(source);
         return [
-          ...methods.filter(([, , rest]) => !/^\s*=\s*v1Route\(/u.test(rest)).map(([, method]) => `${file}: ${method}`),
+          ...methods.filter(([, , rest]) => !/^\s*=\s*v1Route(?:<[^>]*>)?\(/u.test(rest)).map(([, method]) => `${file}: ${method}`),
           ...(reexports ? [`${file}: re-exported handler`] : []),
         ];
       });

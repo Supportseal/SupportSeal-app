@@ -3,7 +3,7 @@
   "info": {
     "title": "SupportSeal Workspace API",
     "version": "1.0.0",
-    "summary": "Create, edit and read Products (and their widget and form keys), and introspect the calling token, with a Workspace API token.",
+    "summary": "Create, edit and read Products (and their widget and form keys), reply to and update Conversations, and introspect the calling token, with a Workspace API token.",
     "description": "The token-authenticated JSON API of a SupportSeal Workspace. It is identical on the hosted tier and on a self-hosted installation; only the base URL differs.\n\nTokens are created by a Workspace admin in the dashboard (**Settings → API tokens**) and shown once; they cannot be created through this API. A token acts for its whole Workspace and can never reach another one.\n\nHuman guides: [quickstart](api-quickstart.md), [API tokens](api-tokens.md), [widget integration](widget-integration.md).\n\nEvery response, success or error, is sent with `Cache-Control: private, no-store`. Every error has the same envelope (`ErrorResponse`); branch on `error.code`, never on `error.message`.\n\nThe error codes and statuses in this file are checked against `API_ERROR_STATUS` in `src/lib/api-errors.ts` by `src/lib/__tests__/openapi-drift.test.ts`; update the spec in the same change as the code.",
     "license": {
       "name": "AGPL-3.0-only",
@@ -30,6 +30,10 @@
     {
       "name": "Auth",
       "description": "Check which Workspace a token acts in and which scopes it holds. Use it as the first call of an agent session."
+    },
+    {
+      "name": "Conversations",
+      "description": "Reply to, annotate, close and tag the Workspace's Conversations."
     }
   ],
   "security": [
@@ -439,6 +443,236 @@
           }
         ]
       }
+    },
+    "/api/v1/conversations/{conversationId}": {
+      "patch": {
+        "operationId": "updateConversation",
+        "tags": [
+          "Conversations"
+        ],
+        "summary": "Change status and tags together or not at all",
+        "x-required-scope": "conversations:write",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "in": "path",
+            "required": true,
+            "description": "Conversation id. An id from another Workspace answers exactly like an unknown id (404).",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationPatch"
+              },
+              "examples": {
+                "closeAndTag": {
+                  "summary": "Close and tag in one call",
+                  "value": {
+                    "status": "CLOSED",
+                    "addTags": [
+                      "billing"
+                    ]
+                  }
+                },
+                "retag": {
+                  "summary": "Swap a tag",
+                  "value": {
+                    "addTags": [
+                      "bug"
+                    ],
+                    "removeTags": [
+                      "question"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The Conversation after the change.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conversation"
+                },
+                "example": {
+                  "id": "e0a4b6c8-1d2f-4a35-9c7e-8b1d3f5a7c92",
+                  "ticket": "SS-123",
+                  "productId": "7b2d9f41-3c58-4e0a-b6d1-9a4e2c8f5017",
+                  "contactId": "a91c3e5f-7d02-4b68-8f14-2e6a0c9d3b75",
+                  "status": "CLOSED",
+                  "tags": [
+                    "billing"
+                  ],
+                  "createdAt": "2026-10-30T09:00:00.000Z",
+                  "updatedAt": "2026-10-31T04:15:00.000Z"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "409": {
+            "$ref": "#/components/responses/IdempotencyConflict"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/InsufficientScope"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "description": "Applies `status` and tag changes in one transaction: either all of them take effect or none do. Closing sets the close time and reopening clears it. `addTags` creates a tag that does not exist yet; `removeTags` ignores a tag the Conversation does not carry. A tag name is trimmed and capped at 40 characters, and a name in both lists is a 400. A body that changes nothing is a 400. `Idempotency-Key` is optional here and recommended.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/conversations/{conversationId}/messages": {
+      "post": {
+        "operationId": "createMessage",
+        "tags": [
+          "Conversations"
+        ],
+        "summary": "Send a reply or add an internal note",
+        "x-required-scope": "conversations:reply (kind=reply) or conversations:write (kind=note)",
+        "description": "A reply takes the dashboard's own path: the same service, the same routing (chat only, or email when the customer is not on the widget), the same Free-plan pause, and a reply to a Closed Conversation reopens it as `PENDING`. Notes never reach the customer and keep working during the pause. `Idempotency-Key` is required for a reply (400 without it) so a retry cannot email the customer twice, and optional for a note. The response carries the delivery outcome: `sent` (emailed), `not_applicable` (chat-only reply, or a note) or `failed` (the email could not be sent; the Message is stored and the failure is recorded on the dashboard's delivery ledger, so the request still succeeds). `queued` is reserved for asynchronous delivery and is not emitted yet. `savedReplyId` records which Saved Reply the text came from and must belong to the Workspace; the API never substitutes text, send the final `body`. `Location` is the Conversation's Messages URL; a single-Message URL arrives with the read API. A foreign or unknown `savedReplyId` or `attachmentIds` entry answers 404, like an unknown Conversation.",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "in": "path",
+            "required": true,
+            "description": "Conversation id. An id from another Workspace answers exactly like an unknown id (404).",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyRequired"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessageCreate"
+              },
+              "examples": {
+                "reply": {
+                  "summary": "Reply to the customer (needs Idempotency-Key)",
+                  "value": {
+                    "kind": "reply",
+                    "body": "Thanks for reaching out. The fix is live; please refresh and tell us if it persists."
+                  }
+                },
+                "note": {
+                  "summary": "Internal note, never sent",
+                  "value": {
+                    "kind": "note",
+                    "body": "Customer is on the legacy plan; escalate billing questions to Pete."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The stored Message and how it was delivered.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              },
+              "Location": {
+                "$ref": "#/components/headers/Location"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                },
+                "example": {
+                  "id": "5d1f7c3a-92b4-4e6d-8a10-3b7c9e2f4a68",
+                  "conversationId": "e0a4b6c8-1d2f-4a35-9c7e-8b1d3f5a7c92",
+                  "kind": "reply",
+                  "body": "Thanks for reaching out. The fix is live; please refresh and tell us if it persists.",
+                  "author": {
+                    "type": "token",
+                    "id": "c4e8a2f0-1b3d-4f5a-8e7c-6d9b0a2e4f81",
+                    "name": "Support agent"
+                  },
+                  "attachments": [],
+                  "delivery": {
+                    "state": "sent"
+                  },
+                  "createdAt": "2026-10-31T04:12:09.000Z"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "402": {
+            "$ref": "#/components/responses/ServicePaused"
+          },
+          "409": {
+            "$ref": "#/components/responses/IdempotencyConflict"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/InsufficientScope"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -446,7 +680,7 @@
       "bearerAuth": {
         "type": "http",
         "scheme": "bearer",
-        "description": "A Workspace API token (`ss_live_` followed by 43 characters), created in the dashboard under Settings → API tokens and shown once. Every dashboard-created token has the `products:write` scope, which also grants reading. A request that sends an `Authorization` header is judged on the token alone and never falls back to a session cookie. Unknown, malformed, revoked and expired tokens are indistinguishable by design."
+        "description": "A Workspace API token (`ss_live_` followed by 43 characters), created in the dashboard under Settings → API tokens and shown once. Every dashboard-created token has the `products:write` scope (which also grants reading) plus `conversations:reply` and `conversations:write`. A request that sends an `Authorization` header is judged on the token alone and never falls back to a session cookie. Unknown, malformed, revoked and expired tokens are indistinguishable by design."
       },
       "sessionCookie": {
         "type": "apiKey",
@@ -478,6 +712,12 @@
           "examples": [
             "60"
           ]
+        }
+      },
+      "Location": {
+        "description": "URL of the created resource.",
+        "schema": {
+          "type": "string"
         }
       }
     },
@@ -685,7 +925,10 @@
           "conflict",
           "product_limit_reached",
           "rate_limited",
-          "internal_error"
+          "internal_error",
+          "service_paused",
+          "idempotency_conflict",
+          "idempotency_in_flight"
         ],
         "description": "Stable and machine-readable. `x-error-status` gives the HTTP status of each code.",
         "x-error-status": {
@@ -697,7 +940,10 @@
           "conflict": 409,
           "product_limit_reached": 409,
           "rate_limited": 429,
-          "internal_error": 500
+          "internal_error": 500,
+          "service_paused": 402,
+          "idempotency_conflict": 409,
+          "idempotency_in_flight": 409
         }
       },
       "ErrorDetail": {
@@ -808,6 +1054,250 @@
           "workspace",
           "token"
         ]
+      },
+      "MessageCreate": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "enum": [
+              "reply",
+              "note"
+            ]
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000
+          },
+          "savedReplyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "attachmentIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "maxItems": 10
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "body"
+        ]
+      },
+      "Message": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "enum": [
+              "customer",
+              "reply",
+              "note"
+            ],
+            "description": "Lower-case in the API; mapped from the internal CUSTOMER/AGENT/NOTE values (reply is AGENT)."
+          },
+          "body": {
+            "type": "string"
+          },
+          "author": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "enum": [
+                  "customer",
+                  "user",
+                  "token"
+                ],
+                "description": "`token`: written through this API; `id` and `name` are the token's. `user`: a dashboard agent. `customer`: the customer."
+              },
+              "id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "type"
+            ]
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Attachment"
+            }
+          },
+          "delivery": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "enum": [
+                  "queued",
+                  "sent",
+                  "failed",
+                  "not_applicable"
+                ],
+                "description": "`sent`: emailed to the customer. `not_applicable`: a chat-only reply or a note. `failed`: the email could not be sent. `queued` is reserved and not emitted yet."
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "state"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "conversationId",
+          "kind",
+          "body",
+          "author",
+          "attachments",
+          "delivery",
+          "createdAt"
+        ]
+      },
+      "Attachment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "contentType": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "contentPath": {
+            "type": "string",
+            "description": "API-relative path that needs the bearer token. Never a public or signed URL."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "filename",
+          "contentType",
+          "size",
+          "contentPath"
+        ]
+      },
+      "ConversationPatch": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "enum": [
+              "OPEN",
+              "PENDING",
+              "CLOSED"
+            ]
+          },
+          "addTags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40
+            },
+            "maxItems": 20
+          },
+          "removeTags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40
+            },
+            "maxItems": 20
+          }
+        },
+        "additionalProperties": false,
+        "description": "At least one of `status`, a non-empty `addTags` or a non-empty `removeTags`. Tag names are trimmed, 1-40 characters, lower-cased by the server, and cannot contain control characters.",
+        "minProperties": 1
+      },
+      "Conversation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ticket": {
+            "type": "string",
+            "examples": [
+              "SS-123"
+            ]
+          },
+          "productId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "contactId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "enum": [
+              "OPEN",
+              "PENDING",
+              "CLOSED"
+            ]
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "ticket",
+          "productId",
+          "contactId",
+          "status",
+          "tags",
+          "createdAt",
+          "updatedAt"
+        ]
       }
     },
     "responses": {
@@ -884,7 +1374,7 @@
         }
       },
       "InsufficientScope": {
-        "description": "`insufficient_scope`: the token is valid but lacks the `products:write` scope. That is the only scope, and tokens created in the dashboard already carry it, so this means an older or modified deployment: create a fresh token.",
+        "description": "`insufficient_scope`: the token is valid but lacks a scope the operation needs (`products:write` for Products, `conversations:reply` to send a reply, `conversations:write` for notes and Conversation changes). Tokens created in the dashboard carry all three, so this means a token minted before `conversations:reply` and `conversations:write` were added: create a fresh token.",
         "headers": {
           "Cache-Control": {
             "$ref": "#/components/headers/CacheControl"
@@ -898,7 +1388,7 @@
             "example": {
               "error": {
                 "code": "insufficient_scope",
-                "message": "This API token does not have the products:write scope. Create a token that includes products:write and retry."
+                "message": "This API token does not have the conversations:reply scope. Create a token that includes conversations:reply and retry."
               }
             }
           }
@@ -1016,6 +1506,82 @@
               }
             }
           }
+        }
+      },
+      "ServicePaused": {
+        "description": "`service_paused`: the Workspace is over its Free plan allowance and replies are paused until it upgrades. Notes, tags and status changes still work.",
+        "headers": {
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "error": {
+                "code": "service_paused",
+                "message": "Replies are paused: this workspace is over its Free plan allowance. Upgrade to resume replying."
+              }
+            }
+          }
+        }
+      },
+      "IdempotencyConflict": {
+        "description": "`idempotency_conflict`: the `Idempotency-Key` was already used with a different body, method or path; send a new key for a new request. `idempotency_in_flight`: a request with the same key is still running; it carries `Retry-After: 5`, so wait that many seconds and send the same request again.",
+        "headers": {
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "idempotency_conflict": {
+                "value": {
+                  "error": {
+                    "code": "idempotency_conflict",
+                    "message": "This Idempotency-Key was already used with a different request body. Use a new key for a new request."
+                  }
+                }
+              },
+              "idempotency_in_flight": {
+                "value": {
+                  "error": {
+                    "code": "idempotency_in_flight",
+                    "message": "A request with this Idempotency-Key is still being processed. Retry shortly."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "parameters": {
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": false,
+        "description": "1-128 chars [A-Za-z0-9_-]. Scoped to Workspace, token, method and resolved path (ids included); kept 24 hours. Same key and body replays the stored response (Idempotent-Replayed: true); same key and a different body is 409 idempotency_conflict.",
+        "schema": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,128}$"
+        }
+      },
+      "IdempotencyKeyRequired": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": true,
+        "description": "Required: this operation has an outward side effect (email or message). See IdempotencyKey.",
+        "schema": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,128}$"
         }
       }
     }

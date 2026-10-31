@@ -6,6 +6,7 @@ import { attachSnapshotInTransaction, purgeExpiredForProduct } from "@/lib/diagn
 import type { NormalizedSnapshot } from "@/lib/diagnostics/snapshot";
 import type { Prisma } from "@/generated/prisma/client";
 import { armEscalationTimer, sweepEscalationsLazily } from "@/lib/escalation";
+import { MAX_TAG_NAME_LENGTH } from "@/lib/conversation-api";
 import { prisma } from "@/lib/prisma";
 import { allocateTicketNumber, parseTicketSearch } from "@/lib/ticket";
 import { isServicePaused, REPLIES_PAUSED_MESSAGE } from "@/lib/service-pause";
@@ -344,9 +345,13 @@ export async function addCustomerMessage(input: {
   return { ok: true, ...(diagnostics ? { diagnostics } : {}) };
 }
 
-/** Agent reply (agents + admins). Sets status PENDING awaiting the customer. */
+/** Who wrote an agent message: a signed-in agent, or an API token (docs/agent-api-plan.md, slice 1d). */
+export type MessageActor = { workspace: Pick<WorkspaceContext["workspace"], "id"> } &
+  ({ user: Pick<WorkspaceContext["user"], "id"> } | { token: { id: string } });
+
+/** Agent reply (agents + admins, or an API token). Sets status PENDING awaiting the customer. */
 export async function addAgentMessage(input: {
-  ctx: WorkspaceContext;
+  ctx: MessageActor;
   conversationId: string;
   body: string;
   kind?: "AGENT" | "NOTE";
@@ -373,7 +378,8 @@ export async function addAgentMessage(input: {
         conversationId: conversation.id,
         kind,
         body,
-        agentUserId: input.ctx.user.id,
+        agentUserId: "user" in input.ctx ? input.ctx.user.id : null,
+        authorTokenId: "token" in input.ctx ? input.ctx.token.id : null,
         // No channel at insert (issue #128): an AGENT reply's channel is
         // wherever reply routing actually delivers it, decided after the
         // message is durable (deliverAgentReplyIfRouted). Until then — and
@@ -433,6 +439,69 @@ export async function setConversationStatus(input: {
     workspaceId: conversation.workspaceId,
     kind: "status",
   });
+  return { ok: true };
+}
+
+const normalizeTagName = (name: string) => name.trim().toLowerCase().slice(0, MAX_TAG_NAME_LENGTH);
+
+export type ConversationUpdate = { status?: ConversationStatus; addTags?: string[]; removeTags?: string[] };
+
+/**
+ * Status and tag changes in one transaction (Workspace API `updateConversation`):
+ * all of them apply or none do. Same rules as the dashboard's three separate
+ * actions: a status change sets or clears `closedAt`, adding a tag creates it
+ * on first use and is a no-op when already present, removing a tag that is not
+ * on the Conversation is a no-op.
+ */
+export async function updateConversation(input: {
+  workspaceId: string;
+  conversationId: string;
+  changes: ConversationUpdate;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const add = [...new Set((input.changes.addTags ?? []).map(normalizeTagName))];
+  const remove = [...new Set((input.changes.removeTags ?? []).map(normalizeTagName))];
+  if (add.includes("") || remove.includes("")) return { ok: false, error: "Tag names must not be empty." };
+  if (add.some((name) => remove.includes(name))) {
+    return { ok: false, error: "A tag cannot be in both addTags and removeTags." };
+  }
+  const conversation = await loadConversationForWorkspace(input.workspaceId, input.conversationId);
+  if (!conversation) return { ok: false, error: "Conversation not found." };
+
+  await prisma.$transaction(async (tx) => {
+    if (input.changes.status !== undefined) {
+      await tx.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          status: input.changes.status,
+          closedAt: input.changes.status === "CLOSED" ? new Date() : null,
+        },
+      });
+    }
+    for (const name of add) {
+      const tag = await tx.tag.upsert({
+        where: { workspaceId_name: { workspaceId: input.workspaceId, name } },
+        create: { workspaceId: input.workspaceId, name },
+        update: {},
+      });
+      await tx.conversationTag.upsert({
+        where: { conversationId_tagId: { conversationId: conversation.id, tagId: tag.id } },
+        create: { conversationId: conversation.id, tagId: tag.id },
+        update: {},
+      });
+    }
+    if (remove.length > 0) {
+      await tx.conversationTag.deleteMany({
+        where: { conversationId: conversation.id, tag: { workspaceId: input.workspaceId, name: { in: remove } } },
+      });
+    }
+  });
+  if (input.changes.status !== undefined) {
+    notifyConversationEvent({
+      conversationId: conversation.id,
+      workspaceId: conversation.workspaceId,
+      kind: "status",
+    });
+  }
   return { ok: true };
 }
 
@@ -547,6 +616,7 @@ export async function getConversationDetail(input: {
         orderBy: { createdAt: "asc" },
         include: {
           author: { select: { id: true, name: true } },
+          authorToken: { select: { id: true, name: true } },
           attachments: {
             select: { id: true, filename: true, contentType: true, size: true },
           },
@@ -579,7 +649,7 @@ export async function ensureTag(input: {
   ctx: WorkspaceContext;
   name: string;
 }): Promise<{ ok: true; tagId: string } | { ok: false; error: string }> {
-  const name = input.name.trim().toLowerCase().slice(0, 40);
+  const name = normalizeTagName(input.name);
   if (!name) return { ok: false, error: "Tag name is required." };
   const tag = await prisma.tag.upsert({
     where: { workspaceId_name: { workspaceId: input.ctx.workspace.id, name } },

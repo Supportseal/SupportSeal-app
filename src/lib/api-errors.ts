@@ -10,10 +10,13 @@ import { NextResponse } from "next/server";
 export const API_ERROR_STATUS = {
   invalid_request: 400,
   unauthorized: 401,
+  service_paused: 402,
   forbidden: 403,
   insufficient_scope: 403,
   not_found: 404,
   conflict: 409,
+  idempotency_conflict: 409,
+  idempotency_in_flight: 409,
   product_limit_reached: 409,
   rate_limited: 429,
   internal_error: 500,

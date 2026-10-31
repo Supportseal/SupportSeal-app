@@ -32,15 +32,24 @@ export function denyToken(message = "Missing, malformed, unknown, revoked or exp
   return apiError("unauthorized", message, { headers: { "www-authenticate": "Bearer" } });
 }
 
+/** The 403 for a token that holds none of `needed`; names every scope that would have worked. */
+export function insufficientScope(needed: readonly ApiScope[]): NextResponse {
+  const names = needed.join(" or ");
+  return apiError(
+    "insufficient_scope",
+    `This API token does not have the ${names} scope. Create a token that includes ${names} and retry.`,
+  );
+}
+
 /**
  * Authenticate an `Authorization: Bearer` header: brute-force guard, token
- * lookup, then the `scope` check (null: any valid token) and the per-token
- * `bucket` (null: not rate-limited per token).
+ * lookup, then the `scope` check (null: any valid token; a list: any one of
+ * them) and the per-token `bucket` (null: not rate-limited per token).
  */
 export async function authorizeBearer(
   request: Request,
   authorization: string,
-  scope: ApiScope | null,
+  scope: ApiScope | readonly ApiScope[] | null,
   bucket: ApiTokenBucket | null,
 ): Promise<
   { ok: true; ctx: TokenContext } | { ok: false; response: NextResponse; refusedScope?: TokenContext }
@@ -67,14 +76,12 @@ export async function authorizeBearer(
       }),
     };
   }
-  if (scope !== null && !scopesGrant(result.scopes, scope)) {
+  const needed = scope === null ? [] : typeof scope === "string" ? [scope] : scope;
+  if (needed.length > 0 && !needed.some((one) => scopesGrant(result.scopes, one))) {
     return {
       ok: false,
       refusedScope: { workspaceId: result.workspaceId, tokenId: result.tokenId, scopes: result.scopes },
-      response: apiError(
-        "insufficient_scope",
-        `This API token does not have the ${scope} scope. Create a token that includes ${scope} and retry.`,
-      ),
+      response: insufficientScope(needed),
     };
   }
   return { ok: true, ctx: { workspaceId: result.workspaceId, tokenId: result.tokenId, scopes: result.scopes } };

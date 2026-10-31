@@ -241,6 +241,11 @@ describe("scopedDb", () => {
     await expect(
       asBeta.message.create({ data: { conversationId: betaConversationId, kind: "AGENT", body: "x", agentUserId: alpha.userId } }),
     ).rejects.toEqual(new NotInScopeError("User"));
+    await expect(
+      asBeta.message.create({
+        data: { conversationId: betaConversationId, kind: "AGENT", body: "x", authorTokenId: (alpha.where.ApiToken as { id: string }).id },
+      }),
+    ).rejects.toEqual(new NotInScopeError("ApiToken"));
     const betaMessageId = (beta.where.Message as { id: string }).id;
     await expect(
       asBeta.message.update({
