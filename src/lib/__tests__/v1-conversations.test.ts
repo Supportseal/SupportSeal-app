@@ -243,7 +243,7 @@ describe("POST /api/v1/conversations/{id}/messages", () => {
     expect((await messagesIn(conversationId)).filter((m) => m.kind !== "CUSTOMER")).toEqual([]);
   });
 
-  it("records a saved reply as provenance only: the sent body wins", async () => {
+  it("validates a saved reply but never expands it: the sent body wins", async () => {
     const savedReplyId = (alpha.where.SavedReply as { id: string }).id;
     const response = await message(writer.token, { kind: "reply", body: "Edited text", savedReplyId });
     expect(response.status).toBe(201);
