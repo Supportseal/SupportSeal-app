@@ -44,7 +44,11 @@ async function purgeExpiredOccasionally(db: ScopedDb, workspaceId: string, now: 
   const last = lastPurge.get(workspaceId) ?? 0;
   if (now.getTime() - last < PURGE_EVERY_MS) return;
   lastPurge.set(workspaceId, now.getTime());
-  await db.idempotencyKey.deleteMany({ where: { expiresAt: { lt: now } } });
+  try {
+    await db.idempotencyKey.deleteMany({ where: { expiresAt: { lt: now } } });
+  } catch (error) {
+    console.error("[api] idempotency key purge failed:", error);
+  }
 }
 
 export async function claimIdempotency(

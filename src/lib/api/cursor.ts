@@ -44,8 +44,16 @@ function signingKeyFrom(secret: string): Buffer {
 
 /** Key order must not change the hash: filters arrive as objects built in any order. */
 function canonical(value: unknown): string {
+  if (value !== null && typeof value === "object" && typeof (value as { toJSON?: unknown }).toJSON === "function") {
+    return canonical((value as { toJSON: () => unknown }).toJSON());
+  }
+  if (typeof value === "number" && !Number.isFinite(value)) throw new TypeError("Cursor filters must be plain JSON values");
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
   if (value !== null && typeof value === "object") {
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      throw new TypeError("Cursor filters must be plain JSON values");
+    }
     const entries = Object.entries(value as Record<string, unknown>)
       .filter(([, inner]) => inner !== undefined)
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));

@@ -29,7 +29,11 @@ const lastPurge = new Map<string, number>();
 async function purgeExpiredOccasionally(db: ScopedDb, workspaceId: string, now: Date): Promise<void> {
   if (now.getTime() - (lastPurge.get(workspaceId) ?? 0) < HOUR_MS) return;
   lastPurge.set(workspaceId, now.getTime());
-  await db.apiAuditLog.deleteMany({ where: { createdAt: { lt: new Date(now.getTime() - AUDIT_RETENTION_MS) } } });
+  try {
+    await db.apiAuditLog.deleteMany({ where: { createdAt: { lt: new Date(now.getTime() - AUDIT_RETENTION_MS) } } });
+  } catch (error) {
+    console.error("[api] audit log purge failed:", error);
+  }
 }
 
 function row(entry: AuditEntry, denied: boolean) {

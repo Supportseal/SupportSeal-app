@@ -38,6 +38,15 @@ describe("API cursors", () => {
     expect(verifyCursor({ ...binding, ...change }, signCursor(binding, payload))).toBeNull();
   });
 
+  it("tells Date filters apart and refuses filters that are not plain JSON", () => {
+    const dated = (iso: string): CursorBinding => ({ ...binding, filters: { updatedAfter: new Date(iso) } });
+    const cursor = signCursor(dated("2026-01-01T00:00:00Z"), payload);
+    expect(verifyCursor(dated("2026-01-01T00:00:00Z"), cursor)).toEqual(payload);
+    expect(verifyCursor(dated("2026-06-01T00:00:00Z"), cursor)).toBeNull();
+    expect(() => signCursor({ ...binding, filters: { ids: new Set(["a"]) } }, payload)).toThrow(TypeError);
+    expect(() => signCursor({ ...binding, filters: { limit: Number.NaN } }, payload)).toThrow(TypeError);
+  });
+
   it("rejects tampered, truncated and malformed cursors with the same null", () => {
     const cursor = signCursor(binding, payload);
     const [encoded, signature] = cursor.split(".");
