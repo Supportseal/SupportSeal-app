@@ -100,6 +100,20 @@ export async function seedTenant(prisma: PrismaClient, label: string): Promise<T
   const token = await prisma.apiToken.create({
     data: { workspaceId, name: `token-${tag}`, tokenHash: `hash-${tag}`, lastFour: "abcd", createdById: user.id },
   });
+  const audit = await prisma.apiAuditLog.create({
+    data: { workspaceId, tokenId: token.id, operationId: "canary", requestId: `req-${tag}`, status: 200 },
+  });
+  const idempotency = await prisma.idempotencyKey.create({
+    data: {
+      workspaceId,
+      tokenId: token.id,
+      method: "POST",
+      path: "/api/v1/canary",
+      key: `key-${tag}`,
+      requestHash: `hash-${tag}`,
+      expiresAt: new Date(Date.now() + 86_400_000),
+    },
+  });
   await prisma.messageReadReceipt.create({ data: { membershipId: membership.id, messageId: message.id } });
 
   const where: TenantRows["where"] = {
@@ -116,6 +130,8 @@ export async function seedTenant(prisma: PrismaClient, label: string): Promise<T
     SavedReply: { id: savedReply.id },
     UsageNotification: { id: notification.id },
     ApiToken: { id: token.id },
+    ApiAuditLog: { id: audit.id },
+    IdempotencyKey: { id: idempotency.id },
     ChatVisitor: { id: visitor.id },
     WidgetHostSignal: { id: signal.id },
     ProductDomain: { id: domain.id },

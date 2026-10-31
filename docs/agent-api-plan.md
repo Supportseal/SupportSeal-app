@@ -260,6 +260,8 @@ phase 1 cannot honestly fit in one, so it is sliced (AA2). Every slice ends with
 | 1e Saved replies, attachments, tokens | saved-replies CRUD, `createAttachment`, `listTokens`/`createToken`/`revokeToken`, `getWorkspace`/`setAvailability`, `listAuditLog`, delete operations | If this exceeds 600 lines, split tokens and audit read into a further slice (1e2) |
 | 1f Assign | `setAssignee` and the `assigneeId` field in responses | Not part of phase 1 delivery: depends on the V2 assignment/priority schema (AA4) and ships with it. Phase 1 is slices 1a-1e; the draft contract marks the operation `blocked` |
 
+Slice status: 1a delivered. 1b delivered as internal modules (`src/lib/api/cursor.ts`, `idempotency.ts`, `audit.ts`, tables `api_audit_log` and `idempotency_keys`; the audit write is part of `v1Route`, which now requires an `operationId`). The `/api/v1/products` routes and the `/api/products` alias move are not in 1b: the plan defines no v1 Product shape, and the alias keeps its current behaviour either way (FR-API-04), so they wait for a slice that needs them. Idempotency is wired into `v1Route` in 1d, with its error codes.
+
 Phase 1 exit criteria: every dashboard Conversation capability except sign-in
 flows is reachable by a scoped token, the parity test (below) passes for
 Conversations, and the cross-tenant suite covers every operation.

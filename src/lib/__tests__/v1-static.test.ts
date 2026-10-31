@@ -66,7 +66,7 @@ describe("Workspace API data access", () => {
           ...(reexports ? [`${file}: re-exported handler`] : []),
         ];
       });
-    expect(offences, "export const GET = v1Route({ scope }, handler)").toEqual([]);
+    expect(offences, "export const GET = v1Route({ operationId, scope }, handler)").toEqual([]);
   });
 
   it("is enforced by the lint config", async () => {
