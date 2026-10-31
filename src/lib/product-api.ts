@@ -71,13 +71,13 @@ export const patchBody = z
     { message: "Send at least one of: name, primaryColor, supportEmail, addDomains (non-empty), removeDomains (non-empty)." },
   );
 
-type ParsedBody<T> = { ok: true; body: T } | { ok: false; response: NextResponse };
+export type ParsedBody<T> = { ok: true; body: T } | { ok: false; response: NextResponse };
 
 const bodyTooLarge = () =>
   apiError("invalid_request", `Request body must be at most ${MAX_BODY_BYTES} bytes.`);
 
 /** Read the body without buffering past the cap, whether or not Content-Length was sent. */
-async function readBodyText(request: Request): Promise<string | null> {
+export async function readBodyText(request: Request): Promise<string | null> {
   if (Number(request.headers.get("content-length") ?? 0) > MAX_BODY_BYTES) return null;
   if (!request.body) return "";
   const reader = request.body.getReader();
@@ -104,7 +104,7 @@ async function readJson(request: Request): Promise<ParsedBody<unknown>> {
   }
 }
 
-async function parseBody<S extends z.ZodType>(request: Request, schema: S): Promise<ParsedBody<z.output<S>>> {
+export async function parseBody<S extends z.ZodType>(request: Request, schema: S): Promise<ParsedBody<z.output<S>>> {
   const json = await readJson(request);
   if (!json.ok) return json;
   const parsed = schema.safeParse(json.body);

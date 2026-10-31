@@ -57,12 +57,17 @@ accept tokens only**, never a session cookie.
 | Scope | Grants |
 | --- | --- |
 | `products:write` | Read Products (`GET /api/products`, `GET /api/products/[id]`) and create or edit them (`POST /api/products`, `PATCH /api/products/[id]`, including their domains). |
+| `conversations:reply` | Send a reply to the customer (`POST /api/v1/conversations/{id}/messages` with `kind: "reply"`). A reply emails or chats a customer under the Product's name. |
+| `conversations:write` | Add an internal note (`kind: "note"`), and close, reopen or tag a Conversation (`PATCH /api/v1/conversations/{id}`). |
 
-Every token created in the dashboard has the `products:write` scope; it acts for
-the whole Workspace and cannot reach another one. A token without the scope an
+Every token created in the dashboard has `products:write`, `conversations:reply`
+and `conversations:write`; a token created before `conversations:reply` and
+`conversations:write` were added keeps only `products:write`, so create a new
+one to reply through the API. A token acts for the whole Workspace and cannot
+reach another one. A token without the scope an
 endpoint needs gets `403 insufficient_scope`.
 
-> **Planned, not yet available:** finer scopes (conversations, contacts, webhooks and others) and a `tokens:admin` scope that lets a token create and revoke other tokens through the API. Until it ships, tokens are created in the dashboard only. See the [agent-first API plan](agent-api-plan.md).
+> **Planned, not yet available:** a scope picker and finer scopes (contacts, webhooks and others) and a `tokens:admin` scope that lets a token create and revoke other tokens through the API. Until it ships, tokens are created in the dashboard only. See the [agent-first API plan](agent-api-plan.md).
 
 ## Errors
 

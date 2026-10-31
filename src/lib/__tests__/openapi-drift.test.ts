@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { API_ERROR_STATUS } from "@/lib/api-errors";
 import { API_SCOPES, type ApiScope } from "@/lib/api-scopes";
+import { conversationPatchBody, messageBody, serializeConversation, serializeMessage } from "@/lib/conversation-api";
 import { createBody, MAX_BODY_BYTES, MAX_DOMAINS_PER_LIST, parseCreateBody, parsePatchBody, patchBody, serializeProduct } from "@/lib/product-api";
 import { MAX_API_PRODUCTS_PER_WORKSPACE, type ProductWithDomains } from "@/lib/products";
 import { WIDGET_RATE_LIMITS } from "@/lib/widget-rate-limit";
@@ -84,11 +85,16 @@ describe("openapi.json error codes", () => {
         if (Number(status) < 400) continue;
         const response = resolve(rawResponse);
         const where = `${method} ${route} ${status}`;
-        const example = response.content?.["application/json"]?.example;
-        const code = example?.error?.code as keyof typeof API_ERROR_STATUS;
-        expect(code in API_ERROR_STATUS, `${where}: example error code "${code}" is not in API_ERROR_STATUS. ${SPEC_FIX}`).toBe(true);
-        expect(API_ERROR_STATUS[code], `${where}: example code "${code}" has a different status in API_ERROR_STATUS. ${SPEC_FIX}`).toBe(Number(status));
-        seen.add(code);
+        const content = response.content?.["application/json"];
+        const codes = [content?.example, ...Object.values<Json>(content?.examples ?? {}).map((ex) => ex.value)]
+          .filter((ex) => ex !== undefined)
+          .map((ex) => ex.error?.code as keyof typeof API_ERROR_STATUS);
+        expect(codes.length, `${where}: documents no example error code. ${SPEC_FIX}`).toBeGreaterThan(0);
+        for (const code of codes) {
+          expect(code in API_ERROR_STATUS, `${where}: example error code "${code}" is not in API_ERROR_STATUS. ${SPEC_FIX}`).toBe(true);
+          expect(API_ERROR_STATUS[code], `${where}: example code "${code}" has a different status in API_ERROR_STATUS. ${SPEC_FIX}`).toBe(Number(status));
+          seen.add(code);
+        }
         const headers = Object.keys(response.headers ?? {}).map((h) => h.toLowerCase());
         if (status === "401") expect(headers, `${where}: 401 must document WWW-Authenticate. ${SPEC_FIX}`).toContain("www-authenticate");
         if (status === "429") expect(headers, `${where}: 429 must document Retry-After. ${SPEC_FIX}`).toContain("retry-after");
@@ -117,6 +123,8 @@ describe("openapi.json success contract", () => {
       "GET /api/products/{id}": ["200"],
       "PATCH /api/products/{id}": ["200"],
       "GET /api/v1/whoami": ["200"],
+      "PATCH /api/v1/conversations/{conversationId}": ["200"],
+      "POST /api/v1/conversations/{conversationId}/messages": ["201"],
     });
   });
 });
@@ -130,6 +138,8 @@ describe("openapi.json status codes per operation", () => {
     "GET /api/products/{id}": ["200", "401", "403", "404", "429", "500"],
     "PATCH /api/products/{id}": ["200", "400", "401", "403", "404", "409", "429", "500"],
     "GET /api/v1/whoami": ["200", "401", "429", "500"],
+    "PATCH /api/v1/conversations/{conversationId}": ["200", "400", "401", "403", "404", "409", "429", "500"],
+    "POST /api/v1/conversations/{conversationId}/messages": ["201", "400", "401", "402", "403", "404", "409", "429", "500"],
   };
 
   it("documents exactly the statuses each operation can return", () => {
@@ -231,21 +241,96 @@ describe("openapi.json schemas vs the real zod schemas", () => {
   });
 });
 
+describe("conversation schemas vs the real serializers and zod bodies", () => {
+  const input = (schema: z.ZodType) =>
+    z.toJSONSchema(schema, { io: "input", unrepresentable: "any" }) as { properties: Record<string, unknown>; required?: string[] };
+
+  it("MessageCreate and ConversationPatch have the fields of messageBody and conversationPatchBody", () => {
+    for (const [name, schema] of [["MessageCreate", messageBody], ["ConversationPatch", conversationPatchBody]] as const) {
+      const real = input(schema);
+      const doc = spec.components.schemas[name];
+      expect(Object.keys(doc.properties).sort(), `${name} fields differ from the zod body in src/lib/conversation-api.ts. ${SPEC_FIX}`).toEqual(Object.keys(real.properties).sort());
+      expect([...(doc.required ?? [])].sort(), `${name}.required differs from the zod body. ${SPEC_FIX}`).toEqual([...(real.required ?? [])].sort());
+    }
+  });
+
+  it("the documented limits are the real ones", () => {
+    const message = spec.components.schemas.MessageCreate.properties;
+    const real = input(messageBody).properties as Record<string, { maxLength?: number; maxItems?: number }>;
+    expect(message.body.maxLength, `MessageCreate.body.maxLength differs from MAX_MESSAGE_BODY. ${SPEC_FIX}`).toBe(real.body.maxLength);
+    expect(message.attachmentIds.maxItems, `MessageCreate.attachmentIds.maxItems differs from MAX_MESSAGE_ATTACHMENTS. ${SPEC_FIX}`).toBe(real.attachmentIds.maxItems);
+    const patch = spec.components.schemas.ConversationPatch.properties;
+    const realPatch = input(conversationPatchBody).properties as Record<string, { maxItems?: number }>;
+    for (const field of ["addTags", "removeTags"]) {
+      expect(patch[field].maxItems, `ConversationPatch.${field}.maxItems differs from MAX_TAGS_PER_PATCH. ${SPEC_FIX}`).toBe(realPatch[field].maxItems);
+    }
+  });
+
+  it("Message and Conversation have exactly the fields the serializers return", () => {
+    const message = serializeMessage(
+      {
+        id: "m",
+        conversationId: "c",
+        kind: "AGENT",
+        body: "b",
+        createdAt: new Date(0),
+        author: null,
+        authorToken: { id: "t", name: "n" },
+        attachments: [{ id: "a", filename: "f", contentType: "text/plain", size: 1 }],
+      },
+      "sent",
+    );
+    const docMessage = spec.components.schemas.Message;
+    expect(Object.keys(docMessage.properties).sort(), `Message fields differ from serializeMessage. ${SPEC_FIX}`).toEqual(Object.keys(message).sort());
+    expect([...docMessage.required].sort(), `Message.required differs from serializeMessage. ${SPEC_FIX}`).toEqual(Object.keys(message).sort());
+    expect(Object.keys(spec.components.schemas.Attachment.properties).sort(), `Attachment fields differ from serializeMessage. ${SPEC_FIX}`).toEqual(Object.keys(message.attachments[0]).sort());
+
+    const conversation = serializeConversation({
+      id: "c",
+      ticketNumber: 1,
+      productId: "p",
+      contactId: "k",
+      status: "OPEN",
+      tags: [],
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+    });
+    const docConversation = spec.components.schemas.Conversation;
+    expect(Object.keys(docConversation.properties).sort(), `Conversation fields differ from serializeConversation. ${SPEC_FIX}`).toEqual(Object.keys(conversation).sort());
+    expect([...docConversation.required].sort(), `Conversation.required differs from serializeConversation. ${SPEC_FIX}`).toEqual(Object.keys(conversation).sort());
+  });
+});
+
 /** Every request/response example in the spec and the quickstart, tagged with what it must satisfy. */
-type Example = { where: string; kind: "create" | "patch" | "product" | "list" | "whoami" | "error"; value: unknown };
+type Example = {
+  where: string;
+  kind: "create" | "patch" | "messageCreate" | "conversationPatch" | "product" | "list" | "whoami" | "message" | "conversation" | "error";
+  value: unknown;
+};
+
+const requestKind = (method: string, route: string): Example["kind"] =>
+  route.includes("/api/v1/conversations")
+    ? method === "POST"
+      ? "messageCreate"
+      : "conversationPatch"
+    : method === "POST"
+      ? "create"
+      : "patch";
 
 function specExamples(): Example[] {
   const out: Example[] = [];
   for (const { method, path: route, op } of operations) {
     const body = op.requestBody?.content?.["application/json"];
     for (const [name, ex] of Object.entries<Json>(body?.examples ?? {})) {
-      out.push({ where: `openapi ${method} ${route} request "${name}"`, kind: method === "POST" ? "create" : "patch", value: ex.value });
+      out.push({ where: `openapi ${method} ${route} request "${name}"`, kind: requestKind(method, route), value: ex.value });
     }
     for (const [status, rawResponse] of Object.entries<Json>(op.responses)) {
-      const example = resolve(rawResponse).content?.["application/json"]?.example;
-      if (example === undefined) continue;
-      const kind = Number(status) >= 400 ? "error" : bodyKind(example);
-      out.push({ where: `openapi ${method} ${route} ${status} response`, kind, value: example });
+      const content = resolve(rawResponse).content?.["application/json"];
+      const responseExamples = [content?.example, ...Object.values<Json>(content?.examples ?? {}).map((ex) => ex.value)].filter((ex) => ex !== undefined);
+      for (const example of responseExamples) {
+        const kind = Number(status) >= 400 ? "error" : bodyKind(example);
+        out.push({ where: `openapi ${method} ${route} ${status} response`, kind, value: example });
+      }
     }
   }
   return out;
@@ -266,7 +351,7 @@ function quickstartExamples(): Example[] {
     expect(method, `api-quickstart.md curl #${i + 1} sends a body without an explicit -X; add -X POST or -X PATCH so the drift guard picks the right parser.`).toBeDefined();
     out.push({
       where: `quickstart curl #${i + 1} (${method})`,
-      kind: method === "POST" ? "create" : "patch",
+      kind: requestKind(method!, /"\$SUPPORTSEAL_URL(\/api\/[^"?]*)/u.exec(command)?.[1] ?? ""),
       value: JSON.parse(body),
     });
   }
@@ -282,7 +367,8 @@ function quickstartExamples(): Example[] {
   return out;
 }
 
-const bodyKind = (value: object): Example["kind"] => ("products" in value ? "list" : "workspace" in value ? "whoami" : "product");
+const bodyKind = (value: object): Example["kind"] =>
+  "products" in value ? "list" : "workspace" in value ? "whoami" : "delivery" in value ? "message" : "ticket" in value ? "conversation" : "product";
 
 const json = (value: unknown, method: string) =>
   new Request("http://localhost/api/products", { method, body: JSON.stringify(value), headers: { "content-type": "application/json" } });
@@ -300,6 +386,33 @@ const productShape = z.strictObject({
 const whoamiShape = z.strictObject({
   workspace: z.strictObject({ id: z.uuid(), name: z.string().min(1) }),
   token: z.strictObject({ id: z.uuid(), name: z.string().min(1), scopes: z.array(z.enum(Object.keys(API_SCOPES) as [ApiScope])), expiresAt: z.iso.datetime().nullable() }),
+});
+const attachmentShape = z.strictObject({
+  id: z.uuid(),
+  filename: z.string(),
+  contentType: z.string(),
+  size: z.number().int(),
+  contentPath: z.string().startsWith("/api/v1/attachments/"),
+});
+const messageShape = z.strictObject({
+  id: z.uuid(),
+  conversationId: z.uuid(),
+  kind: z.enum(["customer", "reply", "note"]),
+  body: z.string(),
+  author: z.strictObject({ type: z.enum(["customer", "user", "token"]), id: z.uuid().nullable(), name: z.string().nullable() }),
+  attachments: z.array(attachmentShape),
+  delivery: z.strictObject({ state: z.enum(["queued", "sent", "failed", "not_applicable"]) }),
+  createdAt: z.iso.datetime(),
+});
+const conversationShape = z.strictObject({
+  id: z.uuid(),
+  ticket: z.string().regex(/^[A-Z]+-\d+$/u),
+  productId: z.uuid(),
+  contactId: z.uuid(),
+  status: z.enum(["OPEN", "PENDING", "CLOSED"]),
+  tags: z.array(z.string()),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
 });
 const errorShape = z.strictObject({
   error: z.strictObject({
@@ -324,6 +437,10 @@ describe.each([
       const hint = `${where} is out of date. Update docs/${file} to match the route that serves it (src/lib/product-api.ts, src/app/api/v1).`;
       if (kind === "create") expect((await parseCreateBody(json(value, "POST"))).ok, hint).toBe(true);
       else if (kind === "patch") expect((await parsePatchBody(json(value, "PATCH"))).ok, hint).toBe(true);
+      else if (kind === "messageCreate") expect(messageBody.safeParse(value).error?.message, hint).toBeUndefined();
+      else if (kind === "conversationPatch") expect(conversationPatchBody.safeParse(value).error?.message, hint).toBeUndefined();
+      else if (kind === "message") expect(messageShape.safeParse(value).error?.message, hint).toBeUndefined();
+      else if (kind === "conversation") expect(conversationShape.safeParse(value).error?.message, hint).toBeUndefined();
       else if (kind === "product") expect(productShape.safeParse(value).error?.message, hint).toBeUndefined();
       else if (kind === "list") {
         const list = z.strictObject({ products: z.array(productShape) }).safeParse(value);
@@ -343,7 +460,7 @@ describe("api-quickstart.md vs the spec", () => {
       // The widget config and the live spec itself are public endpoints, not operations of this API.
       if (!url || url.startsWith("/api/widget/") || url === "/api/openapi.json") continue;
       const method = /-X (\w+)/u.exec(command)?.[1] ?? "GET";
-      called.add(`${method} ${url.replace("$PRODUCT_ID", "{id}")}`);
+      called.add(`${method} ${url.replace("$PRODUCT_ID", "{id}").replace("$CONVERSATION_ID", "{conversationId}")}`);
     }
     expect(called.size, "No curl calls found in api-quickstart.md.").toBeGreaterThan(0);
     for (const call of called) {

@@ -16,8 +16,16 @@ import type { MembershipRole } from "@/lib/workspace";
 export const API_TOKEN_PREFIX = "ss_live_";
 const TOKEN_PATTERN = /^ss_live_[A-Za-z0-9_-]{43}$/u;
 
-/** Scopes a dashboard-created token gets (AA7: unchanged until the scope picker lands). */
-export const API_TOKEN_SCOPES = ["products:write"] as const satisfies readonly ApiScope[];
+/**
+ * Scopes a dashboard-created token gets. AA7 widened by maintainer instruction
+ * (2026-10-31, docs/open-questions.md) so agents can reply through the API
+ * before the scope picker lands; the picker replaces this default.
+ */
+export const API_TOKEN_SCOPES = [
+  "products:write",
+  "conversations:reply",
+  "conversations:write",
+] as const satisfies readonly ApiScope[];
 
 /** `lastUsedAt` is refreshed at most this often per token (write amplification). */
 export const LAST_USED_REFRESH_MS = 60 * 60 * 1000;

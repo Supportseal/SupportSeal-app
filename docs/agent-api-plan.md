@@ -1,6 +1,6 @@
 # Agent-first Workspace API: phased plan and spec
 
-Status: plan and specification only. No code ships with this document.
+Status, 2026-10-31: slices 1a, 1b and 1d are built (scope registry and scoped data layer, `whoami`; signed cursors, idempotency store and audit log; `createMessage` and `updateConversation`). The rest is still specification; the document itself ships no code.
 Decision record: [ADR-0005](adr/0005-agent-first-workspace-api.md). Requirements:
 FR-API-01 (amended) and FR-API-04..FR-API-17 in [FRD.md](FRD.md). Draft contract:
 [openapi-draft.json](openapi-draft.json) (phase 1 only; see
@@ -161,7 +161,7 @@ operations it allows; `scopesGrant(scopes, capability)` stays the single check.
 Implication is explicit and one-directional: `x:write` implies `x:read`, and `conversations:read` also implies `attachments:read` (Messages already expose attachment ids, so a reader must be able to fetch them).
 `products:write` keeps its meaning and keeps implying `products:read`, so
 existing tokens and the published quickstart are unaffected. Dashboard-created
-tokens keep getting only `products:write` unless an admin picks more (AA7).
+tokens get `products:write`, `conversations:reply` and `conversations:write` (interim default, maintainer instruction 2026-10-31, AA7). When the scope picker lands, the admin chooses the scopes and this default goes away.
 
 | Scope | Grants | Implies |
 | --- | --- | --- |

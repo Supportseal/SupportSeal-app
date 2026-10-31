@@ -4,6 +4,8 @@ import path from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
+import { POST as createMessage } from "@/app/api/v1/conversations/[conversationId]/messages/route";
+import { PATCH as updateConversation } from "@/app/api/v1/conversations/[conversationId]/route";
 import { GET as whoami } from "@/app/api/v1/whoami/route";
 import { Prisma } from "@/generated/prisma/client";
 import { generateApiToken } from "@/lib/api-tokens";
@@ -19,12 +21,15 @@ let alpha: TenantRows;
 let beta: TenantRows;
 let alphaToken: string;
 let betaToken: string;
+let betaWriterToken: string;
 
 type Ids = Record<TenantModel, string>;
 const noParams = { params: Promise.resolve({}) };
 
 /** Calls one operation as the token holder, with `ids` in every id position the operation takes. */
-type CrossTenantCase = { call: (token: string, ids: Ids) => Promise<Response> };
+type CrossTenantCase = { call: (token: string, ids: Ids) => Promise<Response>; writer?: true };
+
+const conversationParams = (ids: Ids) => ({ params: Promise.resolve({ conversationId: ids.Conversation }) });
 
 /**
  * One entry per implemented operationId. The coverage test below fails when a
@@ -32,6 +37,26 @@ type CrossTenantCase = { call: (token: string, ids: Ids) => Promise<Response> };
  */
 const CROSS_TENANT: Record<string, CrossTenantCase> = {
   whoami: { call: (token) => whoami(v1Request("GET", "/api/v1/whoami", { token }), noParams) },
+  createMessage: {
+    writer: true,
+    call: (token, ids) =>
+      createMessage(
+        v1Request("POST", `/api/v1/conversations/${ids.Conversation}/messages`, {
+          token,
+          headers: { "idempotency-key": randomUUID() },
+          body: { kind: "reply", body: "hello", savedReplyId: ids.SavedReply, attachmentIds: [ids.Attachment] },
+        }),
+        conversationParams(ids),
+      ),
+  },
+  updateConversation: {
+    writer: true,
+    call: (token, ids) =>
+      updateConversation(
+        v1Request("PATCH", `/api/v1/conversations/${ids.Conversation}`, { token, body: { status: "CLOSED", addTags: ["probe"] } }),
+        conversationParams(ids),
+      ),
+  },
 };
 
 const idsOf = (rows: TenantRows) =>
@@ -45,6 +70,7 @@ beforeAll(async () => {
   beta = await seedTenant(db.prisma, "beta");
   alphaToken = (await mintToken(db.prisma, alpha.workspaceId, ["conversations:read"], { name: `token ${alpha.canary}` })).token;
   betaToken = (await mintToken(db.prisma, beta.workspaceId, ["conversations:read"])).token;
+  betaWriterToken = (await mintToken(db.prisma, beta.workspaceId, ["conversations:reply", "conversations:write"])).token;
 });
 
 afterAll(async () => {
@@ -55,12 +81,15 @@ describe("Alpha/Beta cross-tenant suite", () => {
   const exercised = new Set<string>();
 
   it.each(Object.keys(CROSS_TENANT))("%s answers Alpha's ids to Beta exactly like unknown ids", async (operationId) => {
-    const { call } = CROSS_TENANT[operationId];
+    const { call, writer } = CROSS_TENANT[operationId];
+    const token = writer ? betaWriterToken : betaToken;
     const unknownIds = Object.fromEntries(Object.keys(alpha.where).map((model) => [model, randomUUID()])) as Ids;
     const before = await db.prisma.workspace.findUnique({ where: { id: alpha.workspaceId } });
 
-    const baseline = await countStatements(db.pglite, async () => snapshot(await call(betaToken, unknownIds)));
-    const foreign = await countStatements(db.pglite, async () => snapshot(await call(betaToken, idsOf(alpha))));
+    // Unmeasured: the first audited write pays one-time purge statements that would skew whichever probe runs first.
+    await call(token, unknownIds).then((response) => response.text());
+    const baseline = await countStatements(db.pglite, async () => snapshot(await call(token, unknownIds)));
+    const foreign = await countStatements(db.pglite, async () => snapshot(await call(token, idsOf(alpha))));
 
     expect(foreign.result).toEqual(baseline.result);
     expect(baseline.statements).toBeGreaterThan(0);
@@ -238,6 +267,32 @@ describe("v1Route", () => {
       },
     });
     expect(handler).not.toHaveBeenCalled();
+  });
+
+  it("accepts a token holding any one scope of a list and names every alternative when it holds none", async () => {
+    const eitherScope = ["conversations:reply", "conversations:write"] as const;
+    const writeOnly = (await mintToken(db.prisma, beta.workspaceId, ["conversations:write"])).token;
+    const handler = vi.fn(async ({ requireScope }: Parameters<Parameters<typeof v1Route>[1]>[0]) => {
+      return requireScope("conversations:write") ?? Response.json({ ok: true });
+    });
+    const call = (token: string) =>
+      v1Route({ operationId: "probe", scope: [...eitherScope] }, handler)(v1Request("GET", "/api/v1/probe", { token }), noParams);
+
+    expect((await call(writeOnly)).status).toBe(200);
+    const refused = await call(betaToken);
+    expect(refused.status).toBe(403);
+    expect((await refused.json()).error.message).toContain("conversations:reply or conversations:write");
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets a handler re-check a narrower scope than the route accepted", async () => {
+    const replyOnly = (await mintToken(db.prisma, beta.workspaceId, ["conversations:reply"])).token;
+    const response = await v1Route(
+      { operationId: "probe", scope: ["conversations:reply", "conversations:write"] },
+      async ({ requireScope }) => requireScope("conversations:write") ?? Response.json({ ok: true }),
+    )(v1Request("GET", "/api/v1/probe", { token: replyOnly }), noParams);
+    expect(response.status).toBe(403);
+    expect((await response.json()).error.code).toBe("insufficient_scope");
   });
 
   it("gives the handler the token's Workspace, frozen, and a client confined to it", async () => {

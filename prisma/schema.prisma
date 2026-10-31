@@ -408,6 +408,9 @@ model Message {
   kind           MessageKind
   body           String
   agentUserId    String?
+  /// Set instead of agentUserId when an API token wrote the reply or note
+  /// (docs/agent-api-plan.md, slice 1d); the inbox shows "<token name> (API)".
+  authorTokenId  String?
   /// Channel this message was written through (issue #128). NULL = unknown:
   /// rows that predate the column, internal notes, and agent replies whose
   /// routing decision has not run (or crashed) — never backfilled by guessing.
@@ -416,6 +419,7 @@ model Message {
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   author       User?        @relation("MessageAuthor", fields: [agentUserId], references: [id], onDelete: SetNull)
+  authorToken  ApiToken?    @relation(fields: [authorTokenId], references: [id], onDelete: SetNull)
   attachments  Attachment[]
   diagnosticSnapshot DiagnosticSnapshot?
   readReceipts MessageReadReceipt[]
@@ -639,6 +643,7 @@ model ApiToken {
   createdBy User?     @relation("ApiTokenCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   auditLog        ApiAuditLog[]
   idempotencyKeys IdempotencyKey[]
+  messages        Message[]
 
   @@index([workspaceId])
   @@map("api_tokens")
