@@ -86,9 +86,15 @@ describe("Workspace API data access", () => {
       .flatMap((file) => {
         const route = `/${path.posix.dirname(file).slice("src/app/".length)}`.replace(/\[[^\]]+\]/gu, "{}");
         const source = readFileSync(file, "utf8");
-        return [...source.matchAll(/export\s+const\s+(GET|POST|PUT|PATCH|DELETE)\s*=\s*v1Route(?:<[^>]*>)?\(\s*\{\s*operationId:\s*"([^"]+)"/gu)]
-          .filter(([, method, operationId]) => operations.get(operationId) !== `${method} ${route}`)
-          .map(([, method, operationId]) => `${file}: ${method} ${operationId} is not ${method} ${route} in the OpenAPI documents`);
+        return [...source.matchAll(/export\s+const\s+(GET|POST|PUT|PATCH|DELETE)\s*=\s*v1Route(?:<[^>]*>)?\(\s*\{([^}]*)\}/gu)].flatMap(
+          ([, method, access]) => {
+            const operationId = /\boperationId:\s*"([^"]+)"/u.exec(access)?.[1];
+            if (!operationId) return [`${file}: ${method} has no literal operationId`];
+            return operations.get(operationId) === `${method} ${route}`
+              ? []
+              : [`${file}: ${method} ${operationId} is not ${method} ${route} in the OpenAPI documents`];
+          },
+        );
       });
     expect(offences).toEqual([]);
   });
