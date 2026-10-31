@@ -69,6 +69,30 @@ describe("Workspace API data access", () => {
     expect(offences, "export const GET = v1Route({ operationId, scope }, handler)").toEqual([]);
   });
 
+  it("names every operation as docs/openapi.json does, for the route's own method and path", () => {
+    const operations = new Map<string, string>();
+    for (const spec of ["openapi.json", "openapi-draft.json"]) {
+      const { paths } = JSON.parse(readFileSync(path.join(process.cwd(), "docs", spec), "utf8")) as {
+        paths: Record<string, Record<string, { operationId?: string }>>;
+      };
+      for (const [route, item] of Object.entries(paths)) {
+        for (const [method, operation] of Object.entries(item)) {
+          if (operation?.operationId) operations.set(operation.operationId, `${method.toUpperCase()} ${route.replace(/\{[^}]+\}/gu, "{}")}`);
+        }
+      }
+    }
+    const offences = files
+      .filter((file) => file.endsWith("route.ts") && file.startsWith("src/app/api/v1"))
+      .flatMap((file) => {
+        const route = `/${path.posix.dirname(file).slice("src/app/".length)}`.replace(/\[[^\]]+\]/gu, "{}");
+        const source = readFileSync(file, "utf8");
+        return [...source.matchAll(/export\s+const\s+(GET|POST|PUT|PATCH|DELETE)\s*=\s*v1Route(?:<[^>]*>)?\(\s*\{\s*operationId:\s*"([^"]+)"/gu)]
+          .filter(([, method, operationId]) => operations.get(operationId) !== `${method} ${route}`)
+          .map(([, method, operationId]) => `${file}: ${method} ${operationId} is not ${method} ${route} in the OpenAPI documents`);
+      });
+    expect(offences).toEqual([]);
+  });
+
   it("is enforced by the lint config", async () => {
     const eslint = new ESLint({ cwd: process.cwd() });
     const [result] = await eslint.lintText(

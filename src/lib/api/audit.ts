@@ -1,3 +1,5 @@
+import { isIP } from "node:net";
+
 import { clientIp } from "@/lib/client-ip";
 import type { ScopedDb } from "@/lib/workspace-scope";
 
@@ -36,6 +38,12 @@ async function purgeExpiredOccasionally(db: ScopedDb, workspaceId: string, now: 
   }
 }
 
+/** The forwarded-for value is caller-controlled when no trusted proxy sets it: only an actual address is stored. */
+function storedIp(request: AuditEntry["request"]): string | null {
+  const ip = clientIp(request);
+  return ip !== null && isIP(ip) !== 0 ? ip : null;
+}
+
 function row(entry: AuditEntry, denied: boolean) {
   return {
     workspaceId: entry.workspaceId,
@@ -44,7 +52,7 @@ function row(entry: AuditEntry, denied: boolean) {
     resourceType: entry.resource?.type ?? null,
     resourceId: entry.resource?.id ?? null,
     requestId: entry.requestId,
-    clientIp: clientIp(entry.request),
+    clientIp: storedIp(entry.request),
     status: entry.status,
     denied,
   };

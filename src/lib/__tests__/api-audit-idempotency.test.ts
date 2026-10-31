@@ -177,6 +177,15 @@ describe("audit log through v1Route", () => {
     expect(JSON.stringify(rows)).not.toContain(minted.token);
   });
 
+  it("stores a client address only when it is one", async () => {
+    const minted = await mintToken(db.prisma, alpha.workspaceId, ["conversations:write"]);
+    const route = probe("conversations:write", async () => Response.json({}, { status: 201 }));
+    for (const ip of ["customer-secret-value", "2001:db8::1"]) {
+      await route(v1Request("POST", "/api/v1/probe", { token: minted.token, ip, body: {} }), noParams);
+    }
+    expect((await rowsFor(minted.row.id)).map((row) => row.clientIp)).toEqual([null, "2001:db8::1"]);
+  });
+
   it("does not log reads", async () => {
     const minted = await mintToken(db.prisma, alpha.workspaceId, ["conversations:write"]);
     const route = v1Route({ operationId: "probe_read", scope: "conversations:write" }, async () => Response.json({}));
