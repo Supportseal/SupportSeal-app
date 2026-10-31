@@ -161,7 +161,7 @@ operations it allows; `scopesGrant(scopes, capability)` stays the single check.
 Implication is explicit and one-directional: `x:write` implies `x:read`, and `conversations:read` also implies `attachments:read` (Messages already expose attachment ids, so a reader must be able to fetch them).
 `products:write` keeps its meaning and keeps implying `products:read`, so
 existing tokens and the published quickstart are unaffected. Dashboard-created
-tokens keep getting only `products:write` unless an admin picks more (AA7). Interim, by maintainer instruction on 2026-10-31, new dashboard tokens also get `conversations:reply` and `conversations:write` until the picker lands (see AA7).
+tokens get `products:write`, `conversations:reply` and `conversations:write` (interim default, maintainer instruction 2026-10-31, AA7). When the scope picker lands, the admin chooses the scopes and this default goes away.
 
 | Scope | Grants | Implies |
 | --- | --- | --- |

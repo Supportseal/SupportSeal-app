@@ -578,7 +578,7 @@
             }
           },
           {
-            "$ref": "#/components/parameters/IdempotencyKeyRequired"
+            "$ref": "#/components/parameters/IdempotencyKey"
           }
         ],
         "requestBody": {
@@ -1569,16 +1569,6 @@
         "in": "header",
         "required": false,
         "description": "1-128 chars [A-Za-z0-9_-]. Scoped to Workspace, token, method and resolved path (ids included); kept 24 hours. Same key and body replays the stored response (Idempotent-Replayed: true); same key and a different body is 409 idempotency_conflict.",
-        "schema": {
-          "type": "string",
-          "pattern": "^[A-Za-z0-9_-]{1,128}$"
-        }
-      },
-      "IdempotencyKeyRequired": {
-        "name": "Idempotency-Key",
-        "in": "header",
-        "required": true,
-        "description": "Required: this operation has an outward side effect (email or message). See IdempotencyKey.",
         "schema": {
           "type": "string",
           "pattern": "^[A-Za-z0-9_-]{1,128}$"
