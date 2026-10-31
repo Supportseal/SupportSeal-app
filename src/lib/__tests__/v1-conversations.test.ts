@@ -5,7 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { PATCH as updateConversationRoute } from "@/app/api/v1/conversations/[conversationId]/route";
 import { POST as createMessageRoute } from "@/app/api/v1/conversations/[conversationId]/messages/route";
 import { API_TOKEN_SCOPES } from "@/lib/api-tokens";
-import { getConversationDetail, updateConversation } from "@/lib/conversations";
+import { ATTACHMENT_UNAVAILABLE_MESSAGE, addAgentMessage, getConversationDetail, updateConversation } from "@/lib/conversations";
 import { deliverAgentReplyIfRouted } from "@/lib/email/routing";
 import { isServicePaused } from "@/lib/service-pause";
 import { startTestDb, stopTestDb, type TestDb } from "@/test/integration-db";
@@ -256,6 +256,25 @@ describe("POST /api/v1/conversations/{id}/messages", () => {
       { id: mine.id, filename: "log.txt", contentType: "text/plain", size: 3, contentPath: `/api/v1/attachments/${mine.id}/content` },
     ]);
     expect(await db.prisma.attachment.findUniqueOrThrow({ where: { id: mine.id } })).toMatchObject({ messageId: body.id });
+  });
+
+  it("stores nothing and links nothing when an attachment is claimed after the pre-check (service level)", async () => {
+    const productId = (alpha.where.Product as { id: string }).id;
+    const free = await db.prisma.attachment.create({
+      data: { workspaceId: alpha.workspaceId, productId, filename: "a.txt", contentType: "text/plain", size: 1, storageKey: `k-${randomUUID()}` },
+    });
+    const claimed = (alpha.where.Attachment as { id: string }).id;
+
+    const result = await addAgentMessage({
+      ctx: { workspace: { id: alpha.workspaceId }, token: { id: writer.id } },
+      conversationId,
+      body: "see attached",
+      attachmentIds: [free.id, claimed],
+    });
+
+    expect(result).toEqual({ ok: false, error: ATTACHMENT_UNAVAILABLE_MESSAGE });
+    expect((await messagesIn(conversationId)).filter((m) => m.kind !== "CUSTOMER")).toEqual([]);
+    expect(await db.prisma.attachment.findUniqueOrThrow({ where: { id: free.id } })).toMatchObject({ messageId: null });
   });
 
   it("answers a foreign savedReplyId or attachment exactly like an unknown one", async () => {

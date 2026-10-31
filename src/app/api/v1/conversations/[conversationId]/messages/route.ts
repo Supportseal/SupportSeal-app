@@ -1,6 +1,6 @@
 import { PRIVATE_NO_STORE, apiError } from "@/lib/api-errors";
 import { NOT_FOUND_MESSAGE, v1Route } from "@/lib/api/v1-route";
-import { addAgentMessage } from "@/lib/conversations";
+import { ATTACHMENT_UNAVAILABLE_MESSAGE, addAgentMessage } from "@/lib/conversations";
 import { messageBody, serializeMessage, type DeliveryState } from "@/lib/conversation-api";
 import { deliverAgentReplyIfRouted } from "@/lib/email/routing";
 import { parseBody } from "@/lib/product-api";
@@ -57,11 +57,12 @@ export const POST = v1Route<{ conversationId: string }>(
       attachmentIds: wanted,
     });
     if (!added.ok) {
-      return added.error === "Conversation not found."
-        ? apiError("not_found", NOT_FOUND_MESSAGE)
-        : added.error.startsWith("Message body")
-          ? apiError("invalid_request", added.error)
-          : apiError(SERVICE_PAUSED_CODE, added.error);
+      if (added.error === "Conversation not found.") return apiError("not_found", NOT_FOUND_MESSAGE);
+      // Claimed between the pre-check and the send: indistinguishable from an unknown id.
+      if (added.error === ATTACHMENT_UNAVAILABLE_MESSAGE) throw new NotInScopeError("Attachment");
+      return added.error.startsWith("Message body")
+        ? apiError("invalid_request", added.error)
+        : apiError(SERVICE_PAUSED_CODE, added.error);
     }
     auditResource("message", added.messageId);
 

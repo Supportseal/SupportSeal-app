@@ -345,6 +345,10 @@ export async function addCustomerMessage(input: {
   return { ok: true, ...(diagnostics ? { diagnostics } : {}) };
 }
 
+export const ATTACHMENT_UNAVAILABLE_MESSAGE = "An attachment is unavailable.";
+
+class AttachmentUnavailableError extends Error {}
+
 /** Who wrote an agent message: a signed-in agent, or an API token (docs/agent-api-plan.md, slice 1d). */
 export type MessageActor = { workspace: Pick<WorkspaceContext["workspace"], "id"> } &
   ({ user: Pick<WorkspaceContext["user"], "id"> } | { token: { id: string } });
@@ -387,16 +391,25 @@ export async function addAgentMessage(input: {
         channel: null,
       },
     });
+    // Link in the same transaction: an attachment that was claimed or removed
+    // since the caller looked must fail the send, not vanish from it.
+    const wanted = [...new Set(input.attachmentIds ?? [])];
+    if (wanted.length > 0) {
+      const linked = await linkAttachmentToMessage({
+        workspaceId: input.ctx.workspace.id,
+        attachmentIds: wanted,
+        conversationId: conversation.id,
+        messageId: message.id,
+        tx,
+      });
+      if (linked !== wanted.length) throw new AttachmentUnavailableError();
+    }
     return message.id;
+  }).catch((error: unknown) => {
+    if (error instanceof AttachmentUnavailableError) return null;
+    throw error;
   });
-  if (input.attachmentIds && input.attachmentIds.length > 0) {
-    await linkAttachmentToMessage({
-      workspaceId: input.ctx.workspace.id,
-      attachmentIds: input.attachmentIds,
-      conversationId: conversation.id,
-      messageId,
-    });
-  }
+  if (messageId === null) return { ok: false, error: ATTACHMENT_UNAVAILABLE_MESSAGE };
   if (kind === "AGENT") {
     await prisma.conversation.update({
       where: { id: conversation.id },
