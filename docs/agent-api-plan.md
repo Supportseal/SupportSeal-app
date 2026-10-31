@@ -254,11 +254,13 @@ phase 1 cannot honestly fit in one, so it is sliced (AA2). Every slice ends with
 | Slice | Content | Notes |
 | --- | --- | --- |
 | 1a Foundation | `workspace-scope.ts` + `TENANT_MODELS` registry + lint rule + static test; scope registry (`api-scopes.ts`) with the existing scope unchanged; `v1Route` wrapper; the Alpha/Beta API harness and the coverage-manifest test; `whoami` | No endpoints with data yet, so the harness lands before anything it must protect |
-| 1b Cross-cutting | `/api/v1` router and the `/api/products` alias; cursor signing helper; idempotency store; `api_audit_log`; no new error code yet: `openapi-drift.test.ts` fails when an `API_ERROR_STATUS` code has no documented response, so each code lands with the slice that first emits and documents it (`invalid_cursor` in 1c, `idempotency_conflict`, `idempotency_in_flight` and `service_paused` in 1d) | Migration: two tables |
+| 1b Cross-cutting | cursor signing helper; the `/api/v1` router and the `/api/products` alias move are deferred (see slice status below); idempotency store; `api_audit_log`; no new error code yet: `openapi-drift.test.ts` fails when an `API_ERROR_STATUS` code has no documented response, so each code lands with the slice that first emits and documents it (`invalid_cursor` in 1c, `idempotency_conflict`, `idempotency_in_flight` and `service_paused` in 1d) | Migration: two tables |
 | 1c Read API | `listConversations`, `getConversation`, `listMessages`, `listTags`, `listContacts`, `getContact`, `getAttachment`(+content) | Migration: none |
 | 1d Write API | `createMessage` (reply and note), `updateConversation`; `Message.authorTokenId` | Migration: one column; inbox label for token authors |
 | 1e Saved replies, attachments, tokens | saved-replies CRUD, `createAttachment`, `listTokens`/`createToken`/`revokeToken`, `getWorkspace`/`setAvailability`, `listAuditLog`, delete operations | If this exceeds 600 lines, split tokens and audit read into a further slice (1e2) |
 | 1f Assign | `setAssignee` and the `assigneeId` field in responses | Not part of phase 1 delivery: depends on the V2 assignment/priority schema (AA4) and ships with it. Phase 1 is slices 1a-1e; the draft contract marks the operation `blocked` |
+
+Slice status: 1a delivered. 1b delivered as internal modules (`src/lib/api/cursor.ts`, `idempotency.ts`, `audit.ts`, tables `api_audit_log` and `idempotency_keys`; the audit write is part of `v1Route`, which now requires an `operationId`). The `/api/v1/products` routes and the `/api/products` alias move are not in 1b: the plan defines no v1 Product shape, and the alias keeps its current behaviour either way (FR-API-04), so they wait for a slice that needs them. Idempotency is wired into `v1Route` in 1d, with its error codes.
 
 Phase 1 exit criteria: every dashboard Conversation capability except sign-in
 flows is reachable by a scoped token, the parity test (below) passes for

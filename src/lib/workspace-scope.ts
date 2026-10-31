@@ -60,6 +60,8 @@ export const TENANT_MODELS = {
   SavedReply: { kind: "direct", refs: { createdById: "User" } },
   UsageNotification: { kind: "direct", refs: {} },
   ApiToken: { kind: "direct", refs: { createdById: "User" } },
+  ApiAuditLog: { kind: "direct", refs: { tokenId: "ApiToken" } },
+  IdempotencyKey: { kind: "direct", refs: { tokenId: "ApiToken" } },
   ChatVisitor: { kind: "via", path: ["product"], refs: { productId: "Product", conversationId: "Conversation" } },
   WidgetHostSignal: { kind: "via", path: ["product"], refs: { productId: "Product" } },
   ProductDomain: { kind: "via", path: ["product"], refs: { productId: "Product" } },
@@ -97,6 +99,11 @@ export function isNotInScope(error: unknown): boolean {
     error instanceof NotInScopeError ||
     (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025")
   );
+}
+
+/** True when a write hit a unique constraint, so a caller can race to insert and then read the winner. */
+export function isUniqueViolation(error: unknown): boolean {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 }
 
 /** Each model's relation fields and the model each leads to. */

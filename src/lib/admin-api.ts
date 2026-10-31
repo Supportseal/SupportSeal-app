@@ -42,7 +42,9 @@ export async function authorizeBearer(
   authorization: string,
   scope: ApiScope | null,
   bucket: ApiTokenBucket | null,
-): Promise<{ ok: true; ctx: TokenContext } | { ok: false; response: NextResponse }> {
+): Promise<
+  { ok: true; ctx: TokenContext } | { ok: false; response: NextResponse; refusedScope?: TokenContext }
+> {
   if (apiTokenAuthBlocked(request)) {
     return {
       ok: false,
@@ -68,6 +70,7 @@ export async function authorizeBearer(
   if (scope !== null && !scopesGrant(result.scopes, scope)) {
     return {
       ok: false,
+      refusedScope: { workspaceId: result.workspaceId, tokenId: result.tokenId, scopes: result.scopes },
       response: apiError(
         "insufficient_scope",
         `This API token does not have the ${scope} scope. Create a token that includes ${scope} and retry.`,

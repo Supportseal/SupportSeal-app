@@ -211,7 +211,7 @@ describe("/api/v1 rate limits", () => {
 
   it("charges the token's budget for requests refused for a missing scope", async () => {
     const { token } = await mintToken(db.prisma, beta.workspaceId, []);
-    const probe = v1Route({ scope: "conversations:read" }, vi.fn());
+    const probe = v1Route({ operationId: "probe", scope: "conversations:read" }, vi.fn());
     const call = () => probe(v1Request("GET", "/api/v1/probe", { token, ip: freshIp() }), noParams);
     for (let i = 0; i < WIDGET_RATE_LIMITS.apiTokenRead; i += 1) expect((await call()).status).toBe(403);
     const limited = await call();
@@ -224,7 +224,7 @@ describe("/api/v1 rate limits", () => {
 
 describe("v1Route", () => {
   const route = (handler: Parameters<typeof v1Route>[1], scope: Parameters<typeof v1Route>[0]["scope"] = "conversations:read") =>
-    v1Route({ scope }, handler)(v1Request("GET", "/api/v1/probe", { token: betaToken }), noParams);
+    v1Route({ operationId: "probe", scope }, handler)(v1Request("GET", "/api/v1/probe", { token: betaToken }), noParams);
 
   it("refuses a token without the scope, naming the scope to add", async () => {
     const handler = vi.fn();

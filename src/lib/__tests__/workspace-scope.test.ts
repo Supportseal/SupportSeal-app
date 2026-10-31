@@ -31,6 +31,9 @@ const tenantModels = Object.entries(TENANT_MODELS)
 const NOT_FOREIGN_KEYS = new Set([
   "Account.accountId",
   "Account.providerId",
+  "ApiAuditLog.operationId",
+  "ApiAuditLog.requestId",
+  "ApiAuditLog.resourceId",
   "ChatVisitor.externalUserId",
   "Conversation.emailMessageId",
   "EmailDelivery.providerMessageId",

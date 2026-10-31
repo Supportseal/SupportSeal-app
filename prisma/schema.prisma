@@ -144,6 +144,8 @@ model Workspace {
   usageNotifications UsageNotification[]
   diagnosticSnapshots DiagnosticSnapshot[]
   apiTokens   ApiToken[]
+  apiAuditLog ApiAuditLog[]
+  idempotencyKeys IdempotencyKey[]
 
   @@map("workspaces")
 }
@@ -635,9 +637,63 @@ model ApiToken {
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   createdBy User?     @relation("ApiTokenCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  auditLog        ApiAuditLog[]
+  idempotencyKeys IdempotencyKey[]
 
   @@index([workspaceId])
   @@map("api_tokens")
+}
+
+/// Append-only record of token-authenticated writes and denied attempts
+/// (docs/agent-api-plan.md, "Accountability and abuse limits"). Never holds
+/// request bodies or secrets. Rows older than 90 days are purged lazily.
+model ApiAuditLog {
+  id              String   @id @default(uuid())
+  workspaceId     String
+  /// Null once the token row is gone; the row itself outlives the token.
+  tokenId         String?
+  operationId     String
+  resourceType    String?
+  resourceId      String?
+  requestId       String
+  clientIp        String?
+  status          Int
+  /// A scope refusal or an id outside the Workspace, as opposed to a write.
+  denied          Boolean  @default(false)
+  /// Denied attempts beyond the hourly cap are counted here on the last stored row instead of stored.
+  suppressedCount Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  token     ApiToken? @relation(fields: [tokenId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+  @@index([tokenId, denied, createdAt])
+  @@map("api_audit_log")
+}
+
+/// One row per (token, method, path, key). `responseStatus` is null while the
+/// first request is still running. Expired rows are purged lazily.
+model IdempotencyKey {
+  id              String   @id @default(uuid())
+  workspaceId     String
+  tokenId         String
+  method          String
+  path            String
+  key             String
+  requestHash     String
+  responseStatus  Int?
+  responseBody    String?
+  responseHeaders Json?
+  createdAt       DateTime @default(now())
+  expiresAt       DateTime
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  token     ApiToken  @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, tokenId, method, path, key])
+  @@index([expiresAt])
+  @@map("idempotency_keys")
 }
 
 /// Durable Stripe-webhook dedup (issue #202): one row per accepted event id,
