@@ -5,6 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { PATCH as updateConversationRoute } from "@/app/api/v1/conversations/[conversationId]/route";
 import { POST as createMessageRoute } from "@/app/api/v1/conversations/[conversationId]/messages/route";
 import { API_TOKEN_SCOPES } from "@/lib/api-tokens";
+import { completeIdempotency } from "@/lib/api/idempotency";
 import { ATTACHMENT_UNAVAILABLE_MESSAGE, addAgentMessage, getConversationDetail, updateConversation } from "@/lib/conversations";
 import { deliverAgentReplyIfRouted } from "@/lib/email/routing";
 import { isServicePaused } from "@/lib/service-pause";
@@ -16,6 +17,10 @@ vi.mock("@/lib/email/routing", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/email/routing")>()),
   deliverAgentReplyIfRouted: vi.fn(),
 }));
+vi.mock("@/lib/api/idempotency", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/lib/api/idempotency")>();
+  return { ...original, completeIdempotency: vi.fn(original.completeIdempotency) };
+});
 vi.mock("@/lib/service-pause", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/service-pause")>()),
   isServicePaused: vi.fn(),
@@ -164,6 +169,18 @@ describe("POST /api/v1/conversations/{id}/messages", () => {
     const conflict = await message(writer.token, { kind: "reply", body: "different" }, { key });
     expect(conflict.status).toBe(409);
     expect((await conflict.json()).error.code).toBe("idempotency_conflict");
+    expect((await messagesIn(conversationId)).filter((m) => m.kind === "AGENT")).toHaveLength(1);
+  });
+
+  it("retries a failed idempotency completion so the key replays instead of sending the reply twice", async () => {
+    vi.mocked(completeIdempotency).mockRejectedValueOnce(new Error("db blip"));
+    const key = randomUUID();
+    const first = await message(writer.token, { kind: "reply", body: "once" }, { key });
+    expect(first.status).toBe(201);
+    const again = await message(writer.token, { kind: "reply", body: "once" }, { key });
+    expect(again.status).toBe(201);
+    expect(again.headers.get("idempotent-replayed")).toBe("true");
+    expect(deliver).toHaveBeenCalledTimes(1);
     expect((await messagesIn(conversationId)).filter((m) => m.kind === "AGENT")).toHaveLength(1);
   });
 

@@ -171,7 +171,9 @@ function replayed(stored: StoredResponse): Response {
  * Keep the outcome of an attempt under its key. Only a success is stored: a
  * refusal or crash frees the key so the client can fix the request and retry
  * with it. The write already happened when this runs, so a failure here is
- * logged, not turned into an error the client would retry.
+ * logged, not turned into an error the client would retry. A failed completion
+ * is retried a few times and never released: an unfinished claim blocks a
+ * same-key retry (409 in flight) instead of repeating the write.
  */
 async function settleClaim(db: ScopedDb, claimId: string, response: Response | null): Promise<void> {
   try {
@@ -182,7 +184,16 @@ async function settleClaim(db: ScopedDb, claimId: string, response: Response | n
           return value === null ? [] : [[name, value]];
         }),
       );
-      await completeIdempotency(db, claimId, { status: response.status, body: await response.clone().text(), headers });
+      const stored = { status: response.status, body: await response.clone().text(), headers };
+      for (let attempt = 1; ; attempt++) {
+        try {
+          await completeIdempotency(db, claimId, stored);
+          break;
+        } catch (error) {
+          if (attempt === COMPLETE_ATTEMPTS) throw error;
+          await new Promise((resolve) => setTimeout(resolve, 50 * attempt));
+        }
+      }
     } else {
       await releaseIdempotency(db, claimId);
     }
@@ -190,6 +201,8 @@ async function settleClaim(db: ScopedDb, claimId: string, response: Response | n
     console.error(`[api] idempotency key ${claimId} could not be settled:`, error);
   }
 }
+
+const COMPLETE_ATTEMPTS = 3;
 
 const isRead = (request: Request) => request.method === "GET" || request.method === "HEAD";
 
