@@ -565,7 +565,7 @@
         ],
         "summary": "Send a reply or add an internal note",
         "x-required-scope": "conversations:reply (kind=reply) or conversations:write (kind=note)",
-        "description": "A reply takes the dashboard's own path: the same service, the same routing (chat only, or email when the customer is not on the widget), the same Free-plan pause, and a reply to a Closed Conversation reopens it as `PENDING`. Notes never reach the customer and keep working during the pause. `Idempotency-Key` is required for a reply (400 without it) so a retry cannot email the customer twice, and optional for a note. The response carries the delivery outcome: `sent` (emailed), `not_applicable` (chat-only reply, or a note) or `failed` (the email could not be sent; the Message is stored and the failure is recorded on the dashboard's delivery ledger, so the request still succeeds). `queued` is reserved for asynchronous delivery and is not emitted yet. `savedReplyId` records which Saved Reply the text came from and must belong to the Workspace; the API never substitutes text, send the final `body`. `Location` is the Conversation's Messages URL; a single-Message URL arrives with the read API. A foreign or unknown `savedReplyId` or `attachmentIds` entry answers 404, like an unknown Conversation.",
+        "description": "A reply takes the dashboard's own path: the same service, the same routing (chat only, or email when the customer is not on the widget), the same Free-plan pause, and a reply to a Closed Conversation reopens it as `PENDING`. Notes never reach the customer and keep working during the pause. `Idempotency-Key` is required for a reply (400 without it) so a retry cannot email the customer twice, and optional for a note. The response carries the delivery outcome: `sent` (emailed), `not_applicable` (chat-only reply, or a note) or `failed` (the email could not be sent; the Message is stored and the failure is recorded on the dashboard's delivery ledger, so the request still succeeds). `queued` is reserved for asynchronous delivery and is not emitted yet. `savedReplyId` records which Saved Reply the text came from and must belong to the Workspace; the API never substitutes text, send the final `body`. `Location` is the Conversation's Messages URL; a single-Message URL arrives with the read API. A reply to a Conversation whose Product is archived answers `409 conflict` and stores nothing (the customer's answer would bounce); notes, tags and status still work. A foreign or unknown `savedReplyId` or `attachmentIds` entry answers 404, like an unknown Conversation.",
         "parameters": [
           {
             "name": "conversationId",
@@ -652,7 +652,7 @@
             "$ref": "#/components/responses/ServicePaused"
           },
           "409": {
-            "$ref": "#/components/responses/IdempotencyConflict"
+            "$ref": "#/components/responses/ReplyConflict"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -1542,6 +1542,47 @@
               "$ref": "#/components/schemas/ErrorResponse"
             },
             "examples": {
+              "idempotency_conflict": {
+                "value": {
+                  "error": {
+                    "code": "idempotency_conflict",
+                    "message": "This Idempotency-Key was already used with a different request body. Use a new key for a new request."
+                  }
+                }
+              },
+              "idempotency_in_flight": {
+                "value": {
+                  "error": {
+                    "code": "idempotency_in_flight",
+                    "message": "A request with this Idempotency-Key is still being processed. Retry shortly."
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "ReplyConflict": {
+        "description": "`conflict`: the Conversation's Product is archived, so a reply would bounce; unarchive the Product to reply (notes still work). Nothing was stored. `idempotency_conflict`: the `Idempotency-Key` was already used with a different body, method or path; send a new key for a new request. `idempotency_in_flight`: a request with the same key is still running; it carries `Retry-After: 5`, so wait that many seconds and send the same request again.",
+        "headers": {
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "conflict": {
+                "value": {
+                  "error": {
+                    "code": "conflict",
+                    "message": "This Conversation's Product is archived, so a reply would bounce. Unarchive the Product to reply; notes still work."
+                  }
+                }
+              },
               "idempotency_conflict": {
                 "value": {
                   "error": {

@@ -33,7 +33,13 @@ export const POST = v1Route<{ conversationId: string }>(
       return apiError("invalid_request", "Sending a reply needs an Idempotency-Key header, so a retry cannot email the customer twice.");
     }
 
-    const conversation = await db.conversation.findUniqueOrThrow({ where: { id: params.conversationId }, select: { id: true } });
+    const conversation = await db.conversation.findUniqueOrThrow({
+      where: { id: params.conversationId },
+      select: { id: true, product: { select: { archivedAt: true } } },
+    });
+    if (kind === "reply" && conversation.product.archivedAt) {
+      return apiError("conflict", "This Conversation's Product is archived, so a reply would bounce. Unarchive the Product to reply; notes still work.");
+    }
     if (savedReplyId) await db.savedReply.findUniqueOrThrow({ where: { id: savedReplyId }, select: { id: true } });
     const wanted = [...new Set(attachmentIds ?? [])];
     if (wanted.length > 0) {

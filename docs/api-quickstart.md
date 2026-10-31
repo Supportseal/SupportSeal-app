@@ -305,8 +305,8 @@ dashboard):
 Sending the same key and body again returns the stored response with
 `Idempotent-Replayed: true`; the same key with a different body is
 `409 idempotency_conflict`. A reply to a Closed Conversation reopens it, and
-replies answer `402 service_paused` while a Free-plan Workspace is paused (notes
-still work). The inbox shows the reply as `Support agent (API)`.
+replies answer `402 service_paused` while a Free-plan Workspace is paused and
+`409 conflict` when the Conversation's Product is archived (notes still work). The inbox shows the reply as `Support agent (API)`.
 
 Close a Conversation and tag it in one call; either both changes apply or
 neither does:
@@ -338,7 +338,7 @@ Every failure from the API has one JSON shape. Branch on `code`, never on
 | 403 | `forbidden` | A signed-in session that is not a Workspace admin (reads with a cookie only). | Use an admin account, or a token. |
 | 402 | `service_paused` | `POST …/messages` with `kind: "reply"` while a Free-plan Workspace has used its monthly allowance. Nothing was stored. Notes keep working. | Show the `message` to your user; the Workspace must upgrade or wait for the next period. |
 | 404 | `not_found` | The id does not exist or belongs to another Workspace (indistinguishable). | Check the id and that the token belongs to the right Workspace. |
-| 409 | `conflict` | `addDomains` names a domain already allowed, or `removeDomains` one that is not. Nothing was applied. The check is best-effort under concurrent requests (see below). | Drop the entry or `GET` the Product to see its current domains. |
+| 409 | `conflict` | `addDomains` names a domain already allowed, or `removeDomains` one that is not; or `POST …/messages` with `kind: "reply"` for a Conversation whose Product is archived (the reply would bounce). Nothing was applied or stored. The check is best-effort under concurrent requests (see below). | Drop the entry or `GET` the Product to see its current domains. |
 | 409 | `product_limit_reached` | `POST /api/products` when the Workspace already has 100 Products (archived ones count). Nothing was created. | Retrying will not help. Archive-and-recreate does not help either; create further Products in the dashboard, which has no cap. |
 | 409 | `idempotency_conflict` | The `Idempotency-Key` was already used with a different body, method or path. | Use a new key for a new request; resend the identical request to get the stored answer. |
 | 409 | `idempotency_in_flight` | A request with the same key is still running. Carries `Retry-After`. | Wait `Retry-After` seconds and send the same request again. |

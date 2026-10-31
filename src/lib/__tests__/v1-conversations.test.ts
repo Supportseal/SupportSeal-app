@@ -112,6 +112,21 @@ describe("POST /api/v1/conversations/{id}/messages", () => {
     expect(deliver).not.toHaveBeenCalled();
   });
 
+  it("refuses a reply in an archived Product (409 conflict, nothing stored or sent) but still takes notes", async () => {
+    const { productId } = await db.prisma.conversation.findUniqueOrThrow({ where: { id: conversationId }, select: { productId: true } });
+    await db.prisma.product.update({ where: { id: productId }, data: { archivedAt: new Date() } });
+    try {
+      const reply = await message(writer.token, { kind: "reply", body: "will bounce" });
+      expect(reply.status).toBe(409);
+      expect((await reply.json()).error.code).toBe("conflict");
+      expect(deliver).not.toHaveBeenCalled();
+      expect((await messagesIn(conversationId)).filter((m) => m.kind !== "CUSTOMER")).toEqual([]);
+      expect((await message(writer.token, { kind: "note", body: "still works" })).status).toBe(201);
+    } finally {
+      await db.prisma.product.update({ where: { id: productId }, data: { archivedAt: null } });
+    }
+  });
+
   it("adds a note without a key, leaves the status alone and never routes it to the customer", async () => {
     const response = await message(writeOnly, { kind: "note", body: "Escalate billing." }, { key: null });
     expect(response.status).toBe(201);
