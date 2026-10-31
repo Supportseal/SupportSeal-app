@@ -1199,7 +1199,7 @@
           },
           "contentPath": {
             "type": "string",
-            "description": "API-relative path that needs the bearer token. Never a public or signed URL."
+            "description": "API-relative path that needs the bearer token. Never a public or signed URL. The attachment endpoints ship with the read API (slice 1c): until then this path is reserved and answers 404."
           }
         },
         "additionalProperties": false,
