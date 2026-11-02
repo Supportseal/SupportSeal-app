@@ -117,9 +117,10 @@ describe("served widget scripts (issue #57)", () => {
     const script = /<script>([\s\S]*)<\/script>/.exec(html)?.[1] ?? "";
     expect(script).toContain("var PARK_HIDDEN_MS = 60000;");
     expect(script).toContain("var PARK_CLOSED_MS = 15 * 60000;");
-    // Hidden tab -> short timer; visible tab with the panel closed -> long one.
+    // Hidden tab -> short timer; visible tab with the panel closed -> long one,
+    // only once an email is known (else the badge is the only reply notice).
     expect(script).toMatch(
-      /if \(document\.hidden\) parkTimer = setTimeout\(parkStream, PARK_HIDDEN_MS\);\s*else if \(hidden\) parkTimer = setTimeout\(parkStream, PARK_CLOSED_MS\);/,
+      /if \(document\.hidden\) parkTimer = setTimeout\(parkStream, PARK_HIDDEN_MS\);\s*else if \(hidden && state\.email\) parkTimer = setTimeout\(parkStream, PARK_CLOSED_MS\);/,
     );
     // Parking closes the stream and the polling fallback alike.
     expect(script).toMatch(/parked = true;\s*streamRetry\.reset\(\);\s*stopPolling\(\);\s*if \(activeSource\) \{ activeSource\.close\(\); activeSource = null; \}/);

@@ -1298,7 +1298,9 @@ ${WIDGET_SOUND_JS}
   // has stayed closed for 15 minutes; reopen from the cursor when the tab
   // becomes visible again or the panel opens, so nothing is lost. While
   // parked the visitor counts as away, so replies with a known email go out
-  // by email too (reply routing, D5).
+  // by email too (reply routing, D5). A closed panel on a visible tab parks
+  // only once an email is known: without one, the live badge and chime are
+  // the visitor's only notice of a reply.
   var PARK_HIDDEN_MS = 60000;
   var PARK_CLOSED_MS = 15 * 60000;
   var parked = false;
@@ -1320,7 +1322,7 @@ ${WIDGET_SOUND_JS}
     parkTimer = null;
     if (previewMode || parked || !state.conversationId) return;
     if (document.hidden) parkTimer = setTimeout(parkStream, PARK_HIDDEN_MS);
-    else if (hidden) parkTimer = setTimeout(parkStream, PARK_CLOSED_MS);
+    else if (hidden && state.email) parkTimer = setTimeout(parkStream, PARK_CLOSED_MS);
   }
   document.addEventListener('visibilitychange', function () {
     if (!document.hidden) unparkStream();
