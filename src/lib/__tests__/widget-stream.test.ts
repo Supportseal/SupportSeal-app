@@ -46,6 +46,17 @@ function drainStream(reader: ReadableStreamDefaultReader<Uint8Array>, ms: number
   };
 }
 
+/** Reads until `needle` arrives; fails (instead of spinning) if the stream ends first. */
+async function readUntil(reader: ReadableStreamDefaultReader<Uint8Array>, text: string, needle: string) {
+  const decoder = new TextDecoder();
+  while (!text.includes(needle)) {
+    const { done, value } = await reader.read();
+    if (done) throw new Error(`stream ended before ${JSON.stringify(needle)}: ${text}`);
+    text += decoder.decode(value, { stream: true });
+  }
+  return text;
+}
+
 beforeAll(async () => {
   db = await startTestDb();
 });
@@ -261,7 +272,7 @@ describe("visitor SSE stream (ADR-0003)", () => {
     const reader = response.body!.getReader();
     const decoder = new TextDecoder();
     let text = "";
-    while (!text.includes("event: ready")) text += decoder.decode((await reader.read()).value);
+    text = await readUntil(reader, text, "event: ready");
     // The catch-up is delivered before `ready`.
     expect(text.indexOf("while parked")).toBeGreaterThan(-1);
     expect(text.indexOf("while parked")).toBeLessThan(text.indexOf("event: ready"));
@@ -281,7 +292,7 @@ describe("visitor SSE stream (ADR-0003)", () => {
       return snapshot;
     }) as never);
     notifyConversationEvent({ conversationId, workspaceId: workspace.id, kind: "message" });
-    while (!text.includes("raced the check")) text += decoder.decode((await reader.read()).value);
+    text = await readUntil(reader, text, "raced the check");
     raced.mockRestore();
 
     // A write that never reaches this process's bus (another process) is not
@@ -328,8 +339,7 @@ describe("visitor SSE stream (ADR-0003)", () => {
       ),
     );
     const thirdReader = third.body!.getReader();
-    let thirdText = "";
-    while (!thirdText.includes('"body":"gap 149"')) thirdText += decoder.decode((await thirdReader.read()).value);
+    const thirdText = await readUntil(thirdReader, "", '"body":"gap 149"');
     expect(thirdText).toContain('"body":"gap 100"');
     await thirdReader.cancel();
   });
