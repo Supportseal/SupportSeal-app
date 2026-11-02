@@ -12,34 +12,37 @@ const STRIPE_API = "https://api.stripe.com";
 
 type StripeEnv = { secretKey: string; priceId: string; webhookSecret: string };
 
+/**
+ * This spec buys the Pro monthly default: it opens /settings/billing with no
+ * pricing-page plan intent, so /api/billing/checkout charges
+ * STRIPE_PRO_MONTHLY_PRICE_ID (src/lib/stripe-prices.ts).
+ */
+const PRICE_ENV_VAR = "STRIPE_PRO_MONTHLY_PRICE_ID";
+
 function resolveStripeE2e(): { env: StripeEnv | null; skipReason: string | null } {
   if (process.env.STRIPE_E2E !== "1") {
     return { env: null, skipReason: "set STRIPE_E2E=1 with test-mode Stripe env to enable" };
   }
-  const missing = (
-    [
-      ["STRIPE_SECRET_KEY", process.env.STRIPE_SECRET_KEY],
-      ["STRIPE_PRO_PRICE_ID", process.env.STRIPE_PRO_PRICE_ID],
-      ["STRIPE_WEBHOOK_SECRET", process.env.STRIPE_WEBHOOK_SECRET],
-    ] as const
-  )
-    .filter(([, value]) => !value?.trim())
-    .map(([name]) => name);
-  if (missing.length > 0) {
-    return { env: null, skipReason: `STRIPE_E2E=1 but missing ${missing.join(", ")}` };
-  }
+  // STRIPE_E2E=1 is an explicit opt-in, so an unusable environment fails fast
+  // at load time (issue #62) instead of skipping silently or surfacing
+  // mid-flow after onboarding. Shape checks mirror the app's billing guard.
   const secretKey = process.env.STRIPE_SECRET_KEY?.trim() ?? "";
-  if (!secretKey.startsWith("sk_test_")) {
-    return { env: null, skipReason: "STRIPE_SECRET_KEY must be a test-mode key (sk_test_...)" };
+  const priceId = process.env[PRICE_ENV_VAR]?.trim() ?? "";
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim() ?? "";
+  const problems: string[] = [];
+  if (!secretKey) problems.push("STRIPE_SECRET_KEY is unset");
+  else if (!secretKey.startsWith("sk_test_")) {
+    problems.push("STRIPE_SECRET_KEY must be a test-mode key (sk_test_...)");
   }
-  return {
-    env: {
-      secretKey,
-      priceId: process.env.STRIPE_PRO_PRICE_ID?.trim() ?? "",
-      webhookSecret: process.env.STRIPE_WEBHOOK_SECRET?.trim() ?? "",
-    },
-    skipReason: null,
-  };
+  if (!priceId) problems.push(`${PRICE_ENV_VAR} is unset`);
+  else if (!priceId.startsWith("price_")) {
+    problems.push(`${PRICE_ENV_VAR} is not a Stripe price id (price_...)`);
+  }
+  if (!webhookSecret) problems.push("STRIPE_WEBHOOK_SECRET is unset");
+  if (problems.length > 0) {
+    throw new Error(`STRIPE_E2E=1 but the Stripe environment is unusable: ${problems.join("; ")}`);
+  }
+  return { env: { secretKey, priceId, webhookSecret }, skipReason: null };
 }
 
 const resolved = resolveStripeE2e();
