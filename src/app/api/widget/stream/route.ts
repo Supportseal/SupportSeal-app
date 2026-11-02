@@ -82,6 +82,7 @@ export async function GET(request: NextRequest) {
         }
       };
 
+      const pollDb = realtimeDbPollEnabled();
       send("ready", { conversationId });
       const untrack = trackVisitorStream(conversationId);
       const unsubscribe = subscribeToConversationEvents((event) => {
@@ -145,7 +146,10 @@ export async function GET(request: NextRequest) {
             );
           }
         } catch {
-          // transient DB error: the next tick retries
+          // Transient DB error: the next tick retries. Without ticks
+          // (REALTIME_DB_POLL=off) nothing would, so end the stream and let
+          // the client reconnect from its cursor with backoff.
+          if (!pollDb) cleanup();
         } finally {
           checking = false;
           if (recheck) void check();
@@ -155,7 +159,7 @@ export async function GET(request: NextRequest) {
       // Catch up from the cursor once at connect (a reconnect after a parked
       // or dropped stream), then rely on bus wakes and, if enabled, the tick.
       void check();
-      const tick = realtimeDbPollEnabled() ? setInterval(() => void check(), TICK_MS) : null;
+      const tick = pollDb ? setInterval(() => void check(), TICK_MS) : null;
       const heartbeat = setInterval(() => {
         if (closed) return;
         try {

@@ -291,5 +291,19 @@ describe("visitor SSE stream (ADR-0003)", () => {
 
     await reader.cancel();
     expect(hasLiveVisitorStream(conversationId)).toBe(false);
+
+    // A failed catch-up with no tick to retry it ends the stream, so the
+    // client reconnects from its cursor instead of silently missing rows.
+    const failing = vi.spyOn(db.prisma.message, "findMany").mockRejectedValueOnce(new Error("db blip"));
+    const second = await widgetStream(
+      streamRequest(`/api/widget/stream?key=pk_nopoll&host=http://localhost:3000&t=${token}`),
+    );
+    const secondReader = second.body!.getReader();
+    for (;;) {
+      const chunk = await secondReader.read();
+      if (chunk.done) break;
+    }
+    failing.mockRestore();
+    expect(hasLiveVisitorStream(conversationId)).toBe(false);
   });
 });
