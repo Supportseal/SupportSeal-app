@@ -83,7 +83,6 @@ export async function GET(request: NextRequest) {
       };
 
       const pollDb = realtimeDbPollEnabled();
-      send("ready", { conversationId });
       const untrack = trackVisitorStream(conversationId);
       const unsubscribe = subscribeToConversationEvents((event) => {
         if (event.conversationId === conversationId) {
@@ -96,11 +95,11 @@ export async function GET(request: NextRequest) {
       // committed after that query's snapshot: run once more afterwards
       // instead of dropping it (with REALTIME_DB_POLL=off no tick retries).
       let recheck = false;
-      async function check() {
-        if (closed) return;
+      async function check(): Promise<boolean> {
+        if (closed) return false;
         if (checking) {
           recheck = true;
-          return;
+          return true;
         }
         checking = true;
         recheck = false;
@@ -122,6 +121,8 @@ export async function GET(request: NextRequest) {
             },
           });
           const fresh = candidates.filter((m) => !seenIds.includes(m.id));
+          // A full page means more may follow (a long parked gap): drain it.
+          if (candidates.length === 100 && fresh.length > 0) recheck = true;
           if (fresh.length > 0) {
             for (const m of fresh) {
               seenIds.push(m.id);
@@ -145,11 +146,13 @@ export async function GET(request: NextRequest) {
               })),
             );
           }
+          return true;
         } catch {
           // Transient DB error: the next tick retries. Without ticks
           // (REALTIME_DB_POLL=off) nothing would, so end the stream and let
           // the client reconnect from its cursor with backoff.
           if (!pollDb) cleanup();
+          return false;
         } finally {
           checking = false;
           if (recheck) void check();
@@ -158,7 +161,11 @@ export async function GET(request: NextRequest) {
 
       // Catch up from the cursor once at connect (a reconnect after a parked
       // or dropped stream), then rely on bus wakes and, if enabled, the tick.
-      void check();
+      // `ready` (the client's "connected, reset retries") waits for the
+      // catch-up, so a stream that fails it counts as a failed attempt.
+      void check().then((ok) => {
+        if (ok || pollDb) send("ready", { conversationId });
+      });
       const tick = pollDb ? setInterval(() => void check(), TICK_MS) : null;
       const heartbeat = setInterval(() => {
         if (closed) return;

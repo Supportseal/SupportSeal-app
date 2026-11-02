@@ -261,8 +261,10 @@ describe("visitor SSE stream (ADR-0003)", () => {
     const reader = response.body!.getReader();
     const decoder = new TextDecoder();
     let text = "";
-    while (!text.includes("while parked")) text += decoder.decode((await reader.read()).value);
-    expect(text).toContain("event: ready");
+    while (!text.includes("event: ready")) text += decoder.decode((await reader.read()).value);
+    // The catch-up is delivered before `ready`.
+    expect(text.indexOf("while parked")).toBeGreaterThan(-1);
+    expect(text.indexOf("while parked")).toBeLessThan(text.indexOf("event: ready"));
 
     // A wake that lands while a check is in flight (the row committed after
     // that query's snapshot) triggers one more check instead of being lost.
@@ -299,11 +301,36 @@ describe("visitor SSE stream (ADR-0003)", () => {
       streamRequest(`/api/widget/stream?key=pk_nopoll&host=http://localhost:3000&t=${token}`),
     );
     const secondReader = second.body!.getReader();
+    let secondText = "";
     for (;;) {
       const chunk = await secondReader.read();
+      if (chunk.value) secondText += decoder.decode(chunk.value);
       if (chunk.done) break;
     }
+    // No `ready`: the client counts this as a failed attempt (backoff, cap).
+    expect(secondText).not.toContain("event: ready");
     failing.mockRestore();
     expect(hasLiveVisitorStream(conversationId)).toBe(false);
+
+    // A long parked gap (> one 100-row page) is drained in full at connect.
+    const gapStart = new Date(Date.now() + 60_000);
+    await db.prisma.message.createMany({
+      data: Array.from({ length: 150 }, (_, i) => ({
+        conversationId,
+        kind: "AGENT" as const,
+        body: `gap ${i}`,
+        createdAt: new Date(gapStart.getTime() + i),
+      })),
+    });
+    const third = await widgetStream(
+      streamRequest(
+        `/api/widget/stream?key=pk_nopoll&host=http://localhost:3000&t=${token}&after=${encodeURIComponent(new Date(gapStart.getTime() - 1).toISOString())}`,
+      ),
+    );
+    const thirdReader = third.body!.getReader();
+    let thirdText = "";
+    while (!thirdText.includes('"body":"gap 149"')) thirdText += decoder.decode((await thirdReader.read()).value);
+    expect(thirdText).toContain('"body":"gap 100"');
+    await thirdReader.cancel();
   });
 });
