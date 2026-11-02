@@ -5,6 +5,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { verifyWidgetTestToken } from "@/lib/onboarding";
 
 import { notifyConversationEvent } from "@/lib/events";
+import { markVisitorPolled } from "@/lib/visitor-presence";
 
 import {
   mergeDevContext,
@@ -634,7 +635,9 @@ export async function visitorListMessages(input: {
   });
   // No touchVisitor here: this is a read (boot and the polling fallback);
   // resolveVisitorSession already refreshed lastSeenAt at its throttled rate.
+  // Presence for reply routing is recorded in memory instead.
   if (!detail) return { conversationId: null, ticketRef: null, messages: [], status: "OPEN" };
+  markVisitorPolled(detail.id);
   return {
     conversationId: detail.id,
     ticketRef: formatTicketRef(detail.ticketNumber),

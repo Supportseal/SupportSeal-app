@@ -3,7 +3,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createTestUser, startTestDb, stopTestDb, type TestDb } from "@/test/integration-db";
 import { loadWidgetProduct, resolveVisitorSession, VISITOR_SEEN_WRITE_INTERVAL_MS } from "@/lib/widget";
-import { trackVisitorStream, hasLiveVisitorStream } from "@/lib/visitor-presence";
+import {
+  hasLiveVisitorStream,
+  isVisitorPresent,
+  markVisitorPolled,
+  trackVisitorStream,
+  VISITOR_POLL_PRESENCE_MS,
+} from "@/lib/visitor-presence";
 
 let db: TestDb;
 
@@ -63,5 +69,16 @@ describe("visitor lastSeenAt throttle", () => {
     expect(hasLiveVisitorStream("conv-presence")).toBe(true);
     releaseB();
     expect(hasLiveVisitorStream("conv-presence")).toBe(false);
+  });
+
+  it("a polling-fallback visitor (no stream) stays present for a minute per poll", () => {
+    const now = Date.now();
+    expect(isVisitorPresent("conv-poll", now)).toBe(false);
+    markVisitorPolled("conv-poll", now);
+    expect(isVisitorPresent("conv-poll", now + VISITOR_POLL_PRESENCE_MS - 1)).toBe(true);
+    expect(isVisitorPresent("conv-poll", now + VISITOR_POLL_PRESENCE_MS + 1)).toBe(false);
+    const release = trackVisitorStream("conv-stream");
+    expect(isVisitorPresent("conv-stream", now)).toBe(true);
+    release();
   });
 });

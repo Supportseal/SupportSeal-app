@@ -2,14 +2,14 @@ import { prisma } from "@/lib/prisma";
 import { sendReplyEmail, replySubject } from "@/lib/email/outbound";
 import { notifyConversationEvent } from "@/lib/events";
 import { isOwnAddress } from "@/lib/email/loop-guard";
-import { hasLiveVisitorStream } from "@/lib/visitor-presence";
+import { isVisitorPresent } from "@/lib/visitor-presence";
 
 /**
  * Reply-channel routing (design default D5, FR-EMAIL-02):
  * - email-started conversation → email
  * - chat conversation with a known visitor email and the visitor no longer
- *   connected (no open widget stream in this process, and lastSeenAt not
- *   refreshed within 60 s) → email as well, stored in the chat thread so the visitor
+ *   connected (no open widget stream or thread poll in this process within
+ *   60 s, and lastSeenAt not refreshed within 60 s) → email as well, stored in the chat thread so the visitor
  *   sees it if they return
  * - chat conversation, visitor connected or no email → chat only
  */
@@ -21,7 +21,7 @@ export async function decideReplyRouting(input: {
   channel: "CHAT" | "EMAIL";
   visitorEmail: string | null;
   visitorLastSeenAt: Date | null;
-  /** An open widget stream for the conversation (in-memory presence). */
+  /** An open widget stream or a recent poll (in-memory presence). */
   visitorStreamOpen?: boolean;
 }): Promise<RoutingDecision> {
   if (input.channel === "EMAIL") return "email";
@@ -65,7 +65,7 @@ export async function deliverAgentReplyIfRouted(input: {
     channel: conversation.channel,
     visitorEmail: isOwnAddress(knownEmail, conversation.product) ? null : knownEmail,
     visitorLastSeenAt: visitor?.lastSeenAt ?? null,
-    visitorStreamOpen: hasLiveVisitorStream(conversation.id),
+    visitorStreamOpen: isVisitorPresent(conversation.id),
   });
 
   // Persist the actual channel decision (issue #128): the agent Message was
