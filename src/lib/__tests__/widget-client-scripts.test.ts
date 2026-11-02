@@ -129,6 +129,8 @@ describe("served widget scripts (issue #57)", () => {
     const onOpen = script.slice(script.indexOf("data.type === 'ss:open'"));
     expect(onOpen.slice(0, 500)).toMatch(/unparkStream\(\);\s*scheduleParking\(\);/);
     expect(script).toContain("if (data.type === 'ss:close') { hidden = true; scheduleParking(); }");
+    // identify() supplying an email re-arms the closed-panel timer.
+    expect(script).toContain("if (data && data.email) { state.email = data.email; render(); scheduleParking(); }");
   });
 
   it("loader delegates autoplay to the panel frame so replies can chime before a click in it", async () => {

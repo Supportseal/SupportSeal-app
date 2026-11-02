@@ -1199,7 +1199,8 @@ ${WIDGET_SOUND_JS}
       });
     }).then(function (r) { return r && r.ok ? r.json() : null; }).then(function (data) {
       if (generation !== sessionGeneration) return;
-      if (data && data.email) { state.email = data.email; render(); }
+      // A newly known email lets a closed panel park (scheduleParking).
+      if (data && data.email) { state.email = data.email; render(); scheduleParking(); }
     }).catch(function () { /* silent: developer data is best-effort */ });
   }
 
