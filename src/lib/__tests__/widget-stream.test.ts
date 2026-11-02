@@ -264,6 +264,24 @@ describe("visitor SSE stream (ADR-0003)", () => {
     while (!text.includes("while parked")) text += decoder.decode((await reader.read()).value);
     expect(text).toContain("event: ready");
 
+    // A wake that lands while a check is in flight (the row committed after
+    // that query's snapshot) triggers one more check instead of being lost.
+    const original = db.prisma.message.findMany.bind(db.prisma.message);
+    const raced = vi.spyOn(db.prisma.message, "findMany").mockImplementationOnce((async (args: unknown) => {
+      const snapshot = await original(args as Parameters<typeof original>[0]);
+      await addCustomerMessage({
+        workspaceId: workspace.id,
+        conversationId,
+        body: "raced the check",
+        source: { kind: "visitor", visitorId: "v1" },
+      });
+      notifyConversationEvent({ conversationId, workspaceId: workspace.id, kind: "message" });
+      return snapshot;
+    }) as never);
+    notifyConversationEvent({ conversationId, workspaceId: workspace.id, kind: "message" });
+    while (!text.includes("raced the check")) text += decoder.decode((await reader.read()).value);
+    raced.mockRestore();
+
     // A write that never reaches this process's bus (another process) is not
     // picked up by any interval: the stream issues no periodic queries.
     const findMany = vi.spyOn(db.prisma.message, "findMany");

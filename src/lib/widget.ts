@@ -384,17 +384,20 @@ export async function resolveVisitorSession(
   const seen = await prisma.chatVisitor.findFirst({ where });
   if (!seen) return null;
   let visitor = seen;
-  if (now.getTime() - seen.lastSeenAt.getTime() >= VISITOR_SEEN_WRITE_INTERVAL_MS) {
+  if (now.getTime() - seen.lastSeenAt.getTime() > VISITOR_SEEN_WRITE_INTERVAL_MS) {
     // Claim activity atomically with session resolution: a concurrent purge
     // either deletes first (no session), or rechecks the refreshed timestamp
     // and spares this row before a handler can create a conversation. A row
     // seen within the interval is far younger than any purge cutoff.
+    // Conditional on staleness so concurrent tabs write once; a loser
+    // re-reads (and gets null only if the purge deleted the row).
     const [refreshed] = await prisma.chatVisitor.updateManyAndReturn({
-      where,
+      where: { ...where, lastSeenAt: { lt: new Date(now.getTime() - VISITOR_SEEN_WRITE_INTERVAL_MS) } },
       data: { lastSeenAt: now },
     });
-    if (!refreshed) return null;
-    visitor = refreshed;
+    const current = refreshed ?? (await prisma.chatVisitor.findFirst({ where }));
+    if (!current) return null;
+    visitor = current;
   }
   return {
     visitorId: visitor.id,

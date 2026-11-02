@@ -47,6 +47,11 @@ describe("visitor lastSeenAt throttle", () => {
     const afterStale = await db.prisma.chatVisitor.findUniqueOrThrow({ where: { id: visitor.id } });
     expect(afterStale.lastSeenAt.getTime()).toBeGreaterThanOrEqual(before);
 
+    // Concurrent tabs on a stale row: one write, both resolve.
+    await db.prisma.chatVisitor.update({ where: { id: visitor.id }, data: { lastSeenAt: stale } });
+    const both = await Promise.all([resolveVisitorSession(product, token), resolveVisitorSession(product, token)]);
+    expect(both.map((v) => v?.visitorId)).toEqual([visitor.id, visitor.id]);
+
     expect(await resolveVisitorSession(product, "tok_unknown")).toBeNull();
   });
 

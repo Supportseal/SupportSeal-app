@@ -16,6 +16,7 @@ describe("GET /api/health/live", () => {
   it("is ok without touching the database", async () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("BETTER_AUTH_SECRET", "s3cret");
+    vi.stubEnv("DATABASE_URL", "postgresql://u:p@db/x");
 
     const res = GET();
 
@@ -31,6 +32,18 @@ describe("GET /api/health/live", () => {
     const res = GET();
 
     expect(res.status).toBe(503);
+    expect(queryRaw).not.toHaveBeenCalled();
+  });
+
+  it("is unhealthy in production without DATABASE_URL, still without connecting", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("BETTER_AUTH_SECRET", "s3cret");
+    vi.stubEnv("DATABASE_URL", " ");
+
+    const res = GET();
+
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ status: "misconfigured", database: "DATABASE_URL is not set" });
     expect(queryRaw).not.toHaveBeenCalled();
   });
 

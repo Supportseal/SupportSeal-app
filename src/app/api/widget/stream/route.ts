@@ -91,9 +91,18 @@ export async function GET(request: NextRequest) {
         }
       });
 
+      // A wake that lands while a check is in flight may concern a row that
+      // committed after that query's snapshot: run once more afterwards
+      // instead of dropping it (with REALTIME_DB_POLL=off no tick retries).
+      let recheck = false;
       async function check() {
-        if (closed || checking) return;
+        if (closed) return;
+        if (checking) {
+          recheck = true;
+          return;
+        }
         checking = true;
+        recheck = false;
         try {
           // >= plus a sent-id filter so messages sharing a millisecond with
           // the cursor are delivered, never duplicated.
@@ -139,6 +148,7 @@ export async function GET(request: NextRequest) {
           // transient DB error: the next tick retries
         } finally {
           checking = false;
+          if (recheck) void check();
         }
       }
 
