@@ -1,8 +1,13 @@
 import { createHash } from "node:crypto";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { createTestUser, startTestDb, stopTestDb, type TestDb } from "@/test/integration-db";
-import { loadWidgetProduct, resolveVisitorSession, VISITOR_SEEN_WRITE_INTERVAL_MS } from "@/lib/widget";
+import {
+  loadWidgetProduct,
+  resolveVisitorSession,
+  VISITOR_SEEN_WRITE_INTERVAL_MS,
+  VISITOR_SEEN_WRITE_INTERVAL_MULTI_PROCESS_MS,
+} from "@/lib/widget";
 import {
   hasLiveVisitorStream,
   isVisitorPresent,
@@ -21,11 +26,16 @@ afterAll(async () => {
   await stopTestDb(db);
 });
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 // Every widget request resolves the session; an unthrottled lastSeenAt write
 // made each open tab a steady stream of UPDATEs (and kept a scale-to-zero
 // database awake).
 describe("visitor lastSeenAt throttle", () => {
   it("refreshes lastSeenAt only when older than the write interval", async () => {
+    vi.stubEnv("REALTIME_DB_POLL", "off");
     const user = await createTestUser(db.prisma, { email: "seen@example.com" });
     const workspace = await db.prisma.workspace.create({
       data: { name: "Seen", memberships: { create: { userId: user.id, role: "ADMIN" } } },
@@ -59,6 +69,27 @@ describe("visitor lastSeenAt throttle", () => {
     expect(both.map((v) => v?.visitorId)).toEqual([visitor.id, visitor.id]);
 
     expect(await resolveVisitorSession(product, "tok_unknown")).toBeNull();
+  });
+
+  it("multi-process mode (polling on) keeps lastSeenAt inside the 60 s routing window", async () => {
+    vi.stubEnv("REALTIME_DB_POLL", "on");
+    const user = await createTestUser(db.prisma, { email: "seen-multi@example.com" });
+    const workspace = await db.prisma.workspace.create({
+      data: { name: "SeenMulti", memberships: { create: { userId: user.id, role: "ADMIN" } } },
+    });
+    await db.prisma.product.create({
+      data: { workspaceId: workspace.id, name: "SeenMulti Prod", widgetPublicKey: "pk_seen_multi" },
+    });
+    const product = (await loadWidgetProduct("pk_seen_multi"))!;
+    const token = "tok_seen_multi";
+    const older = new Date(Date.now() - VISITOR_SEEN_WRITE_INTERVAL_MULTI_PROCESS_MS - 1000);
+    const visitor = await db.prisma.chatVisitor.create({
+      data: { productId: product.id, tokenHash: createHash("sha256").update(token).digest("hex"), lastSeenAt: older },
+    });
+    const before = Date.now();
+    await resolveVisitorSession(product, token);
+    const row = await db.prisma.chatVisitor.findUniqueOrThrow({ where: { id: visitor.id } });
+    expect(row.lastSeenAt.getTime()).toBeGreaterThanOrEqual(before);
   });
 
   it("stream presence counts tabs and releases idempotently", () => {
