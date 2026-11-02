@@ -29,8 +29,12 @@ export function SavedRepliesTable({ replies, isAdmin }: { replies: Reply[]; isAd
               key={reply.id}
               className="border-b border-border align-top last:border-0 max-sm:block max-sm:space-y-2 max-sm:p-4"
             >
-              <td className="px-4 py-3 font-medium text-heading max-sm:block max-sm:p-0">{reply.name}</td>
+              <td className="px-4 py-3 font-medium text-heading max-sm:block max-sm:p-0">
+                <span className="max-sm:sr-only sm:hidden">Name: </span>
+                {reply.name}
+              </td>
               <td className="px-4 py-3 max-sm:block max-sm:p-0">
+                <span className="max-sm:sr-only sm:hidden">Available in: </span>
                 <div className="flex max-w-48 flex-wrap max-sm:max-w-none gap-1">
                   {reply.productNames.length === 0 ? (
                     <Badge variant="light" color="secondary">
@@ -46,6 +50,7 @@ export function SavedRepliesTable({ replies, isAdmin }: { replies: Reply[]; isAd
                 </div>
               </td>
               <td className="max-w-md px-4 py-3 text-body max-sm:block max-sm:max-w-none max-sm:p-0">
+                <span className="max-sm:sr-only sm:hidden">Body: </span>
                 <p className="line-clamp-2 whitespace-pre-wrap">{reply.body}</p>
               </td>
               {isAdmin ? (
