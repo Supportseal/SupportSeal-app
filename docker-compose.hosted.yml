@@ -30,6 +30,11 @@ services:
       NEXT_PUBLIC_MARKETING_URL: https://supportseal.app
       NEXT_PUBLIC_APP_NAME: SupportSeal
       HOSTED_MODE: "1"
+      # One app process serves the hosted tier, so the in-process event bus
+      # carries every realtime update; the per-connection database polls only
+      # matter for several app processes and would keep Neon from ever
+      # suspending. Set to "on" before running more than one app replica.
+      REALTIME_DB_POLL: ${REALTIME_DB_POLL:-off}
       INBOUND_WEBHOOK_SECRET: ${INBOUND_WEBHOOK_SECRET}
       # Mail stays on the apex (MX + SendGrid domain authentication are on supportseal.app).
       # Without this, reply addresses and the managed sender would fall back

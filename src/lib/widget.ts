@@ -4,7 +4,8 @@ import { Prisma } from "@/generated/prisma/client";
 
 import { verifyWidgetTestToken } from "@/lib/onboarding";
 
-import { notifyConversationEvent } from "@/lib/events";
+import { notifyConversationEvent, realtimeDbPollEnabled } from "@/lib/events";
+import { markVisitorPolled } from "@/lib/visitor-presence";
 
 import {
   mergeDevContext,
@@ -364,19 +365,52 @@ export async function revokeVisitorSession(
   });
 }
 
+/**
+ * How stale `ChatVisitor.lastSeenAt` may get before a widget request
+ * refreshes it. Every widget request resolves the session (stream connects,
+ * polling fallback, context pushes), so an unthrottled write turned each open
+ * tab into a steady stream of UPDATEs. Live presence for reply routing comes
+ * from open streams in memory (visitor-presence.ts); this column only needs
+ * to be fresh enough for the 30-day stale-visitor purge.
+ */
+export const VISITOR_SEEN_WRITE_INTERVAL_MS = 10 * 60 * 1000;
+/**
+ * With REALTIME_DB_POLL on (several app processes) another process may route
+ * the reply without seeing this one's in-memory presence, so keep lastSeenAt
+ * inside D5's 60 s window there; that mode already pays for database polls.
+ */
+export const VISITOR_SEEN_WRITE_INTERVAL_MULTI_PROCESS_MS = 30 * 1000;
+
+function visitorSeenWriteIntervalMs(): number {
+  return realtimeDbPollEnabled() ? VISITOR_SEEN_WRITE_INTERVAL_MULTI_PROCESS_MS : VISITOR_SEEN_WRITE_INTERVAL_MS;
+}
+
 export async function resolveVisitorSession(
   product: WidgetProduct,
   token: string | undefined,
 ): Promise<VisitorSession | null> {
   if (!token) return null;
-  // Claim activity atomically with session resolution: a concurrent purge
-  // either deletes first (no session), or rechecks the refreshed timestamp
-  // and spares this row before a handler can create a conversation.
-  const [visitor] = await prisma.chatVisitor.updateManyAndReturn({
-    where: { tokenHash: hashVisitorToken(token), productId: product.id },
-    data: { lastSeenAt: new Date() },
-  });
-  if (!visitor) return null;
+  const where = { tokenHash: hashVisitorToken(token), productId: product.id };
+  const now = new Date();
+  const seen = await prisma.chatVisitor.findFirst({ where });
+  if (!seen) return null;
+  let visitor = seen;
+  const interval = visitorSeenWriteIntervalMs();
+  if (now.getTime() - seen.lastSeenAt.getTime() > interval) {
+    // Claim activity atomically with session resolution: a concurrent purge
+    // either deletes first (no session), or rechecks the refreshed timestamp
+    // and spares this row before a handler can create a conversation. A row
+    // seen within the interval is far younger than any purge cutoff.
+    // Conditional on staleness so concurrent tabs write once; a loser
+    // re-reads (and gets null only if the purge deleted the row).
+    const [refreshed] = await prisma.chatVisitor.updateManyAndReturn({
+      where: { ...where, lastSeenAt: { lt: new Date(now.getTime() - interval) } },
+      data: { lastSeenAt: now },
+    });
+    const current = refreshed ?? (await prisma.chatVisitor.findFirst({ where }));
+    if (!current) return null;
+    visitor = current;
+  }
   return {
     visitorId: visitor.id,
     productId: visitor.productId,
@@ -610,8 +644,11 @@ export async function visitorListMessages(input: {
     workspaceId: input.product.workspaceId,
     conversationId: input.visitor.conversationId,
   });
+  // No touchVisitor here: this is a read (boot and the polling fallback);
+  // resolveVisitorSession already refreshed lastSeenAt at its throttled rate.
+  // Presence for reply routing is recorded in memory instead.
   if (!detail) return { conversationId: null, ticketRef: null, messages: [], status: "OPEN" };
-  await touchVisitor(input.visitor.visitorId);
+  markVisitorPolled(detail.id);
   return {
     conversationId: detail.id,
     ticketRef: formatTicketRef(detail.ticketNumber),

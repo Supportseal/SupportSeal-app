@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 
 import { prisma } from "@/lib/prisma";
-import { subscribeToConversationEvents } from "@/lib/events";
+import { realtimeDbPollEnabled, subscribeToConversationEvents } from "@/lib/events";
 import { getPrimaryMembership } from "@/lib/workspace";
 import { getSessionUser } from "@/lib/session";
 
@@ -62,14 +62,17 @@ export async function GET(request: NextRequest) {
         return rows.map((r) => `${r.id}:${r.updatedAt.getTime()}`).join("|");
       };
       let lastSignature: string | null = null;
-      void readSignature()
+      // Off (REALTIME_DB_POLL=off) on single-process deployments: the bus
+      // already carries every write, and idle tabs then cost no queries.
+      const pollDb = realtimeDbPollEnabled();
+      if (pollDb) void readSignature()
         .then((signature) => {
           lastSignature ??= signature;
         })
         .catch(() => {
           // transient DB error: the first tick seeds the baseline instead
         });
-      const dbTick = setInterval(async () => {
+      const dbTick = pollDb ? setInterval(async () => {
         if (closed) return;
         try {
           const signature = await readSignature();
@@ -80,7 +83,7 @@ export async function GET(request: NextRequest) {
         } catch {
           // transient DB error: retry next tick
         }
-      }, DB_TICK_MS);
+      }, DB_TICK_MS) : null;
 
       const heartbeat = setInterval(() => {
         if (closed) return;
@@ -96,7 +99,7 @@ export async function GET(request: NextRequest) {
       cleanup = () => {
         closed = true;
         clearInterval(heartbeat);
-        clearInterval(dbTick);
+        if (dbTick) clearInterval(dbTick);
         unsubscribe();
         try {
           controller.close();

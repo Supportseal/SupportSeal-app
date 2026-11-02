@@ -101,13 +101,36 @@ describe("served widget scripts (issue #57)", () => {
     // The server answers 401 until a conversation exists, so startStream bails
     // out first; the first send and the away form record the conversation
     // before they open the stream.
-    expect(script).toMatch(/if \(!state\.conversationId\) return;\s*streamRetry\.reset\(\);\s*streamRetry\.run\(\);/);
+    expect(script).toMatch(/if \(!state\.conversationId\) return;\s*parked = false;\s*streamRetry\.reset\(\);\s*streamRetry\.run\(\);/);
     expect(script).toMatch(
       /state\.conversationId = result\.data\.thread\.conversationId;[^]*?if \(!streamActive && !previewMode\) startStream\(\);/,
     );
     expect(script).toMatch(
       /state\.conversationId = data\.thread\.conversationId;\s*state\.ticketRef = data\.thread\.ticketRef \|\| null;\s*render\(\);\s*\}\s*else restoreDiagnostics\(\);\s*if \(!streamActive && !previewMode\) startStream\(\);/,
     );
+  });
+
+  it("panel parks an idle stream and reopens it from the cursor (database cost)", async () => {
+    const html = await (
+      await panelHtml(new NextRequest("http://localhost:3000/widget?key=pk_test&host=http://localhost:3000"))
+    ).text();
+    const script = /<script>([\s\S]*)<\/script>/.exec(html)?.[1] ?? "";
+    expect(script).toContain("var PARK_HIDDEN_MS = 60000;");
+    expect(script).toContain("var PARK_CLOSED_MS = 15 * 60000;");
+    // Hidden tab -> short timer; visible tab with the panel closed -> long one,
+    // only once an email is known (else the badge is the only reply notice).
+    expect(script).toMatch(
+      /if \(document\.hidden\) parkTimer = setTimeout\(parkStream, PARK_HIDDEN_MS\);\s*else if \(hidden && state\.email\) parkTimer = setTimeout\(parkStream, PARK_CLOSED_MS\);/,
+    );
+    // Parking closes the stream and the polling fallback alike.
+    expect(script).toMatch(/parked = true;\s*streamRetry\.reset\(\);\s*stopPolling\(\);\s*if \(activeSource\) \{ activeSource\.close\(\); activeSource = null; \}/);
+    // Coming back (tab visible again, or the panel opens) reconnects.
+    expect(script).toMatch(/if \(!document\.hidden\) unparkStream\(\);\s*scheduleParking\(\);/);
+    const onOpen = script.slice(script.indexOf("data.type === 'ss:open'"));
+    expect(onOpen.slice(0, 500)).toMatch(/unparkStream\(\);\s*scheduleParking\(\);/);
+    expect(script).toContain("if (data.type === 'ss:close') { hidden = true; scheduleParking(); }");
+    // identify() supplying an email re-arms the closed-panel timer.
+    expect(script).toContain("if (data && data.email) { state.email = data.email; render(); scheduleParking(); }");
   });
 
   it("loader delegates autoplay to the panel frame so replies can chime before a click in it", async () => {

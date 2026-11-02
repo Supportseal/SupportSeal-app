@@ -1199,7 +1199,8 @@ ${WIDGET_SOUND_JS}
       });
     }).then(function (r) { return r && r.ok ? r.json() : null; }).then(function (data) {
       if (generation !== sessionGeneration) return;
-      if (data && data.email) { state.email = data.email; render(); }
+      // A newly known email lets a closed panel park (scheduleParking).
+      if (data && data.email) { state.email = data.email; render(); scheduleParking(); }
     }).catch(function () { /* silent: developer data is best-effort */ });
   }
 
@@ -1221,6 +1222,9 @@ ${WIDGET_SOUND_JS}
     stopPolling();
     if (activeSource) { activeSource.close(); activeSource = null; }
     streamActive = false;
+    parked = false;
+    clearTimeout(parkTimer);
+    parkTimer = null;
     state.messages = [];
     state.email = null;
     state.conversationId = null;
@@ -1254,8 +1258,10 @@ ${WIDGET_SOUND_JS}
       // Replies that arrived while hidden updated state but not the DOM.
       if (config) render();
       input.focus();
+      unparkStream();
+      scheduleParking();
     }
-    if (data.type === 'ss:close') hidden = true;
+    if (data.type === 'ss:close') { hidden = true; scheduleParking(); }
     if (data.type === 'ss:identify') pushDeveloperData('identify', data.payload);
     if (data.type === 'ss:context') pushDeveloperData('context', data.payload);
     if (data.type === 'ss:reset') resetSession();
@@ -1281,9 +1287,48 @@ ${WIDGET_SOUND_JS}
     // (a red console error on every page view). The stream opens from boot
     // (restored conversation) or the first send, never before.
     if (!state.conversationId) return;
+    parked = false;
     streamRetry.reset();
     streamRetry.run();
+    scheduleParking();
   }
+
+  // Idle parking: an open stream holds a server connection (and, on
+  // multi-process deployments, a database poll) for as long as the tab
+  // lives. Close it once the tab has been hidden for a minute, or the panel
+  // has stayed closed for 15 minutes; reopen from the cursor when the tab
+  // becomes visible again or the panel opens, so nothing is lost. While
+  // parked the visitor counts as away, so replies with a known email go out
+  // by email too (reply routing, D5). A closed panel on a visible tab parks
+  // only once an email is known: without one, the live badge and chime are
+  // the visitor's only notice of a reply.
+  var PARK_HIDDEN_MS = 60000;
+  var PARK_CLOSED_MS = 15 * 60000;
+  var parked = false;
+  var parkTimer = null;
+  function parkStream() {
+    parkTimer = null;
+    if (previewMode || !state.conversationId) return;
+    parked = true;
+    streamRetry.reset();
+    stopPolling();
+    if (activeSource) { activeSource.close(); activeSource = null; }
+    streamActive = false;
+  }
+  function unparkStream() {
+    if (parked) startStream();
+  }
+  function scheduleParking() {
+    clearTimeout(parkTimer);
+    parkTimer = null;
+    if (previewMode || parked || !state.conversationId) return;
+    if (document.hidden) parkTimer = setTimeout(parkStream, PARK_HIDDEN_MS);
+    else if (hidden && state.email) parkTimer = setTimeout(parkStream, PARK_CLOSED_MS);
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) unparkStream();
+    scheduleParking();
+  });
   function connectStream() {
     if (activeSource) { activeSource.close(); activeSource = null; }
     var after = state.messages.length

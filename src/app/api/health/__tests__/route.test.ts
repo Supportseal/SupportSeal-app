@@ -14,6 +14,7 @@ describe("GET /api/health", () => {
   it("is ok when the database answers and the auth secret is set", async () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("BETTER_AUTH_SECRET", "s3cret");
+    vi.stubEnv("DATABASE_URL", "postgresql://u:p@db/x");
     queryRaw.mockResolvedValue([{ "?column?": 1 }]);
 
     const res = await GET();
@@ -44,6 +45,7 @@ describe("GET /api/health", () => {
   it("is degraded when the database is unavailable", async () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("BETTER_AUTH_SECRET", "s3cret");
+    vi.stubEnv("DATABASE_URL", "postgresql://u:p@db/x");
     queryRaw.mockRejectedValue(new Error("down"));
 
     const res = await GET();
