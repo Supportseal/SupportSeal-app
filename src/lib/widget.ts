@@ -364,19 +364,38 @@ export async function revokeVisitorSession(
   });
 }
 
+/**
+ * How stale `ChatVisitor.lastSeenAt` may get before a widget request
+ * refreshes it. Every widget request resolves the session (stream connects,
+ * polling fallback, context pushes), so an unthrottled write turned each open
+ * tab into a steady stream of UPDATEs. Live presence for reply routing comes
+ * from open streams in memory (visitor-presence.ts); this column only needs
+ * to be fresh enough for the 30-day stale-visitor purge.
+ */
+export const VISITOR_SEEN_WRITE_INTERVAL_MS = 10 * 60 * 1000;
+
 export async function resolveVisitorSession(
   product: WidgetProduct,
   token: string | undefined,
 ): Promise<VisitorSession | null> {
   if (!token) return null;
-  // Claim activity atomically with session resolution: a concurrent purge
-  // either deletes first (no session), or rechecks the refreshed timestamp
-  // and spares this row before a handler can create a conversation.
-  const [visitor] = await prisma.chatVisitor.updateManyAndReturn({
-    where: { tokenHash: hashVisitorToken(token), productId: product.id },
-    data: { lastSeenAt: new Date() },
-  });
-  if (!visitor) return null;
+  const where = { tokenHash: hashVisitorToken(token), productId: product.id };
+  const now = new Date();
+  const seen = await prisma.chatVisitor.findFirst({ where });
+  if (!seen) return null;
+  let visitor = seen;
+  if (now.getTime() - seen.lastSeenAt.getTime() >= VISITOR_SEEN_WRITE_INTERVAL_MS) {
+    // Claim activity atomically with session resolution: a concurrent purge
+    // either deletes first (no session), or rechecks the refreshed timestamp
+    // and spares this row before a handler can create a conversation. A row
+    // seen within the interval is far younger than any purge cutoff.
+    const [refreshed] = await prisma.chatVisitor.updateManyAndReturn({
+      where,
+      data: { lastSeenAt: now },
+    });
+    if (!refreshed) return null;
+    visitor = refreshed;
+  }
   return {
     visitorId: visitor.id,
     productId: visitor.productId,
@@ -610,8 +629,9 @@ export async function visitorListMessages(input: {
     workspaceId: input.product.workspaceId,
     conversationId: input.visitor.conversationId,
   });
+  // No touchVisitor here: this is a read (boot and the polling fallback);
+  // resolveVisitorSession already refreshed lastSeenAt at its throttled rate.
   if (!detail) return { conversationId: null, ticketRef: null, messages: [], status: "OPEN" };
-  await touchVisitor(input.visitor.visitorId);
   return {
     conversationId: detail.id,
     ticketRef: formatTicketRef(detail.ticketNumber),

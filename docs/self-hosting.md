@@ -26,7 +26,7 @@ without: until it is set, every page answers with an error and
 | -------- | ------------ |
 | `db`     | PostgreSQL 17 with a persistent volume |
 | `migrate`| One-shot `prisma migrate deploy` before the app boots |
-| `app`    | The Next.js standalone build on port 3000 (health: `/api/health`) |
+| `app`    | The Next.js standalone build on port 3000 (health: `/api/health`, which also checks the database; the container's own probe uses the database-free `/api/health/live`) |
 
 Open `http://<host>:3000`. On a fresh install the root page redirects to
 `/register`; the first account becomes the Workspace Admin. Create that
@@ -56,6 +56,7 @@ Copy `.env.example` and fill in at least the required values:
 | `HOSTED_MODE` | no | Leave unset for self-hosting. `1` enables multi-Workspace SaaS modules (billing). Never set this on a self-hosted install. |
 | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | no | Turn on "Sign in with GitHub". Both must be set; see [GitHub sign-in](#github-sign-in-optional). |
 | `TRUSTED_PROXY_HEADER` | no | Header your proxy sets with the real client IP (e.g. `cf-connecting-ip`), used by the per-IP rate limits instead of `X-Forwarded-For`. See [HTTPS / reverse proxy](#https--reverse-proxy) for the precondition. |
+| `REALTIME_DB_POLL` | no | Default on: every open chat stream also polls the database (every 2 s for the widget, 10 s for the inbox) so updates written by *another* app process still arrive. With a single app process — the shipped `docker compose` setup — set `off`: realtime updates still arrive instantly in-process, and idle open tabs then cost no queries (useful with a scale-to-zero database such as Neon). Keep it on when you run several app replicas. |
 | `SUPPORT_WIDGET_KEY` | no | A Product widget key (`pk_…`) to show your own support chat on the dashboard's settings and sign-in pages, so your team can reach whoever runs the install. Add this install's hostname to that Product's allowed domains. Unset = no widget. `SUPPORT_WIDGET_ORIGIN` sets the widget server when the Product lives on another installation (default: `NEXT_PUBLIC_APP_URL`). |
 
 Stripe variables are hosted-mode only and are never needed here. For

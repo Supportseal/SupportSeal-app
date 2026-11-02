@@ -90,6 +90,26 @@ describe("routing rule (D5)", () => {
       "chat-only",
     );
   });
+
+  it("an open widget stream counts as connected however old lastSeenAt is", async () => {
+    // lastSeenAt is throttled (10 min); the in-memory stream is the live signal.
+    expect(
+      await decideReplyRouting({
+        channel: "CHAT",
+        visitorEmail: "a@b.c",
+        visitorLastSeenAt: new Date(Date.now() - 9 * 60_000),
+        visitorStreamOpen: true,
+      }),
+    ).toBe("chat-only");
+    expect(
+      await decideReplyRouting({
+        channel: "CHAT",
+        visitorEmail: "a@b.c",
+        visitorLastSeenAt: new Date(Date.now() - 9 * 60_000),
+        visitorStreamOpen: false,
+      }),
+    ).toBe("email");
+  });
 });
 
 describe("deliverAgentReplyIfRouted", () => {

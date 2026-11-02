@@ -34,3 +34,15 @@ export function subscribeToConversationEvents(
   bus.on("conversation", listener);
   return () => bus.off("conversation", listener);
 }
+
+/**
+ * Whether SSE connections also poll the database on an interval, to see
+ * writes made by another app process (their events never reach this
+ * process's bus). Needed only when more than one app process serves the same
+ * database; with a single process the bus already carries every write.
+ * `REALTIME_DB_POLL=off` turns the polls off so idle open tabs cost no
+ * queries at all (and a scale-to-zero database such as Neon can suspend).
+ */
+export function realtimeDbPollEnabled(): boolean {
+  return process.env.REALTIME_DB_POLL?.trim().toLowerCase() !== "off";
+}

@@ -6,6 +6,7 @@ import { createTestUser, startTestDb, stopTestDb, type TestDb } from "@/test/int
 import { notifyConversationEvent } from "@/lib/events";
 import { addCustomerMessage, createConversation, upsertContact } from "@/lib/conversations";
 import { GET as widgetStream } from "@/app/api/widget/stream/route";
+import { hasLiveVisitorStream } from "@/lib/visitor-presence";
 
 let db: TestDb;
 
@@ -55,6 +56,7 @@ afterAll(async () => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllEnvs();
 });
 
 describe("visitor SSE stream (ADR-0003)", () => {
@@ -209,5 +211,67 @@ describe("visitor SSE stream (ADR-0003)", () => {
     // is only detectable when liveness arrives as an event.
     expect(text).toContain("event: heartbeat\ndata: {}\n\n");
     await reader.cancel();
+  });
+
+  it("with REALTIME_DB_POLL=off: catches up once at connect, never polls, and holds presence while open", async () => {
+    vi.stubEnv("REALTIME_DB_POLL", "off");
+    const user = await createTestUser(db.prisma, { email: "nopoll@example.com" });
+    const workspace = await db.prisma.workspace.create({
+      data: { name: "NoPoll", memberships: { create: { userId: user.id, role: "ADMIN" } } },
+    });
+    const product = await db.prisma.product.create({
+      data: { workspaceId: workspace.id, name: "NoPoll Prod", widgetPublicKey: "pk_nopoll" },
+    });
+    const contact = await upsertContact({ workspaceId: workspace.id, email: null });
+    const created = await createConversation({
+      workspaceId: workspace.id,
+      productId: product.id,
+      contactId: contact.id,
+      channel: "CHAT",
+    });
+    if (!created.ok) throw new Error(created.error);
+    const conversationId = created.conversationId;
+    const token = "tok_nopoll";
+    await db.prisma.chatVisitor.create({
+      data: {
+        productId: product.id,
+        tokenHash: createHash("sha256").update(token).digest("hex"),
+        conversationId,
+        origin: "http://localhost:3000",
+      },
+    });
+    const cursor = new Date(Date.now() - 1000).toISOString();
+    // Written while the stream was parked: delivered by the connect catch-up.
+    await addCustomerMessage({
+      workspaceId: workspace.id,
+      conversationId,
+      body: "while parked",
+      source: { kind: "visitor", visitorId: "v1" },
+    });
+
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    expect(hasLiveVisitorStream(conversationId)).toBe(false);
+    const response = await widgetStream(
+      streamRequest(
+        `/api/widget/stream?key=pk_nopoll&host=http://localhost:3000&t=${token}&after=${encodeURIComponent(cursor)}`,
+      ),
+    );
+    expect(response.status).toBe(200);
+    expect(hasLiveVisitorStream(conversationId)).toBe(true);
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let text = "";
+    while (!text.includes("while parked")) text += decoder.decode((await reader.read()).value);
+    expect(text).toContain("event: ready");
+
+    // A write that never reaches this process's bus (another process) is not
+    // picked up by any interval: the stream issues no periodic queries.
+    const findMany = vi.spyOn(db.prisma.message, "findMany");
+    await vi.advanceTimersByTimeAsync(14_000);
+    expect(findMany).not.toHaveBeenCalled();
+    findMany.mockRestore();
+
+    await reader.cancel();
+    expect(hasLiveVisitorStream(conversationId)).toBe(false);
   });
 });

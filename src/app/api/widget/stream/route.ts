@@ -1,7 +1,8 @@
 import type { NextRequest } from "next/server";
 
 import { prisma } from "@/lib/prisma";
-import { subscribeToConversationEvents } from "@/lib/events";
+import { realtimeDbPollEnabled, subscribeToConversationEvents } from "@/lib/events";
+import { trackVisitorStream } from "@/lib/visitor-presence";
 import { rateLimitWidgetRequest } from "@/lib/widget-rate-limit";
 import {
   isWidgetOriginAllowed,
@@ -23,7 +24,9 @@ const HEARTBEAT_MS = 15_000;
  * resends its newest message timestamp on reconnect, so reconnects neither
  * duplicate nor lose messages). Same-process events wake the stream
  * immediately; the interval tick re-checks the database, which also covers a
- * second app process (bounded polling fallback).
+ * second app process (bounded polling fallback; `REALTIME_DB_POLL=off`
+ * drops it for single-process deployments). An open stream is the visitor's
+ * presence for reply routing (visitor-presence.ts).
  */
 export async function GET(request: NextRequest) {
   const key = request.nextUrl.searchParams.get("key") ?? "";
@@ -80,6 +83,7 @@ export async function GET(request: NextRequest) {
       };
 
       send("ready", { conversationId });
+      const untrack = trackVisitorStream(conversationId);
       const unsubscribe = subscribeToConversationEvents((event) => {
         if (event.conversationId === conversationId) {
           // Low-latency wake for same-process writes; the tick covers the rest.
@@ -138,7 +142,10 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      const tick = setInterval(() => void check(), TICK_MS);
+      // Catch up from the cursor once at connect (a reconnect after a parked
+      // or dropped stream), then rely on bus wakes and, if enabled, the tick.
+      void check();
+      const tick = realtimeDbPollEnabled() ? setInterval(() => void check(), TICK_MS) : null;
       const heartbeat = setInterval(() => {
         if (closed) return;
         try {
@@ -152,9 +159,10 @@ export async function GET(request: NextRequest) {
 
       cleanup = () => {
         closed = true;
-        clearInterval(tick);
+        if (tick) clearInterval(tick);
         clearInterval(heartbeat);
         unsubscribe();
+        untrack();
         try {
           controller.close();
         } catch {

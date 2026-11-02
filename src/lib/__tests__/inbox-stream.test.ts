@@ -121,6 +121,7 @@ afterAll(async () => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllEnvs();
 });
 
 describe("agent inbox SSE stream (ADR-0003 cross-process wake)", () => {
@@ -144,6 +145,28 @@ describe("agent inbox SSE stream (ADR-0003 cross-process wake)", () => {
       const text = stream.frames.join("");
       expect(text).toContain("event: conversation");
       expect(text).toContain('"kind":"refresh"');
+    } finally {
+      await stream.reader.cancel();
+    }
+  });
+
+  it("with REALTIME_DB_POLL=off issues no database polls; bus events still arrive", async () => {
+    vi.stubEnv("REALTIME_DB_POLL", "off");
+    useFakeIntervals();
+    headerState.cookie = await agentSessionCookie(db, "inbox-nopoll@example.com");
+    const { workspaceId, conversationId } = await createWorkspace(db, "inbox-nopoll@example.com");
+
+    const stream = await openInboxStream();
+    try {
+      await flushUntil(() => stream.frames.some((f) => f.includes("event: ready")));
+      const findMany = vi.spyOn(db.prisma.conversation, "findMany");
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(findMany).not.toHaveBeenCalled();
+      findMany.mockRestore();
+
+      notifyConversationEvent({ conversationId, workspaceId, kind: "message" });
+      await flushUntil(() => stream.frames.some((f) => f.includes("event: conversation")));
+      expect(stream.frames.join("")).toContain(conversationId);
     } finally {
       await stream.reader.cancel();
     }
