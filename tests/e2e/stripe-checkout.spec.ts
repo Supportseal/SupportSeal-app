@@ -39,6 +39,9 @@ function resolveStripeE2e(): { env: StripeEnv | null; skipReason: string | null 
     problems.push(`${PRICE_ENV_VAR} is not a Stripe price id (price_...)`);
   }
   if (!webhookSecret) problems.push("STRIPE_WEBHOOK_SECRET is unset");
+  else if (!webhookSecret.startsWith("whsec_")) {
+    problems.push("STRIPE_WEBHOOK_SECRET is not a webhook signing secret (whsec_...)");
+  }
   if (problems.length > 0) {
     throw new Error(`STRIPE_E2E=1 but the Stripe environment is unusable: ${problems.join("; ")}`);
   }
@@ -50,6 +53,7 @@ const stripeEnv = resolved.env;
 
 type CheckoutSession = {
   id: string;
+  customer?: string | null;
   metadata?: { workspaceId?: string };
   subscription?: string | null;
   payment_status?: string;
@@ -62,6 +66,16 @@ async function stripeGet(path: string): Promise<CheckoutSession> {
   });
   expect(response.ok, `GET ${path} -> HTTP ${response.status}`).toBeTruthy();
   return (await response.json()) as CheckoutSession;
+}
+
+async function stripeDelete(path: string): Promise<Response> {
+  if (!stripeEnv) throw new Error("stripe e2e env unresolved");
+  const response = await fetch(`${STRIPE_API}${path}`, {
+    method: "DELETE",
+    headers: { authorization: `Bearer ${stripeEnv.secretKey}` },
+  });
+  expect(response.ok, `DELETE ${path} -> HTTP ${response.status}`).toBeTruthy();
+  return response;
 }
 
 async function postSignedEvent(type: string, object: StripeEventObject): Promise<Response> {
@@ -135,6 +149,7 @@ test.describe.serial("stripe hosted checkout (env-gated)", () => {
   let adminPage: Page;
   let checkoutSessionId = "";
   let workspaceId = "";
+  let customerId = "";
   let subscriptionId = "";
 
   test.beforeAll(async ({ browser }) => {
@@ -189,6 +204,7 @@ test.describe.serial("stripe hosted checkout (env-gated)", () => {
     const session = await stripeGet(`/v1/checkout/sessions/${checkoutSessionId}`);
     expect(session.payment_status).toBe("paid");
     if (typeof session.subscription === "string") subscriptionId = session.subscription;
+    if (typeof session.customer === "string") customerId = session.customer;
   });
 
   test("signed subscription events flip the workspace to Pro", async () => {
@@ -226,10 +242,22 @@ test.describe.serial("stripe hosted checkout (env-gated)", () => {
   });
 
   test("subscription deletion returns the workspace to Free", async () => {
+    // The webhook syncs by the event's customer id, and the billing page
+    // reconciles from Stripe's CURRENT state — so the subscription must
+    // really be canceled in Stripe before the Free assertions (found in
+    // review: previously the deletion event carried only metadata, the
+    // webhook acked it without syncing, and the still-active subscription
+    // kept the workspace on Pro).
+    if (subscriptionId) {
+      await stripeDelete(`/v1/subscriptions/${subscriptionId}`);
+      // afterAll cleanup is done — a second DELETE of the same subscription errors.
+      subscriptionId = "";
+    }
     const deleted = await postSignedEvent("customer.subscription.deleted", {
       id: subscriptionId || `sub_${uniqueStripeEventId().slice(4, 18)}`,
       object: "subscription",
       status: "canceled",
+      ...(customerId ? { customer: customerId } : {}),
       metadata: { workspaceId },
     });
     expect(deleted.status).toBe(200);
