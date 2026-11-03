@@ -61,8 +61,11 @@ coding agents and contributors.
 ## Contributing
 
 Open an issue for bugs or proposed changes; submit pull requests against
-`main`. Run `npm run verify` before submitting, and verify important
-user-facing flows in the browser (see [AGENTS.md](AGENTS.md)).
+`main`. Setup, verification and PR expectations live in
+[CONTRIBUTING.md](CONTRIBUTING.md); small starter tasks are in the
+[contribute view](https://github.com/Supportseal/SupportSeal-app/contribute).
+Run `npm run verify` before submitting, and verify important user-facing
+flows in the browser (see [AGENTS.md](AGENTS.md)).
 
 ## Licence
 
