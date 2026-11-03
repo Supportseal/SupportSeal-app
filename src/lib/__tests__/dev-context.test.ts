@@ -62,6 +62,15 @@ describe("sanitizeIdentity", () => {
     expect(sanitizeIdentity({ userId: "u_1", user_hash: ` ${hash} ` }).userHash).toBe(hash);
   });
 
+  it("treats a blank or null userHash as absent, keeping the rest of the identity", () => {
+    // Hosts send userHash: "" for visitors they have not signed; that must
+    // not reject the whole identify() (FR-CTX-03: no proof = unverified).
+    expect(sanitizeIdentity({ userId: "u_1", email: "a@b.co", userHash: "" }).userHash).toBeUndefined();
+    expect(sanitizeIdentity({ userId: "u_1", userHash: "   " }).userHash).toBeUndefined();
+    expect(sanitizeIdentity({ userId: "u_1", user_hash: null }).userHash).toBeUndefined();
+    expect(sanitizeIdentity({ userId: "u_1", email: "a@b.co", userHash: "" }).email).toBe("a@b.co");
+  });
+
   it("rejects a userHash that is not a hex HMAC-SHA256 digest", () => {
     expect(() => sanitizeIdentity({ userId: "u_1", userHash: "deadbeef" })).toThrow(
       ContextValidationError,

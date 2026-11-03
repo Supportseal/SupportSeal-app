@@ -31,6 +31,7 @@ type DeveloperProduct = {
   widgetPublicKey: string;
   formPublicKey: string | null;
   identitySecret: string | null;
+  hasIdentitySecret: boolean;
   archived: boolean;
   isAdmin: boolean;
   diagnosticsEnabled: boolean;
@@ -264,6 +265,7 @@ export function DeveloperTab({ product }: { product: DeveloperProduct }) {
           id: product.id,
           name: product.name,
           identitySecret: product.identitySecret,
+          hasIdentitySecret: product.hasIdentitySecret,
           archived: product.archived,
           isAdmin: product.isAdmin,
         }}

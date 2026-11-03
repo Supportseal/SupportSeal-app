@@ -95,8 +95,10 @@ export type VisitorIdentity = {
   /**
    * Optional identity proof (issue #20): hex HMAC-SHA256 of the user id,
    * keyed with the Product's identity secret and computed on the host
-   * app's server (the Intercom/Crisp pattern). Absent or mismatched
-   * leaves the identity unverified.
+   * app's server (the Intercom/Crisp pattern). Absent, blank or
+   * mismatched leaves the identity unverified; a non-blank value that is
+   * not 64-char hex is an integration bug and rejects the identify()
+   * call with 400.
    */
   userHash?: string;
 };
@@ -127,7 +129,7 @@ export function sanitizeIdentity(input: unknown): VisitorIdentity {
     out.name = raw.name.trim().slice(0, 120);
   }
   const hash = typeof raw.userHash === "string" ? raw.userHash : raw.user_hash;
-  if (hash !== undefined) {
+  if (hash !== undefined && hash !== null && String(hash).trim() !== "") {
     const value = String(hash).trim().toLowerCase();
     if (!USER_HASH.test(value)) {
       throw new ContextValidationError(

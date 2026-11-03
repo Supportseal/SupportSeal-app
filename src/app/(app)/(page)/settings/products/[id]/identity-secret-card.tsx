@@ -21,7 +21,10 @@ import { rotateIdentitySecretAction } from "../actions";
 type IdentitySecretProduct = {
   id: string;
   name: string;
+  /** Raw secret; null unless the viewer is a Workspace admin (FR-CTX-03). */
   identitySecret: string | null;
+  /** Server-side truth about whether a secret exists, independent of role. */
+  hasIdentitySecret: boolean;
   archived: boolean;
   isAdmin: boolean;
 };
@@ -35,7 +38,7 @@ type IdentitySecretProduct = {
  */
 export function IdentitySecretCard({ product }: { product: IdentitySecretProduct }) {
   const canManage = product.isAdmin && !product.archived;
-  const hasSecret = Boolean(product.identitySecret);
+  const hasSecret = product.hasIdentitySecret;
   const [rotateOpen, setRotateOpen] = useState(false);
   const [pending, startTransition] = useTransition();
 
@@ -52,6 +55,7 @@ window.SupportSealWidget.q.push([
   "identify", { id: user.id, email: user.email, name: user.name, userHash },
 ]);`;
 
+  /** Rotate (or first-generate) via the server action; toasts the outcome. */
   function rotate() {
     setRotateOpen(false);
     startTransition(async () => {
@@ -77,7 +81,7 @@ window.SupportSealWidget.q.push([
           </p>
         </div>
 
-        {product.identitySecret ? (
+        {product.isAdmin && product.identitySecret ? (
           <>
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <span className="text-muted">Identity secret:</span>
@@ -100,27 +104,34 @@ window.SupportSealWidget.q.push([
               hash cannot use it to forge another person&apos;s id.
             </p>
           </>
-        ) : canManage ? (
-          <p className="text-sm text-muted">
-            This Product has no identity secret yet.{" "}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={pending}
-              onClick={() => setRotateOpen(true)}
-            >
-              Generate identity secret
-            </Button>
-          </p>
-        ) : product.archived ? (
-          <p className="text-sm text-muted">
-            This Product has no identity secret yet. Unarchive it to generate one.
-          </p>
+        ) : !product.hasIdentitySecret ? (
+          canManage ? (
+            <p className="text-sm text-muted">
+              This Product has no identity secret yet.{" "}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={pending}
+                onClick={() => setRotateOpen(true)}
+              >
+                Generate identity secret
+              </Button>
+            </p>
+          ) : product.archived ? (
+            <p className="text-sm text-muted">
+              This Product has no identity secret yet. Unarchive it to generate one.
+            </p>
+          ) : (
+            <p className="text-sm text-muted">
+              This Product has no identity secret yet. Ask a Workspace admin to generate one from this
+              page.
+            </p>
+          )
         ) : (
           <p className="text-sm text-muted">
-            This Product has no identity secret yet. Ask a Workspace admin to generate one from this
-            page.
+            This Product has an identity secret. Ask a Workspace admin to reveal or rotate it from
+            this page.
           </p>
         )}
 

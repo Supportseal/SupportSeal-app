@@ -165,6 +165,11 @@ Notes:
 - Sign the user id exactly as you pass it to `identify()` (`id` or `userId`),
   UTF-8 encoded, hex-encoded HMAC-SHA256. A hash for a different id never
   verifies.
+- An absent or blank `userHash` (empty string or `null`) is treated as "no
+  proof": the rest of the identity is still stored, unverified. Send it for
+  visitors you have not signed. Any other malformed value (not 64 hex
+  characters) rejects the `identify()` call with a 400 error so integration
+  bugs surface instead of silently losing verification.
 - The badge attests the **user id only**. Email and name travel alongside
   and remain unverified context, and the hash is replayable by the visitor
   it belongs to — but it cannot be used to prove someone else's id.
