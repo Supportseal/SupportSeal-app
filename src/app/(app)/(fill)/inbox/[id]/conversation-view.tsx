@@ -88,6 +88,8 @@ export type ConversationViewData = {
 
 export type DevContextProp = {
   identifiedUserId: string | null;
+  /** Issue #20: the user id was proven against the Product's identity secret. */
+  identifiedUserVerified: boolean;
   entries: Array<{ key: string; value: string; updatedAt: string | null }>;
 };
 
@@ -1004,9 +1006,21 @@ function ContextPanel({
           </p>
         ) : null}
         {devContext.identifiedUserId ? (
-          <p className="mt-1 text-xs text-muted">
-            Identified by {conversation.product.name} as user{" "}
-            <code className="font-mono">{devContext.identifiedUserId}</code>
+          <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted">
+            <span>
+              Identified by {conversation.product.name} as user{" "}
+              <code className="font-mono">{devContext.identifiedUserId}</code>
+            </span>
+            {devContext.identifiedUserVerified ? (
+              <Badge
+                variant="light"
+                color="success"
+                pill
+                title={`Signed by ${conversation.product.name}'s server: HMAC-SHA256 of the user id matched its identity secret`}
+              >
+                Verified
+              </Badge>
+            ) : null}
           </p>
         ) : null}
       </section>

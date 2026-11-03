@@ -1,14 +1,16 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { createHmac } from "node:crypto";
 
 import { startTestDb, stopTestDb, type TestDb } from "@/test/integration-db";
 import { type WorkspaceContext } from "@/lib/workspace";
-import { createProduct } from "@/lib/products";
+import { createProduct, rotateProductIdentitySecret } from "@/lib/products";
 import { addAgentMessage } from "@/lib/conversations";
 import { subscribeToConversationEvents, type ConversationEvent } from "@/lib/events";
 import { getAvailabilityForProduct, setAvailabilityForTest } from "@/test/widget-helpers";
 import {
   createVisitorSession,
   declaredOrigin,
+  expectedIdentityUserHash,
   widgetRequestOriginOk,
   isOriginAllowed,
   loadWidgetProduct,
@@ -403,6 +405,7 @@ describe("visitor email reaches an open desk view in realtime", () => {
     const { events, unsubscribe } = captureEvents();
     try {
       const result = await setVisitorIdentityAndContext({
+        product: (await loadWidgetProduct(productKey))!,
         visitor: session,
         identity: { email: "identified@example.com" },
       });
@@ -425,5 +428,138 @@ describe("visitor email reaches an open desk view in realtime", () => {
       unsubscribe();
     }
     expect(events).toEqual([]);
+  });
+});
+
+describe("verified identity (issue #20)", () => {
+  async function visitorWithConversation() {
+    const product = (await loadWidgetProduct(productKey))!;
+    const { session } = await createVisitorSession(product, "https://app.pmtoolkit.dev");
+    const sent = await visitorSendMessage({ product, visitor: session, body: "Hello" });
+    if (!sent.ok) throw new Error(sent.error);
+    return { product, session };
+  }
+
+  async function verifiedAt(visitorId: string): Promise<Date | null> {
+    const visitor = await db.prisma.chatVisitor.findUniqueOrThrow({
+      where: { id: visitorId },
+      select: { identityVerifiedAt: true },
+    });
+    return visitor.identityVerifiedAt;
+  }
+
+  it("marks the identity verified when the hash is the HMAC of the user id under the product secret", async () => {
+    const { product, session } = await visitorWithConversation();
+    const secret = (await db.prisma.product.findUniqueOrThrow({ where: { id: product.id } }))
+      .identitySecret!;
+    const userHash = createHmac("sha256", secret).update("user-42").digest("hex");
+    const result = await setVisitorIdentityAndContext({
+      product,
+      visitor: session,
+      identity: { userId: "user-42", email: "user42@example.com", name: "User 42", userHash },
+    });
+    expect(result.ok).toBe(true);
+    await expect(verifiedAt(session.visitorId)).resolves.toBeInstanceOf(Date);
+  });
+
+  it("rejects a wrong hash, a missing hash, and a foreign secret (spoof from the console)", async () => {
+    const { product, session } = await visitorWithConversation();
+    const secret = (await db.prisma.product.findUniqueOrThrow({ where: { id: product.id } }))
+      .identitySecret!;
+    const foreign = createHmac("sha256", "is_not_this_products_secret").update("user-42").digest("hex");
+    const correct = expectedIdentityUserHash(secret, "user-42");
+
+    await setVisitorIdentityAndContext({
+      product,
+      visitor: session,
+      identity: { userId: "user-42", userHash: foreign },
+    });
+    expect(await verifiedAt(session.visitorId)).toBeNull();
+
+    await setVisitorIdentityAndContext({
+      product,
+      visitor: session,
+      identity: { userId: "user-42" },
+    });
+    expect(await verifiedAt(session.visitorId)).toBeNull();
+
+    // Sanity: the correct hash does verify for the same claim.
+    await setVisitorIdentityAndContext({
+      product,
+      visitor: session,
+      identity: { userId: "user-42", userHash: correct },
+    });
+    expect(await verifiedAt(session.visitorId)).toBeInstanceOf(Date);
+  });
+
+  it("clears the stamp when a later userId-bearing identify() does not verify", async () => {
+    const { product, session } = await visitorWithConversation();
+    const secret = (await db.prisma.product.findUniqueOrThrow({ where: { id: product.id } }))
+      .identitySecret!;
+    await setVisitorIdentityAndContext({
+      product,
+      visitor: session,
+      identity: { userId: "user-42", userHash: expectedIdentityUserHash(secret, "user-42") },
+    });
+    expect(await verifiedAt(session.visitorId)).toBeInstanceOf(Date);
+
+    // The same visitor later claims a different id without a proof.
+    await setVisitorIdentityAndContext({
+      product,
+      visitor: session,
+      identity: { userId: "admin-1", name: "Admin" },
+    });
+    expect(await verifiedAt(session.visitorId)).toBeNull();
+  });
+
+  it("keeps the stamp across an email-only identify() and never verifies without a product secret", async () => {
+    const { product, session } = await visitorWithConversation();
+    const secret = (await db.prisma.product.findUniqueOrThrow({ where: { id: product.id } }))
+      .identitySecret!;
+    await setVisitorIdentityAndContext({
+      product,
+      visitor: session,
+      identity: { userId: "user-42", userHash: expectedIdentityUserHash(secret, "user-42") },
+    });
+
+    // Email-only identify() re-asserts no user identity: the stamp survives.
+    await setVisitorIdentityAndContext({
+      product,
+      visitor: session,
+      identity: { email: "new-address@example.com" },
+    });
+    expect(await verifiedAt(session.visitorId)).toBeInstanceOf(Date);
+
+    // A Product with no secret (created before the column) never verifies.
+    await db.prisma.product.update({ where: { id: product.id }, data: { identitySecret: null } });
+    await setVisitorIdentityAndContext({
+      product: { ...product, identitySecret: null },
+      visitor: session,
+      identity: { userId: "user-42", userHash: expectedIdentityUserHash(secret, "user-42") },
+    });
+    expect(await verifiedAt(session.visitorId)).toBeNull();
+  });
+
+  it("rotation invalidates hashes signed with the previous secret on the next identify()", async () => {
+    const { product, session } = await visitorWithConversation();
+    const oldSecret = (await db.prisma.product.findUniqueOrThrow({ where: { id: product.id } }))
+      .identitySecret!;
+    await setVisitorIdentityAndContext({
+      product,
+      visitor: session,
+      identity: { userId: "user-42", userHash: expectedIdentityUserHash(oldSecret, "user-42") },
+    });
+    expect(await verifiedAt(session.visitorId)).toBeInstanceOf(Date);
+
+    const rotated = await rotateProductIdentitySecret({ ctx, productId: product.id });
+    expect(rotated.ok).toBe(true);
+
+    // The still-correct-looking old hash no longer verifies.
+    await setVisitorIdentityAndContext({
+      product: (await loadWidgetProduct(productKey))!,
+      visitor: session,
+      identity: { userId: "user-42", userHash: expectedIdentityUserHash(oldSecret, "user-42") },
+    });
+    expect(await verifiedAt(session.visitorId)).toBeNull();
   });
 });

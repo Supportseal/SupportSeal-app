@@ -470,3 +470,20 @@ for trade-offs and override points.
 and plan suitability for multi-tenant customer-domain sending and choose resource
 isolation based on actual provider constraints. No account limit, reputation
 isolation guarantee or pricing/plan restriction is decided by this design.
+
+## Verified widget identity (issue #20, 2026-11-04)
+
+Raised by [issue #20](https://github.com/Supportseal/SupportSeal-app/issues/20):
+`identify()` identity is unverified, so support staff cannot trust an email or
+user id any visitor can type into a console. The implemented direction follows
+the Intercom/Crisp pattern (per-Product server secret, `HMAC(secret, userId)`
+passed with `identify()`, a "Verified" badge in the inbox only on a match).
+These are working defaults, not resolved policy approvals; FR-CTX-03 records
+the behaviour.
+
+| # | Question | Working position |
+| --- | --- | --- |
+| VQ1 | What does the hash cover? | **Default:** the user id only, UTF-8, hex HMAC-SHA256 (`userHash`; `user_hash` accepted). Email and name stay unverified context, so the badge cannot be read as proof of the email — a visitor can replay their own valid hash with a different email, but never prove another person's id. Hashing the email as well would couple the badge to an editable field and break on normal email changes. |
+| VQ2 | Which secret? Reuse the widget key? | **Default:** a dedicated per-Product `identitySecret` (`is_…`, 32 random bytes). The widget key is public in the host page's HTML, so HMAC-ing with it would let any visitor forge a "verified" identity; the form key authorises posts by possession and is equally unsuitable. New Products get a secret at create; legacy Products allocate on demand from the Developer tab (the `formPublicKey` pattern); a Product with no secret simply never verifies. |
+| VQ3 | Rotation semantics? | **Default:** immediate, dashboard-only, Admin-only, refused while archived (identical to form-key rotation). A rotated secret invalidates hashes signed with the old one on the visitor's next `identify()`; already-verified visitors keep the badge until they identify again. No API endpoint exposes or rotates the secret — the same recorded FR-API-16 exemption as form-key rotation: a true secret has no business in API responses, and the dashboard is where the signing code is set up. |
+| VQ4 | Verification lifetime? | **Default:** the stamp lives on the visitor row (`identityVerifiedAt`) and is re-evaluated on every user-id-bearing `identify()`: match → stamped, mismatch or missing hash → cleared. `identify()` calls without a user id (email/name only) re-assert no identity and leave the stamp untouched. The badge shows only while the latest visitor session of the Conversation is verified. |

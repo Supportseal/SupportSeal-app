@@ -57,7 +57,7 @@ export async function PUT(request: NextRequest) {
   try {
     const identity = payload.identify !== undefined ? sanitizeIdentity(payload.identify) : undefined;
     const context = payload.context !== undefined ? sanitizeContext(payload.context) : undefined;
-    const result = await setVisitorIdentityAndContext({ visitor, identity, context });
+    const result = await setVisitorIdentityAndContext({ product, visitor, identity, context });
     if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
     return NextResponse.json({ email: result.email });
   } catch (error) {

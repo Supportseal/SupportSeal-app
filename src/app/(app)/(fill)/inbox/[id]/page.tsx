@@ -89,6 +89,7 @@ export default async function ConversationPage({
       repliesPaused={repliesPaused}
       devContext={{
         identifiedUserId: conversation.chatVisitors[0]?.externalUserId ?? null,
+        identifiedUserVerified: conversation.chatVisitors[0]?.identityVerifiedAt != null,
         entries: orderContextForDisplay(
           (conversation.chatVisitors[0]?.devContext as Record<string, unknown> | null) ?? {},
         ).map((entry) => ({

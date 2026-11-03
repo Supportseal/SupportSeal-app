@@ -623,7 +623,7 @@ export async function getConversationDetail(input: {
       chatVisitors: {
         orderBy: { lastSeenAt: "desc" },
         take: 1,
-        select: { devContext: true, externalUserId: true, email: true },
+        select: { devContext: true, externalUserId: true, email: true, identityVerifiedAt: true },
       },
       messages: {
         orderBy: { createdAt: "asc" },

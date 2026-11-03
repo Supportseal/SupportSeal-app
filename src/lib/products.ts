@@ -21,6 +21,7 @@ export type ProductWithDomains = {
   primaryColor: string;
   widgetPublicKey: string;
   formPublicKey: string | null;
+  identitySecret: string | null;
   inboundEmail: string | null;
   inboundEmailVerified: Date | null;
   supportEmail: string | null;
@@ -46,6 +47,17 @@ export function generateWidgetPublicKey(): string {
  */
 export function generateFormPublicKey(): string {
   return `fk_${randomBytes(24).toString("base64url")}`;
+}
+
+/**
+ * Server-only identity signing secret (issue #20): the host app's backend
+ * keys the identify() user-hash HMAC with this value. Unlike the widget
+ * and form keys it is never embedded in a page or sent to a browser —
+ * anyone holding it could prove any user id — so it is shown only in the
+ * dashboard's Developer tab and rotates in one step.
+ */
+export function generateIdentitySecret(): string {
+  return `is_${randomBytes(32).toString("base64url")}`;
 }
 
 /**
@@ -194,6 +206,7 @@ function toProductWithDomains(product: {
   primaryColor: string;
   widgetPublicKey: string;
   formPublicKey: string | null;
+  identitySecret: string | null;
   inboundEmail: string | null;
   inboundEmailVerified: Date | null;
   supportEmail: string | null;
@@ -300,6 +313,7 @@ export async function createProduct(input: {
     primaryColor: colour.primaryColor,
     widgetPublicKey: generateWidgetPublicKey(),
     formPublicKey: generateFormPublicKey(),
+    identitySecret: generateIdentitySecret(),
     inboundEmail: allocated.inboundEmail,
     inboundEmailVerified: new Date(),
     supportEmail: supportEmail.supportEmail,
@@ -392,6 +406,41 @@ export async function rotateProductFormKey(input: {
   });
   if (updated.count === 0) return { ok: false, error: "Product not found or archived." };
   return { ok: true, formPublicKey };
+}
+
+/**
+ * Allocate (when null, for Products that predate the column) or rotate the
+ * Product's identity verification secret (issue #20). Rotation is
+ * immediate: identify() hashes signed with the previous secret stop
+ * verifying on their next call, and already-verified visitors keep their
+ * stamp until they identify again. Admin-only, refused while archived like
+ * every other Product setting. Dashboard-only on purpose — same FR-API-16
+ * exemption as form-key rotation (docs/open-questions.md).
+ */
+export async function rotateProductIdentitySecret(input: {
+  ctx: WorkspaceContext;
+  productId: string;
+}): Promise<{ ok: true; identitySecret: string } | { ok: false; error: string }> {
+  try {
+    assertAdmin(input.ctx);
+  } catch (error) {
+    return { ok: false, error: (error as Error).message };
+  }
+
+  const product = await getProductForWorkspace(input.ctx.workspace.id, input.productId);
+  if (!product) return { ok: false, error: "Product not found." };
+  if (product.archivedAt) return { ok: false, error: "This Product is archived; unarchive it first." };
+
+  const identitySecret = generateIdentitySecret();
+  // Workspace-scoped updateMany (FR-SEC-01): the Admin must own this Product.
+  // archivedAt: null keeps "refused while archived" atomic against a
+  // concurrent archive between the check above and this write.
+  const updated = await prisma.product.updateMany({
+    where: { id: product.id, workspaceId: input.ctx.workspace.id, archivedAt: null },
+    data: { identitySecret },
+  });
+  if (updated.count === 0) return { ok: false, error: "Product not found or archived." };
+  return { ok: true, identitySecret };
 }
 
 export async function updateProduct(input: {

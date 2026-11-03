@@ -9,6 +9,7 @@ import {
   ensureProductInboundEmail,
   removeProductDomain,
   rotateProductFormKey,
+  rotateProductIdentitySecret,
   setProductDiagnostics,
   setProductEscalation,
   setProductSupportEmail,
@@ -70,6 +71,18 @@ export async function rotateFormKeyAction(
   const ctx = await requireWorkspace("/settings/products");
   const productId = String(formData.get("productId") ?? "");
   const result = await rotateProductFormKey({ ctx, productId });
+  if (!result.ok) return { error: result.error };
+  revalidatePath(`/settings/products/${productId}`);
+  return {};
+}
+
+export async function rotateIdentitySecretAction(
+  _prev: ProductFormState,
+  formData: FormData,
+): Promise<ProductFormState> {
+  const ctx = await requireWorkspace("/settings/products");
+  const productId = String(formData.get("productId") ?? "");
+  const result = await rotateProductIdentitySecret({ ctx, productId });
   if (!result.ok) return { error: result.error };
   revalidatePath(`/settings/products/${productId}`);
   return {};

@@ -136,6 +136,7 @@ describe("DELETE /api/widget/session host sign-out reset (issue #151)", () => {
     const product = (await loadWidgetProduct(productKey))!;
     const visitor = (await resolveVisitorSession(product, first.token))!;
     await setVisitorIdentityAndContext({
+      product,
       visitor,
       identity: { email: "previous.user@example.com", name: "Previous User" },
     });

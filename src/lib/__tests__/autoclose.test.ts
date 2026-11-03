@@ -233,6 +233,7 @@ describe("PENDING inactivity auto-close sweep", () => {
         primaryColor: "#0f766e",
         widgetPublicKey: "pk_autoclose",
         domains: [],
+        identitySecret: null,
         diagnosticsEnabledAt: null,
         supportEmail: null,
       },

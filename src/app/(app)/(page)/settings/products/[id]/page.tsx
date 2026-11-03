@@ -186,6 +186,7 @@ export default async function ProductPage({
             name: product.name,
             widgetPublicKey: product.widgetPublicKey,
             formPublicKey: product.formPublicKey,
+            identitySecret: product.identitySecret,
             archived: product.archivedAt !== null,
             isAdmin: ctx.role === "ADMIN",
             diagnosticsEnabled: product.diagnosticsEnabledAt !== null,

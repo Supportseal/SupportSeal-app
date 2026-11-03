@@ -129,6 +129,53 @@ There is no global `user` object supplied by the widget. Omit the prop for
 anonymous chat. Identity is optional support context, not authentication;
 never pass passwords, session tokens or secrets.
 
+### Verified identity (optional)
+
+By default an `identify()` call is unverified: anyone can open the browser
+console and claim any email, name or user id, so your team cannot tell a real
+signed-in user from a spoofed one. To fix that, sign the user id on your
+server with the Product's **identity secret** (**Settings → Products → your
+Product → Developer → Verified identity**) and send the signature with the
+identity:
+
+```js
+// On your server (Node.js) — the secret never goes to the browser:
+const crypto = require("node:crypto");
+const userHash = crypto
+  .createHmac("sha256", process.env.SUPPORTSEAL_IDENTITY_SECRET)
+  .update(user.id) // exactly the id you pass to identify()
+  .digest("hex");
+```
+
+```js
+// On the page, with the hash your server computed:
+window.SupportSealWidget.q.push([
+  "identify", { id: user.id, email: user.email, name: user.name, userHash },
+]);
+```
+
+When the hash matches `HMAC-SHA256(identitySecret, userId)`, the
+Conversation view shows a **Verified** badge next to the identified user id —
+your team can trust that id was set by your server and safely discuss
+account details. Without a matching hash the identity stays unverified
+support context.
+
+Notes:
+
+- Sign the user id exactly as you pass it to `identify()` (`id` or `userId`),
+  UTF-8 encoded, hex-encoded HMAC-SHA256. A hash for a different id never
+  verifies.
+- The badge attests the **user id only**. Email and name travel alongside
+  and remain unverified context, and the hash is replayable by the visitor
+  it belongs to — but it cannot be used to prove someone else's id.
+- Products created before this feature have no identity secret yet; generate
+  one from the Developer tab. Rotating the secret stops hashes signed with
+  the old one from verifying on the visitor's next `identify()` call.
+- Keep the secret server-side (environment variable or secret manager).
+  Anyone holding it can prove any user id of your Product. Unlike the widget
+  and form keys, it must never appear in page HTML or a client bundle.
+
+
 ## Plain React (no Next.js)
 
 Without `next/script`, inject the loader yourself with an effect. Save this

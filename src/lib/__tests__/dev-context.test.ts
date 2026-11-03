@@ -55,6 +55,24 @@ describe("sanitizeIdentity", () => {
     expect(() => sanitizeIdentity({ email: "not-an-email" })).toThrow(ContextValidationError);
     expect(sanitizeIdentity({})).toEqual({});
   });
+
+  it("accepts a well-formed userHash in either spelling and normalises case", () => {
+    const hash = "a".repeat(64);
+    expect(sanitizeIdentity({ userId: "u_1", userHash: hash.toUpperCase() }).userHash).toBe(hash);
+    expect(sanitizeIdentity({ userId: "u_1", user_hash: ` ${hash} ` }).userHash).toBe(hash);
+  });
+
+  it("rejects a userHash that is not a hex HMAC-SHA256 digest", () => {
+    expect(() => sanitizeIdentity({ userId: "u_1", userHash: "deadbeef" })).toThrow(
+      ContextValidationError,
+    );
+    expect(() => sanitizeIdentity({ userId: "u_1", userHash: "z".repeat(64) })).toThrow(
+      ContextValidationError,
+    );
+    expect(() => sanitizeIdentity({ userId: "u_1", userHash: "a".repeat(63) })).toThrow(
+      ContextValidationError,
+    );
+  });
 });
 
 describe("display ordering and links", () => {

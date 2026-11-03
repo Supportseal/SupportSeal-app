@@ -92,7 +92,16 @@ export type VisitorIdentity = {
   userId?: string;
   email?: string;
   name?: string;
+  /**
+   * Optional identity proof (issue #20): hex HMAC-SHA256 of the user id,
+   * keyed with the Product's identity secret and computed on the host
+   * app's server (the Intercom/Crisp pattern). Absent or mismatched
+   * leaves the identity unverified.
+   */
+  userHash?: string;
 };
+
+const USER_HASH = /^[0-9a-f]{64}$/u;
 
 /** Validate identify() payloads (FR-CTX-01). */
 export function sanitizeIdentity(input: unknown): VisitorIdentity {
@@ -116,6 +125,16 @@ export function sanitizeIdentity(input: unknown): VisitorIdentity {
   }
   if (typeof raw.name === "string" && raw.name.trim()) {
     out.name = raw.name.trim().slice(0, 120);
+  }
+  const hash = typeof raw.userHash === "string" ? raw.userHash : raw.user_hash;
+  if (hash !== undefined) {
+    const value = String(hash).trim().toLowerCase();
+    if (!USER_HASH.test(value)) {
+      throw new ContextValidationError(
+        "identify() userHash must be the hex-encoded HMAC-SHA256 of the user id.",
+      );
+    }
+    out.userHash = value;
   }
   return out;
 }
