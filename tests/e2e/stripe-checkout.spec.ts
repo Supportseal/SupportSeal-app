@@ -223,6 +223,7 @@ test.describe.serial("stripe hosted checkout (env-gated)", () => {
       id: checkoutSessionId,
       object: "checkout.session",
       payment_status: "paid",
+      ...(customerId ? { customer: customerId } : {}),
       metadata: { workspaceId },
     });
     expect(completed.status).toBe(200);
@@ -232,6 +233,7 @@ test.describe.serial("stripe hosted checkout (env-gated)", () => {
       id: subscriptionId || `sub_${uniqueStripeEventId().slice(4, 18)}`,
       object: "subscription",
       status: "active",
+      ...(customerId ? { customer: customerId } : {}),
       metadata: { workspaceId },
     });
     expect(created.status).toBe(200);
