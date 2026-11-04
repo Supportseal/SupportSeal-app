@@ -51,9 +51,22 @@ describe("sanitizeIdentity", () => {
       email: "sam@example.com",
       name: "Sam",
     });
-    expect(sanitizeIdentity({ userId: "u".repeat(300) }).userId?.length).toBe(128);
+    expect(sanitizeIdentity({ userId: "u".repeat(128) }).userId?.length).toBe(128);
     expect(() => sanitizeIdentity({ email: "not-an-email" })).toThrow(ContextValidationError);
     expect(sanitizeIdentity({})).toEqual({});
+  });
+
+  it("keeps the user id exactly as supplied so the host's HMAC still matches", () => {
+    // The hash is computed over the raw id (FR-CTX-03): trimming or
+    // truncating it here would silently fail verification for hosts whose
+    // ids carry whitespace.
+    expect(sanitizeIdentity({ userId: " user-42 " }).userId).toBe(" user-42 ");
+    expect(sanitizeIdentity({ id: "\tul_7\n" }).userId).toBe("\tul_7\n");
+  });
+
+  it("rejects a user id over the hard cap instead of truncating the signed value", () => {
+    expect(() => sanitizeIdentity({ userId: "u".repeat(129) })).toThrow(ContextValidationError);
+    expect(() => sanitizeIdentity({ id: "u".repeat(300) })).toThrow(ContextValidationError);
   });
 
   it("accepts a well-formed userHash in either spelling and normalises case", () => {
@@ -81,6 +94,32 @@ describe("sanitizeIdentity", () => {
     expect(() => sanitizeIdentity({ userId: "u_1", userHash: "a".repeat(63) })).toThrow(
       ContextValidationError,
     );
+  });
+
+  it("rejects a supplied non-string userHash instead of treating it as absent", () => {
+    // e.g. a host accidentally serialising a Buffer or number: an
+    // integration bug that must surface as the documented 400, not
+    // silently succeed unverified (nor fall through to the alias).
+    expect(() => sanitizeIdentity({ userId: "u_1", userHash: { type: "Buffer", data: [] } })).toThrow(
+      ContextValidationError,
+    );
+    expect(() => sanitizeIdentity({ userId: "u_1", userHash: 42 })).toThrow(ContextValidationError);
+    expect(() => sanitizeIdentity({ userId: "u_1", user_hash: true })).toThrow(
+      ContextValidationError,
+    );
+  });
+
+  it("consults the user_hash alias only when the userHash key is absent", () => {
+    const hash = "b".repeat(64);
+    expect(sanitizeIdentity({ userId: "u_1", user_hash: hash }).userHash).toBe(hash);
+    expect(sanitizeIdentity({ userId: "u_1", userHash: undefined, user_hash: hash }).userHash).toBe(
+      hash,
+    );
+    // A userHash supplied in any form wins over the alias: null means "no
+    // proof", not "look at the other spelling".
+    expect(
+      sanitizeIdentity({ userId: "u_1", userHash: null, user_hash: hash }).userHash,
+    ).toBeUndefined();
   });
 });
 

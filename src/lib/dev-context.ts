@@ -96,14 +96,22 @@ export type VisitorIdentity = {
    * Optional identity proof (issue #20): hex HMAC-SHA256 of the user id,
    * keyed with the Product's identity secret and computed on the host
    * app's server (the Intercom/Crisp pattern). Absent, blank or
-   * mismatched leaves the identity unverified; a non-blank value that is
-   * not 64-char hex is an integration bug and rejects the identify()
-   * call with 400.
+   * mismatched leaves the identity unverified; a supplied value that is
+   * neither absent/blank nor a 64-char hex string (a non-string included)
+   * is an integration bug and rejects the identify() call with 400.
    */
   userHash?: string;
 };
 
 const USER_HASH = /^[0-9a-f]{64}$/u;
+
+/**
+ * Hard cap on identify() user ids. The hash is checked against the id
+ * exactly as supplied (FR-CTX-03), so an id over the cap rejects the call
+ * instead of being silently trimmed or truncated into a value the host never
+ * signed.
+ */
+export const MAX_IDENTITY_USER_ID_LENGTH = 128;
 
 /** Validate identify() payloads (FR-CTX-01). */
 export function sanitizeIdentity(input: unknown): VisitorIdentity {
@@ -112,11 +120,21 @@ export function sanitizeIdentity(input: unknown): VisitorIdentity {
   }
   const raw = input as Record<string, unknown>;
   const out: VisitorIdentity = {};
-  if (typeof raw.userId === "string" && raw.userId.trim()) {
-    out.userId = raw.userId.trim().slice(0, 128);
-  }
-  if (typeof raw.id === "string" && raw.id.trim() && !out.userId) {
-    out.userId = raw.id.trim().slice(0, 128);
+  const rawId =
+    typeof raw.userId === "string" && raw.userId.trim()
+      ? raw.userId
+      : typeof raw.id === "string" && raw.id.trim()
+        ? raw.id
+        : undefined;
+  if (rawId !== undefined) {
+    if (rawId.length > MAX_IDENTITY_USER_ID_LENGTH) {
+      throw new ContextValidationError(
+        `identify() user id must be at most ${MAX_IDENTITY_USER_ID_LENGTH} characters.`,
+      );
+    }
+    // Kept exactly as supplied: the host signs this exact value (FR-CTX-03),
+    // so trimming or truncating it here would silently break verification.
+    out.userId = rawId;
   }
   if (typeof raw.email === "string" && raw.email.trim()) {
     const email = raw.email.trim().toLowerCase();
@@ -128,9 +146,18 @@ export function sanitizeIdentity(input: unknown): VisitorIdentity {
   if (typeof raw.name === "string" && raw.name.trim()) {
     out.name = raw.name.trim().slice(0, 120);
   }
-  const hash = typeof raw.userHash === "string" ? raw.userHash : raw.user_hash;
-  if (hash !== undefined && hash !== null && String(hash).trim() !== "") {
-    const value = String(hash).trim().toLowerCase();
+  // A userHash key supplied in any form is authoritative: the snake_case
+  // alias is consulted only when userHash is absent. Undefined, null and
+  // blank mean "no proof" (FR-CTX-03); any other non-string value is an
+  // integration bug, not an absent proof.
+  const hash = raw.userHash !== undefined ? raw.userHash : raw.user_hash;
+  if (hash !== undefined && hash !== null && typeof hash !== "string") {
+    throw new ContextValidationError(
+      "identify() userHash must be the hex-encoded HMAC-SHA256 of the user id.",
+    );
+  }
+  if (typeof hash === "string" && hash.trim() !== "") {
+    const value = hash.trim().toLowerCase();
     if (!USER_HASH.test(value)) {
       throw new ContextValidationError(
         "identify() userHash must be the hex-encoded HMAC-SHA256 of the user id.",

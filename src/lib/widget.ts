@@ -663,7 +663,8 @@ export function identityUserHashMatches(input: {
  * visitor (and the contact email like the capture card); context is validated,
  * bounded and merged into the stored JSON. Nothing here trusts the payload:
  * an identity claim only becomes verified (issue #20) when its userHash is
- * the HMAC-SHA256 of the claimed user id under the Product's identity
+ * the HMAC-SHA256 of the claimed user id — exactly as supplied by the host,
+ * never a trimmed or truncated variant — under the Product's identity
  * secret, and any userId-bearing identify() that does not verify clears the
  * stamp again. A claim without a user id leaves the stored verification
  * state untouched (it re-asserts no identity).

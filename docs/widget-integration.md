@@ -129,6 +129,24 @@ There is no global `user` object supplied by the widget. Omit the prop for
 anonymous chat. Identity is optional support context, not authentication;
 never pass passwords, session tokens or secrets.
 
+### Sign out: reset the widget session
+
+The widget keeps its own visitor session — a cookie on the widget server that
+outlives your app's login. When your user signs out, end that session too;
+otherwise the next person on a shared device resumes the previous user's
+conversation and identity:
+
+```js
+// In your sign-out handler, before redirecting:
+window.SupportSealWidget.reset();
+```
+
+`reset()` revokes the visitor session server-side and starts a fresh
+anonymous one on the next boot. Call it from your sign-out handler, before
+the redirect — not from a page-load effect. In particular, do **not** call it
+in the `identify` effect above: that effect also runs for anonymous visitors
+on every page load, and resetting there would wipe their ongoing chat.
+
 ### Verified identity (optional)
 
 By default an `identify()` call is unverified: anyone can open the browser
@@ -164,15 +182,24 @@ Notes:
 
 - Sign the user id exactly as you pass it to `identify()` (`id` or `userId`),
   UTF-8 encoded, hex-encoded HMAC-SHA256. A hash for a different id never
-  verifies.
+  verifies — including one computed over a trimmed or shortened variant of
+  the id you send: the hash is always checked against the id exactly as
+  supplied. User ids are capped at 128 characters; a longer id rejects the
+  `identify()` call with a 400 error rather than silently failing to verify.
 - An absent or blank `userHash` (empty string or `null`) is treated as "no
   proof": the rest of the identity is still stored, unverified. Send it for
-  visitors you have not signed. Any other malformed value (not 64 hex
-  characters) rejects the `identify()` call with a 400 error so integration
+  visitors you have not signed. Any other malformed value — not a string of
+  64 hex characters, including a non-string such as a serialised object or
+  number — rejects the `identify()` call with a 400 error so integration
   bugs surface instead of silently losing verification.
 - The badge attests the **user id only**. Email and name travel alongside
   and remain unverified context, and the hash is replayable by the visitor
   it belongs to — but it cannot be used to prove someone else's id.
+- Verified or not, the identity belongs to the browser's widget session,
+  which outlives your app's login. Call `reset()` from your sign-out
+  handler (see [Sign out](#sign-out-reset-the-widget-session)) so an
+  identified — let alone verified — visitor never survives into the next
+  person's browser session on a shared machine.
 - Products created before this feature have no identity secret yet; generate
   one from the Developer tab. Rotating the secret stops hashes signed with
   the old one from verifying on the visitor's next `identify()` call.
@@ -218,6 +245,10 @@ export default function SupportWidget({ user }) {
   return null;
 }
 ```
+
+The [sign-out guidance above](#sign-out-reset-the-widget-session) applies
+here too: call `window.SupportSealWidget.reset()` from your sign-out handler
+before redirecting, never from this effect.
 
 ## One codebase, many sites
 

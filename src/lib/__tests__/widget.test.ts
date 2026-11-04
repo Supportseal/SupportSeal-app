@@ -462,6 +462,34 @@ describe("verified identity (issue #20)", () => {
     await expect(verifiedAt(session.visitorId)).resolves.toBeInstanceOf(Date);
   });
 
+  it("verifies the HMAC against the exact supplied user id, not a trimmed variant", async () => {
+    const { product, session } = await visitorWithConversation();
+    const secret = (await db.prisma.product.findUniqueOrThrow({ where: { id: product.id } }))
+      .identitySecret!;
+    // The host signs (and passes) the id with its surrounding whitespace.
+    const rawId = " user-42 ";
+    await setVisitorIdentityAndContext({
+      product,
+      visitor: session,
+      identity: { userId: rawId, userHash: expectedIdentityUserHash(secret, rawId) },
+    });
+    expect(await verifiedAt(session.visitorId)).toBeInstanceOf(Date);
+    const visitor = await db.prisma.chatVisitor.findUniqueOrThrow({
+      where: { id: session.visitorId },
+      select: { externalUserId: true },
+    });
+    expect(visitor.externalUserId).toBe(" user-42 ");
+
+    // A hash over a differently-normalised id (trimmed here, padded on the
+    // wire) never verifies: fail closed to unverified, stored as claimed.
+    await setVisitorIdentityAndContext({
+      product,
+      visitor: session,
+      identity: { userId: "user-43 ", userHash: expectedIdentityUserHash(secret, "user-43") },
+    });
+    expect(await verifiedAt(session.visitorId)).toBeNull();
+  });
+
   it("rejects a wrong hash, a missing hash, and a foreign secret (spoof from the console)", async () => {
     const { product, session } = await visitorWithConversation();
     const secret = (await db.prisma.product.findUniqueOrThrow({ where: { id: product.id } }))
