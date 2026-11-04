@@ -103,15 +103,21 @@ export default function SupportWidget({ user }) {
   const id = user?.id;
   const email = user?.email;
   const name = user?.name;
+  // Optional: computed on your server, never in this component — see
+  // "Verified identity" below.
+  const userHash = user?.userHash;
 
   // The queue accepts identity before the script loads and after it.
   useEffect(() => {
     window.SupportSealWidget = window.SupportSealWidget || { q: [] };
     // Optional: pass your app's signed-in user, not a placeholder user.
     if (id) {
-      window.SupportSealWidget.q.push(["identify", { id, email, name }]);
+      window.SupportSealWidget.q.push([
+        "identify",
+        { id, email, name, userHash },
+      ]);
     }
-  }, [id, email, name]);
+  }, [id, email, name, userHash]);
 
   return (
     <Script
@@ -124,10 +130,13 @@ export default function SupportWidget({ user }) {
 ```
 
 To identify a visitor, pass your own app's signed-in user object as
-`<SupportWidget user={user} />`, with string `id`, `email` and `name` fields.
-There is no global `user` object supplied by the widget. Omit the prop for
-anonymous chat. Identity is optional support context, not authentication;
-never pass passwords, session tokens or secrets.
+`<SupportWidget user={user} />`, with string `id`, `email` and `name` fields,
+plus an optional `userHash` string your server computed for
+[verified identity](#verified-identity-optional) — the component forwards it
+with the id whenever it is present and never computes it itself. There is no
+global `user` object supplied by the widget. Omit the prop for anonymous
+chat. Identity is optional support context, not authentication; never pass
+passwords, session tokens or secrets.
 
 ### Sign out: reset the widget session
 
@@ -253,12 +262,18 @@ export default function SupportWidget({ user }) {
   const id = user?.id;
   const email = user?.email;
   const name = user?.name;
+  // Optional: computed on your server, never in this component — see
+  // "Verified identity" above.
+  const userHash = user?.userHash;
 
   useEffect(() => {
     window.SupportSealWidget = window.SupportSealWidget || { q: [] };
     // Optional: pass your app's signed-in user, not a placeholder user.
     if (id) {
-      window.SupportSealWidget.q.push(["identify", { id, email, name }]);
+      window.SupportSealWidget.q.push([
+        "identify",
+        { id, email, name, userHash },
+      ]);
     }
 
     // Install once, including during React development effect re-runs.
@@ -269,7 +284,7 @@ export default function SupportWidget({ user }) {
     script.src = "WIDGET_SERVER_URL/widget.js";
     script.dataset.key = "WIDGET_KEY";
     document.body.appendChild(script);
-  }, [id, email, name]);
+  }, [id, email, name, userHash]);
 
   return null;
 }
