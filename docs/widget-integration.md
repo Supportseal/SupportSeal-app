@@ -137,15 +137,44 @@ otherwise the next person on a shared device resumes the previous user's
 conversation and identity:
 
 ```js
-// In your sign-out handler, before redirecting:
-window.SupportSealWidget.reset();
+// In your sign-out handler:
+window.SupportSealWidget = window.SupportSealWidget || { q: [] };
+window.SupportSealWidget.q.push(["reset"]);
+
+// Redirect only after the widget confirms the server revoked the session.
+// Keep a timeout so an unreachable widget cannot block sign-out entirely.
+const finishSignOut = () => window.location.assign("/sign-in"); // your destination
+const fallback = setTimeout(finishSignOut, 2000);
+window.addEventListener(
+  "supportseal:reset-acknowledged",
+  () => {
+    clearTimeout(fallback);
+    finishSignOut();
+  },
+  { once: true },
+);
 ```
 
-`reset()` revokes the visitor session server-side and starts a fresh
-anonymous one on the next boot. Call it from your sign-out handler, before
-the redirect — not from a page-load effect. In particular, do **not** call it
-in the `identify` effect above: that effect also runs for anonymous visitors
-on every page load, and resetting there would wipe their ongoing chat.
+- **Queue the reset instead of calling `reset()`.** The loader script
+  installs its methods when it runs. Before that, `window.SupportSealWidget`
+  is the stub above (or nothing at all), and a direct `reset()` call throws.
+  The queue works in both states: entries pushed before the script loads are
+  replayed once it loads, and afterwards they run immediately.
+- **Wait for `supportseal:reset-acknowledged`.** The reset is complete only
+  when the widget panel has revoked the session **on the server**; the widget
+  fires this event on `window` exactly then. The panel (a hidden iframe)
+  performs the revocation, so a redirect that beats the acknowledgement can
+  tear the iframe down first and drop the request. A reset the panel did
+  receive survives a slow network: the panel records it durably and finishes
+  the revocation before starting any new session on the next page load.
+- **Keep the timeout.** If the widget never loaded (network outage, refused
+  origin), no acknowledgement will ever arrive. Redirect anyway and accept
+  that the previous widget session may then survive until a later sign-out.
+
+Do all of this from your sign-out handler only — not from a page-load
+effect. In particular, do **not** queue the reset in the `identify` effect
+above: that effect also runs for anonymous visitors on every page load, and
+resetting there would wipe their ongoing chat.
 
 ### Verified identity (optional)
 
@@ -196,9 +225,9 @@ Notes:
   and remain unverified context, and the hash is replayable by the visitor
   it belongs to — but it cannot be used to prove someone else's id.
 - Verified or not, the identity belongs to the browser's widget session,
-  which outlives your app's login. Call `reset()` from your sign-out
-  handler (see [Sign out](#sign-out-reset-the-widget-session)) so an
-  identified — let alone verified — visitor never survives into the next
+  which outlives your app's login. Reset the widget session from your
+  sign-out handler (see [Sign out](#sign-out-reset-the-widget-session)) so
+  an identified — let alone verified — visitor never survives into the next
   person's browser session on a shared machine.
 - Products created before this feature have no identity secret yet; generate
   one from the Developer tab. Rotating the secret stops hashes signed with
@@ -247,8 +276,8 @@ export default function SupportWidget({ user }) {
 ```
 
 The [sign-out guidance above](#sign-out-reset-the-widget-session) applies
-here too: call `window.SupportSealWidget.reset()` from your sign-out handler
-before redirecting, never from this effect.
+here too: queue the reset and redirect on `supportseal:reset-acknowledged`
+(or a timeout) from your sign-out handler, never from this effect.
 
 ## One codebase, many sites
 
