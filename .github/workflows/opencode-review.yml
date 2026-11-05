@@ -32,6 +32,6 @@ jobs:
     # tag now points at content that requires a self-hosted runner with a
     # preinstalled OpenCode CLI (RUNNER variable). Re-pin to a tag once the
     # runner migration lands. See PR discussion.
-    uses: pietervw/.github/.github/workflows/opencode-review.yml@79ccd2ca2ea13c4f8644e2c82b0ab04d62d5f666
+    uses: pietervw/.github/.github/workflows/opencode-review.yml@v1
     secrets:
       ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
