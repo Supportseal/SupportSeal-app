@@ -19,10 +19,10 @@ describe("IdentitySecretCard (issue #20)", () => {
   });
 
   it("never renders the secret for non-admins, even when one exists (FR-CTX-03)", () => {
-    // The page only sends the raw secret to admins; the card must not leak it
-    // through any other branch.
+    // Defence in depth: even if a secret reached the card, a non-admin must
+    // not see it.
     const html = renderToStaticMarkup(
-      <IdentitySecretCard product={{ ...base, identitySecret: null, isAdmin: false }} />,
+      <IdentitySecretCard product={{ ...base, identitySecret: secret, isAdmin: false }} />,
     );
     expect(html).not.toContain(secret);
     expect(html).toContain("Ask a Workspace admin");
