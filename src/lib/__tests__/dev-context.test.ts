@@ -45,6 +45,13 @@ describe("sanitizeContext (FR-CTX-02)", () => {
 });
 
 describe("sanitizeIdentity", () => {
+  it("rejects a non-string user id instead of dropping it", () => {
+    const hash = "a".repeat(64);
+    expect(() => sanitizeIdentity({ id: 42, userHash: hash })).toThrow("identify() id must be a string.");
+    expect(() => sanitizeIdentity({ userId: 42 })).toThrow("identify() userId must be a string.");
+    expect(sanitizeIdentity({ id: null, email: "a@b.co" }).userId).toBeUndefined();
+  });
+
   it("maps id/userId, validates email, bounds lengths", () => {
     expect(sanitizeIdentity({ id: "u_123", email: "Sam@Example.com ", name: "Sam" })).toEqual({
       userId: "u_123",

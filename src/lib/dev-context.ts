@@ -120,6 +120,15 @@ export function sanitizeIdentity(input: unknown): VisitorIdentity {
   }
   const raw = input as Record<string, unknown>;
   const out: VisitorIdentity = {};
+  // A non-string id (e.g. a numeric primary key) is an integration bug: the
+  // host would sign a value we never stored, so it must surface as a 400
+  // rather than leave the visitor silently unverified (FR-CTX-03).
+  for (const key of ["userId", "id"] as const) {
+    const value = raw[key];
+    if (value !== undefined && value !== null && typeof value !== "string") {
+      throw new ContextValidationError(`identify() ${key} must be a string.`);
+    }
+  }
   const rawId =
     typeof raw.userId === "string" && raw.userId.trim()
       ? raw.userId
