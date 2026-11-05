@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 import { Prisma } from "@/generated/prisma/client";
 
@@ -34,6 +34,8 @@ export type WidgetProduct = {
   domains: string[];
   diagnosticsEnabledAt: Date | null;
   supportEmail: string | null;
+  /** Issue #20: server-only identity signing secret; null = never allocated. */
+  identitySecret: string | null;
 };
 
 export async function loadWidgetProduct(widgetKey: string): Promise<WidgetProduct | null> {
@@ -52,6 +54,7 @@ export async function loadWidgetProduct(widgetKey: string): Promise<WidgetProduc
     domains: product.domains.map((d) => d.domain),
     diagnosticsEnabledAt: product.diagnosticsEnabledAt,
     supportEmail: product.supportEmail,
+    identitySecret: product.identitySecret,
   };
 }
 
@@ -671,11 +674,40 @@ export async function visitorListMessages(input: {
 }
 
 /**
+ * The expected identity proof for identify() (issue #20): the hex
+ * HMAC-SHA256 of the visitor's user id, keyed with the Product's
+ * server-only identity secret. Computed on the host app's server — never
+ * in the browser, where every visitor could read the secret.
+ */
+export function expectedIdentityUserHash(identitySecret: string, userId: string): string {
+  return createHmac("sha256", identitySecret).update(userId, "utf8").digest("hex");
+}
+
+/** Constant-time proof check; false for a missing secret, hash or userId. */
+export function identityUserHashMatches(input: {
+  identitySecret: string | null;
+  userId?: string;
+  userHash?: string;
+}): boolean {
+  if (!input.identitySecret || !input.userId || !input.userHash) return false;
+  const expected = Buffer.from(expectedIdentityUserHash(input.identitySecret, input.userId), "hex");
+  const presented = Buffer.from(input.userHash, "hex");
+  return expected.length === presented.length && timingSafeEqual(expected, presented);
+}
+
+/**
  * identify()/context() persistence (FR-CTX-01/02). Identity fields update the
  * visitor (and the contact email like the capture card); context is validated,
- * bounded and merged into the stored JSON. Nothing here trusts the payload.
+ * bounded and merged into the stored JSON. Nothing here trusts the payload:
+ * an identity claim only becomes verified (issue #20) when its userHash is
+ * the HMAC-SHA256 of the claimed user id — exactly as supplied by the host,
+ * never a trimmed or truncated variant — under the Product's identity
+ * secret, and any userId-bearing identify() that does not verify clears the
+ * stamp again. A claim without a user id leaves the stored verification
+ * state untouched (it re-asserts no identity).
  */
 export async function setVisitorIdentityAndContext(input: {
+  product: WidgetProduct;
   visitor: VisitorSession;
   identity?: VisitorIdentity;
   context?: Record<string, unknown>;
@@ -686,12 +718,22 @@ export async function setVisitorIdentityAndContext(input: {
   const data: {
     name?: string;
     externalUserId?: string;
+    identityVerifiedAt?: Date | null;
     devContext?: Prisma.InputJsonValue;
   } = {};
   let emailResult: { ok: true; email: string } | { ok: false; error: string } | null = null;
 
   if (input.identity?.name) data.name = input.identity.name;
-  if (input.identity?.userId) data.externalUserId = input.identity.userId;
+  if (input.identity?.userId) {
+    data.externalUserId = input.identity.userId;
+    data.identityVerifiedAt = identityUserHashMatches({
+      identitySecret: input.product.identitySecret,
+      userId: input.identity.userId,
+      userHash: input.identity.userHash,
+    })
+      ? new Date()
+      : null;
+  }
   if (input.identity?.email && input.identity.email !== visitor.email) {
     emailResult = await setVisitorEmail({ visitor: input.visitor, email: input.identity.email });
     if (!emailResult.ok) return emailResult;

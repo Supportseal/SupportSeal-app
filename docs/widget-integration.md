@@ -103,15 +103,21 @@ export default function SupportWidget({ user }) {
   const id = user?.id;
   const email = user?.email;
   const name = user?.name;
+  // Optional: computed on your server, never in this component — see
+  // "Verified identity" below.
+  const userHash = user?.userHash;
 
   // The queue accepts identity before the script loads and after it.
   useEffect(() => {
     window.SupportSealWidget = window.SupportSealWidget || { q: [] };
     // Optional: pass your app's signed-in user, not a placeholder user.
     if (id) {
-      window.SupportSealWidget.q.push(["identify", { id, email, name }]);
+      window.SupportSealWidget.q.push([
+        "identify",
+        { id, email, name, userHash },
+      ]);
     }
-  }, [id, email, name]);
+  }, [id, email, name, userHash]);
 
   return (
     <Script
@@ -124,10 +130,121 @@ export default function SupportWidget({ user }) {
 ```
 
 To identify a visitor, pass your own app's signed-in user object as
-`<SupportWidget user={user} />`, with string `id`, `email` and `name` fields.
-There is no global `user` object supplied by the widget. Omit the prop for
-anonymous chat. Identity is optional support context, not authentication;
-never pass passwords, session tokens or secrets.
+`<SupportWidget user={user} />`, with string `id`, `email` and `name` fields,
+plus an optional `userHash` string your server computed for
+[verified identity](#verified-identity-optional) — the component forwards it
+with the id whenever it is present and never computes it itself. There is no
+global `user` object supplied by the widget. Omit the prop for anonymous
+chat. Identity is optional support context, not authentication; never pass
+passwords, session tokens or secrets.
+
+### Sign out: reset the widget session
+
+The widget keeps its own visitor session — a cookie on the widget server that
+outlives your app's login. When your user signs out, end that session too;
+otherwise the next person on a shared device resumes the previous user's
+conversation and identity:
+
+```js
+// In your sign-out handler:
+window.SupportSealWidget = window.SupportSealWidget || { q: [] };
+window.SupportSealWidget.q.push(["reset"]);
+
+// Redirect only after the widget confirms the server revoked the session.
+// Keep a timeout so an unreachable widget cannot block sign-out entirely.
+const finishSignOut = () => window.location.assign("/sign-in"); // your destination
+const fallback = setTimeout(finishSignOut, 2000);
+window.addEventListener(
+  "supportseal:reset-acknowledged",
+  () => {
+    clearTimeout(fallback);
+    finishSignOut();
+  },
+  { once: true },
+);
+```
+
+- **Queue the reset instead of calling `reset()`.** The loader script
+  installs its methods when it runs. Before that, `window.SupportSealWidget`
+  is the stub above (or nothing at all), and a direct `reset()` call throws.
+  The queue works in both states: entries pushed before the script loads are
+  replayed once it loads, and afterwards they run immediately.
+- **Wait for `supportseal:reset-acknowledged`.** The reset is complete only
+  when the widget panel has revoked the session **on the server**; the widget
+  fires this event on `window` exactly then. The panel (a hidden iframe)
+  performs the revocation, so a redirect that beats the acknowledgement can
+  tear the iframe down first and drop the request. A reset the panel did
+  receive survives a slow network: the panel records it durably and finishes
+  the revocation before starting any new session on the next page load.
+- **Keep the timeout.** If the widget never loaded (network outage, refused
+  origin), no acknowledgement will ever arrive. Redirect anyway and accept
+  that the previous widget session may then survive until a later sign-out.
+
+Do all of this from your sign-out handler only — not from a page-load
+effect. In particular, do **not** queue the reset in the `identify` effect
+above: that effect also runs for anonymous visitors on every page load, and
+resetting there would wipe their ongoing chat.
+
+### Verified identity (optional)
+
+By default an `identify()` call is unverified: anyone can open the browser
+console and claim any email, name or user id, so your team cannot tell a real
+signed-in user from a spoofed one. To fix that, sign the user id on your
+server with the Product's **identity secret** (**Settings → Products → your
+Product → Developer → Verified identity**) and send the signature with the
+identity:
+
+```js
+// On your server (Node.js) — the secret never goes to the browser:
+const crypto = require("node:crypto");
+const userHash = crypto
+  .createHmac("sha256", process.env.SUPPORTSEAL_IDENTITY_SECRET)
+  .update(user.id) // exactly the id you pass to identify()
+  .digest("hex");
+```
+
+```js
+// On the page, with the hash your server computed:
+window.SupportSealWidget.q.push([
+  "identify", { id: user.id, email: user.email, name: user.name, userHash },
+]);
+```
+
+When the hash matches `HMAC-SHA256(identitySecret, userId)`, the
+Conversation view shows a **Verified** badge next to the identified user id —
+your team can trust that id was set by your server and safely discuss
+account details. Without a matching hash the identity stays unverified
+support context.
+
+Notes:
+
+- Sign the user id exactly as you pass it to `identify()` (`id` or `userId`),
+  UTF-8 encoded, hex-encoded HMAC-SHA256. A hash for a different id never
+  verifies — including one computed over a trimmed or shortened variant of
+  the id you send: the hash is always checked against the id exactly as
+  supplied. User ids are capped at 128 characters; a longer id rejects the
+  `identify()` call with a 400 error rather than silently failing to verify.
+- An absent or blank `userHash` (empty string or `null`) is treated as "no
+  proof": the rest of the identity is still stored, unverified. Send it for
+  visitors you have not signed. Any other malformed value — not a string of
+  64 hex characters, including a non-string such as a serialised object or
+  number — rejects the `identify()` call with a 400 error so integration
+  bugs surface instead of silently losing verification.
+- The badge attests the **user id only**. Email and name travel alongside
+  and remain unverified context, and the hash is replayable by the visitor
+  it belongs to — but it cannot be used to prove someone else's id.
+- Verified or not, the identity belongs to the browser's widget session,
+  which outlives your app's login. Reset the widget session from your
+  sign-out handler (see [Sign out](#sign-out-reset-the-widget-session)) so
+  an identified — let alone verified — visitor never survives into the next
+  person's browser session on a shared machine.
+- Products created before this feature have no identity secret yet; generate
+  one from the Developer tab. Rotating the secret stops hashes signed with
+  the old one from verifying on the visitor's next `identify()` call.
+- Keep the secret server-side (environment variable or secret manager).
+  Anyone holding it can prove any user id of your Product. Unlike the widget
+  and form keys, it must never appear in page HTML or a client bundle.
+
 
 ## Plain React (no Next.js)
 
@@ -145,12 +262,18 @@ export default function SupportWidget({ user }) {
   const id = user?.id;
   const email = user?.email;
   const name = user?.name;
+  // Optional: computed on your server, never in this component — see
+  // "Verified identity" above.
+  const userHash = user?.userHash;
 
   useEffect(() => {
     window.SupportSealWidget = window.SupportSealWidget || { q: [] };
     // Optional: pass your app's signed-in user, not a placeholder user.
     if (id) {
-      window.SupportSealWidget.q.push(["identify", { id, email, name }]);
+      window.SupportSealWidget.q.push([
+        "identify",
+        { id, email, name, userHash },
+      ]);
     }
 
     // Install once, including during React development effect re-runs.
@@ -161,11 +284,15 @@ export default function SupportWidget({ user }) {
     script.src = "WIDGET_SERVER_URL/widget.js";
     script.dataset.key = "WIDGET_KEY";
     document.body.appendChild(script);
-  }, [id, email, name]);
+  }, [id, email, name, userHash]);
 
   return null;
 }
 ```
+
+The [sign-out guidance above](#sign-out-reset-the-widget-session) applies
+here too: queue the reset and redirect on `supportseal:reset-acknowledged`
+(or a timeout) from your sign-out handler, never from this effect.
 
 ## One codebase, many sites
 

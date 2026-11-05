@@ -26,6 +26,13 @@ import { WidgetTab } from "./widget-tab";
 
 export const metadata = { title: "Product settings" };
 
+/**
+ * Product settings page. Tabs: General (Admin-only), Email, Widget,
+ * Developer. The Developer tab is readable by every Workspace member, so
+ * secrets must not cross here in props: the identity secret is only sent
+ * for Admins, with `hasIdentitySecret` carrying existence for everyone
+ * else (FR-CTX-03).
+ */
 export default async function ProductPage({
   params,
   searchParams,
@@ -186,6 +193,8 @@ export default async function ProductPage({
             name: product.name,
             widgetPublicKey: product.widgetPublicKey,
             formPublicKey: product.formPublicKey,
+            identitySecret: ctx.role === "ADMIN" ? product.identitySecret : null,
+            hasIdentitySecret: product.identitySecret !== null,
             archived: product.archivedAt !== null,
             isAdmin: ctx.role === "ADMIN",
             diagnosticsEnabled: product.diagnosticsEnabledAt !== null,

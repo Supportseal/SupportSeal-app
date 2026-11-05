@@ -22,6 +22,7 @@ import { legalUrl } from "@/config/legal";
 import { siteConfig } from "@/config/site";
 import { setDiagnosticsAction, deleteDiagnosticsAction } from "../actions";
 import { FormKeyCard } from "./form-key-card";
+import { IdentitySecretCard } from "./identity-secret-card";
 import { toast } from "sonner";
 
 type DeveloperProduct = {
@@ -29,6 +30,8 @@ type DeveloperProduct = {
   name: string;
   widgetPublicKey: string;
   formPublicKey: string | null;
+  identitySecret: string | null;
+  hasIdentitySecret: boolean;
   archived: boolean;
   isAdmin: boolean;
   diagnosticsEnabled: boolean;
@@ -252,6 +255,17 @@ export function DeveloperTab({ product }: { product: DeveloperProduct }) {
         product={{
           id: product.id,
           formPublicKey: product.formPublicKey,
+          archived: product.archived,
+          isAdmin: product.isAdmin,
+        }}
+      />
+
+      <IdentitySecretCard
+        product={{
+          id: product.id,
+          name: product.name,
+          identitySecret: product.identitySecret,
+          hasIdentitySecret: product.hasIdentitySecret,
           archived: product.archived,
           isAdmin: product.isAdmin,
         }}

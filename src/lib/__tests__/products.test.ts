@@ -16,6 +16,7 @@ import {
   removeProductDomain,
   setProductSupportEmail,
   rotateProductFormKey,
+  rotateProductIdentitySecret,
   updateProduct,
 } from "@/lib/products";
 
@@ -177,6 +178,49 @@ describe("products", () => {
     expect(first.product.formPublicKey).toMatch(/^fk_[A-Za-z0-9_-]+$/u);
     expect(second.product.formPublicKey).toMatch(/^fk_/u);
     expect(first.product.formPublicKey).not.toBe(second.product.formPublicKey);
+  });
+
+  it("allocates a server-only identity secret per product, unique (issue #20)", async () => {
+    const { alphaCtx } = await seedTwoWorkspaces();
+    const first = await createProduct({ ctx: alphaCtx, name: "One" });
+    const second = await createProduct({ ctx: alphaCtx, name: "Two" });
+    if (!first.ok || !second.ok) throw new Error("seed failed");
+
+    expect(first.product.identitySecret).toMatch(/^is_[A-Za-z0-9_-]+$/u);
+    expect(second.product.identitySecret).toMatch(/^is_/u);
+    expect(first.product.identitySecret).not.toBe(second.product.identitySecret);
+  });
+
+  it("rotates the identity secret: admin-only, workspace-scoped, refused while archived (issue #20)", async () => {
+    const { alphaCtx, betaCtx } = await seedTwoWorkspaces();
+    const created = await createProduct({ ctx: alphaCtx, name: "Signed Tool" });
+    if (!created.ok) throw new Error(created.error);
+    const originalSecret = created.product.identitySecret!;
+
+    // Agents cannot rotate; another Workspace cannot rotate by ID (FR-SEC-01).
+    const agentCtx: WorkspaceContext = { ...alphaCtx, role: "AGENT" };
+    expect((await rotateProductIdentitySecret({ ctx: agentCtx, productId: created.product.id })).ok).toBe(false);
+    expect((await rotateProductIdentitySecret({ ctx: betaCtx, productId: created.product.id })).ok).toBe(false);
+    expect(
+      (await getProductForWorkspace(alphaCtx.workspace.id, created.product.id))?.identitySecret,
+    ).toBe(originalSecret);
+
+    const rotated = await rotateProductIdentitySecret({ ctx: alphaCtx, productId: created.product.id });
+    if (!rotated.ok) throw new Error(rotated.error);
+    expect(rotated.identitySecret).toMatch(/^is_/u);
+    expect(rotated.identitySecret).not.toBe(originalSecret);
+
+    // Rotation also generates the first secret for legacy products (null column).
+    const legacy = await db.prisma.product.create({
+      data: { workspaceId: alphaCtx.workspace.id, name: "Legacy", widgetPublicKey: "pk_identity_legacy" },
+    });
+    const generated = await rotateProductIdentitySecret({ ctx: alphaCtx, productId: legacy.id });
+    if (!generated.ok) throw new Error(generated.error);
+    expect(generated.identitySecret).toMatch(/^is_/u);
+
+    // Archived products are read-only: no rotation.
+    expect((await archiveProduct({ ctx: alphaCtx, productId: created.product.id, archived: true })).ok).toBe(true);
+    expect((await rotateProductIdentitySecret({ ctx: alphaCtx, productId: created.product.id })).ok).toBe(false);
   });
 
   it("rotates the form key: admin-only, workspace-scoped, refused while archived (issue #154)", async () => {

@@ -20,6 +20,7 @@ const product: WidgetProduct = {
   widgetPublicKey: "pk_example",
   workspaceId: "workspace-1",
   domains: [],
+  identitySecret: null,
   diagnosticsEnabledAt: null,
   supportEmail: null,
 };

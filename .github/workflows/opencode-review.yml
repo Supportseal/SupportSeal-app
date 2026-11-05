@@ -28,6 +28,9 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-    uses: pietervw/.github/.github/workflows/opencode-review.yml@v2
+    # Rolling v1 ref. It needs a self-hosted runner with the OpenCode CLI
+    # preinstalled, selected by the RUNNER Actions variable (set for this
+    # repo). Re-pin to a tag or SHA once the runner migration lands.
+    uses: pietervw/.github/.github/workflows/opencode-review.yml@v1
     secrets:
       ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}

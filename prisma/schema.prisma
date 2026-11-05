@@ -203,6 +203,13 @@ model Product {
   /// dependency, unlike the widget key. Nullable for Products created
   /// before this column; rotateProductFormKey allocates one on demand.
   formPublicKey        String?   @unique
+  /// Verified widget identity (issue #20): per-Product server secret
+  /// (`is_…`) the host app uses to sign identify() user ids with
+  /// HMAC-SHA256. Unlike the widget and form keys it must never reach the
+  /// browser — possession lets a page prove any user id. Nullable for
+  /// Products created before this column; rotateProductIdentitySecret
+  /// allocates one on demand. Never returned by public widget routes.
+  identitySecret       String?
   inboundEmail         String?   @unique
   inboundEmailVerified DateTime?
   /// The customer's own public support address (e.g. support@acme.com) that
@@ -249,6 +256,13 @@ model ChatVisitor {
   email          String?
   name           String?
   externalUserId String?
+  /// When the current externalUserId was proven against the Product's
+  /// identitySecret (issue #20): an identify() carrying
+  /// HMAC-SHA256(identitySecret, userId) that matched. Null = unverified —
+  /// including every identity claim that arrived without a valid hash, and
+  /// rows that predate the column. Cleared again by any userId-bearing
+  /// identify() that does not verify.
+  identityVerifiedAt DateTime?
   conversationId String?
   createdConversationAt DateTime?
   createdAt      DateTime  @default(now())
