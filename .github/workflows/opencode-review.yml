@@ -28,6 +28,6 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-    uses: pietervw/.github/.github/workflows/opencode-review.yml@v2
+    uses: pietervw/.github/.github/workflows/opencode-review.yml@v1
     secrets:
       ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
