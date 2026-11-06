@@ -16,6 +16,7 @@ import {
   removeProductDomain,
   setProductSupportEmail,
   rotateProductFormKey,
+  rotateProductWidgetKey,
   rotateProductIdentitySecret,
   updateProduct,
 } from "@/lib/products";
@@ -253,6 +254,40 @@ describe("products", () => {
     // Archived products are read-only: no rotation.
     expect((await archiveProduct({ ctx: alphaCtx, productId: created.product.id, archived: true })).ok).toBe(true);
     expect((await rotateProductFormKey({ ctx: alphaCtx, productId: created.product.id })).ok).toBe(false);
+  });
+
+  it("rotates the widget key: admin-only, workspace-scoped, refused while archived, old key dead (issue #19)", async () => {
+    const { alphaCtx, betaCtx } = await seedTwoWorkspaces();
+    const created = await createProduct({ ctx: alphaCtx, name: "Widget Tool" });
+    if (!created.ok) throw new Error(created.error);
+    const originalKey = created.product.widgetPublicKey;
+    const sibling = await createProduct({ ctx: alphaCtx, name: "Sibling" });
+    if (!sibling.ok) throw new Error(sibling.error);
+
+    // Agents cannot rotate; another Workspace cannot rotate by ID (FR-SEC-01).
+    const agentCtx: WorkspaceContext = { ...alphaCtx, role: "AGENT" };
+    expect((await rotateProductWidgetKey({ ctx: agentCtx, productId: created.product.id })).ok).toBe(false);
+    expect((await rotateProductWidgetKey({ ctx: betaCtx, productId: created.product.id })).ok).toBe(false);
+    expect((await getProductForWorkspace(alphaCtx.workspace.id, created.product.id))?.widgetPublicKey).toBe(
+      originalKey,
+    );
+
+    const rotated = await rotateProductWidgetKey({ ctx: alphaCtx, productId: created.product.id });
+    if (!rotated.ok) throw new Error(rotated.error);
+    expect(rotated.product.widgetPublicKey).toMatch(/^pk_/u);
+    expect(rotated.product.widgetPublicKey).not.toBe(originalKey);
+
+    // The old key resolves to nothing; the new one resolves to this Product only.
+    expect(await getActiveProductByWidgetKey(originalKey)).toBeNull();
+    expect((await getActiveProductByWidgetKey(rotated.product.widgetPublicKey))?.id).toBe(created.product.id);
+    // Other Products in the Workspace are untouched.
+    expect((await getProductForWorkspace(alphaCtx.workspace.id, sibling.product.id))?.widgetPublicKey).toBe(
+      sibling.product.widgetPublicKey,
+    );
+
+    // Archived products are read-only: no rotation.
+    expect((await archiveProduct({ ctx: alphaCtx, productId: created.product.id, archived: true })).ok).toBe(true);
+    expect((await rotateProductWidgetKey({ ctx: alphaCtx, productId: created.product.id })).ok).toBe(false);
   });
 
   it("validates name, colour and domains", async () => {

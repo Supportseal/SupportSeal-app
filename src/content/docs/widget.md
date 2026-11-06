@@ -130,4 +130,4 @@ anonymous chat.
   entries, and `*.example.com` does not cover the apex.
 - **Key abused or spamming:** see the
   [widget abuse model](https://github.com/Supportseal/SupportSeal-app/blob/main/docs/widget-integration.md#widget-abuse-model) —
-  narrow the allowlist, or archive the Product and create a new one.
+  rotate the widget key (Widget tab, or the API), or narrow the allowlist.

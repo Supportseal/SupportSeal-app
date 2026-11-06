@@ -170,6 +170,7 @@ export default async function ProductPage({
               primaryColor: product.primaryColor,
               widgetPublicKey: product.widgetPublicKey,
               archived: product.archivedAt !== null,
+              isAdmin: ctx.role === "ADMIN",
             }}
           />
           {installSignals ? (
