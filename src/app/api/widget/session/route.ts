@@ -11,6 +11,7 @@ import {
 import {
   createVisitorSession,
   getAvailabilityForProduct,
+  isWidgetKeyShape,
   isWidgetOriginAllowed,
   serviceOriginFrom,
   loadWidgetProduct,
@@ -31,16 +32,18 @@ export const dynamic = "force-dynamic";
  * well-formed `pk_*` keys is refused before the first product query. It
  * keys on the client IP alone (nothing about the product or workspace),
  * and the product-scoped session / mint / revoke buckets still run after
- * the lookup unchanged. A malformed key still short-circuits inside
- * loadWidgetProduct without touching the database.
+ * the lookup unchanged. A malformed key needs no query, so it is answered
+ * 404 before the preflight is charged: it neither spends the IP's budget
+ * nor turns into a 429.
  */
 async function loadAllowedProduct(
   request: NextRequest,
 ): Promise<{ product: WidgetProduct; hostParam: string | null } | NextResponse> {
+  const key = request.nextUrl.searchParams.get("key") ?? "";
+  if (!isWidgetKeyShape(key)) return NextResponse.json({ error: "not_found" }, { status: 404 });
   if (!rateLimitWidgetPreflight(request)) {
     return NextResponse.json({ error: "rate_limited" }, { status: 429 });
   }
-  const key = request.nextUrl.searchParams.get("key") ?? "";
   const hostParam = request.nextUrl.searchParams.get("host");
   const product = await loadWidgetProduct(key);
   if (!product) return NextResponse.json({ error: "not_found" }, { status: 404 });

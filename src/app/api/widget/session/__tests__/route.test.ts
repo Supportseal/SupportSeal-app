@@ -165,17 +165,30 @@ describe("POST/DELETE /api/widget/session preflight limiter (issue #18)", () => 
     }
   });
 
-  it("still fails a malformed key with 404 under budget, without a lookup", async () => {
+  it("answers a malformed key 404 without a lookup and without spending preflight budget", async () => {
+    const ip = "6.6.6.8";
     const lookup = vi.spyOn(db.prisma.product, "findFirst");
     try {
-      const response = await POST(
-        new NextRequest(`http://localhost:3000/api/widget/session?key=not-a-key&host=${HOST}`, {
-          method: "POST",
-          headers: { "x-forwarded-for": "6.6.6.8" },
-        }),
-      );
-      expect(response.status).toBe(404);
+      const malformed = () =>
+        POST(
+          new NextRequest(`http://localhost:3000/api/widget/session?key=not-a-key&host=${HOST}`, {
+            method: "POST",
+            headers: { "x-forwarded-for": ip },
+          }),
+        );
+      // Far more malformed probes than the budget: each is a plain 404 and
+      // none of them is charged.
+      for (let i = 0; i < WIDGET_RATE_LIMITS.ipUmbrella + 5; i++) {
+        expect((await malformed()).status).toBe(404);
+      }
       expect(lookup).not.toHaveBeenCalled();
+      // The IP's budget is intact: a well-formed boot still goes through.
+      expect((await POST(sessionRequest({ ip }))).status).toBe(200);
+
+      // And a saturated IP still gets 404, not 429, for a malformed key.
+      for (let i = 0; i < WIDGET_RATE_LIMITS.ipUmbrella; i++) rateLimitWidgetPreflight(sessionRequest({ ip }));
+      expect((await malformed()).status).toBe(404);
+      expect((await POST(sessionRequest({ ip }))).status).toBe(429);
     } finally {
       lookup.mockRestore();
     }

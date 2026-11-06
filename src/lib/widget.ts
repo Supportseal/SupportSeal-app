@@ -38,8 +38,13 @@ export type WidgetProduct = {
   identitySecret: string | null;
 };
 
+/** Cheap shape check: a key without the `pk_` prefix can never match a Product, so no query is needed. */
+export function isWidgetKeyShape(widgetKey: string): boolean {
+  return widgetKey.startsWith("pk_");
+}
+
 export async function loadWidgetProduct(widgetKey: string): Promise<WidgetProduct | null> {
-  if (!widgetKey.startsWith("pk_")) return null;
+  if (!isWidgetKeyShape(widgetKey)) return null;
   const product = await prisma.product.findFirst({
     where: { widgetPublicKey: widgetKey, archivedAt: null },
     include: { domains: { select: { domain: true } } },
