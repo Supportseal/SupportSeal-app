@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { rateLimitWidgetPreflight, rateLimitWidgetRequest } from "@/lib/widget-rate-limit";
 import {
+  isWidgetKeyShape,
   isWidgetOriginAllowed,
   loadWidgetProduct,
   resolveVisitorSession,
@@ -29,8 +30,16 @@ const MIN_SEND_INTERVAL_MS = 800;
  * token-keyed buckets below still run after the guard, where the
  * product-scoped cookie-first identity is known (widget-rate-limit.ts) —
  * separate budgets, not a double charge of one bucket.
+ *
+ * A malformed (non-`pk_`) key needs no query, so it is answered 404 before
+ * the preflight is charged: the bucket is shared with /api/widget/session
+ * (keyed on the IP alone), and malformed probes here must not spend it or
+ * turn into a 429 for well-formed boots from the same IP.
  */
 function preflightLimit(request: NextRequest) {
+  if (!isWidgetKeyShape(request.nextUrl.searchParams.get("key") ?? "")) {
+    return NextResponse.json({ error: "not_found" }, { status: 404 });
+  }
   if (!rateLimitWidgetPreflight(request)) {
     return NextResponse.json({ error: "rate_limited" }, { status: 429 });
   }
@@ -44,6 +53,11 @@ function preflightLimit(request: NextRequest) {
  */
 type GuardResult = { error: NextResponse } | { product: WidgetProduct; visitor: VisitorSession };
 
+/**
+ * Resolves the Product from `key`, checks the embedding origin, and loads the
+ * visitor session (product-scoped cookie first), answering 404/403/401 when
+ * any step fails.
+ */
 async function guard(request: NextRequest): Promise<GuardResult> {
   const key = request.nextUrl.searchParams.get("key") ?? "";
   const hostParam = request.nextUrl.searchParams.get("host");

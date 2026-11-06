@@ -6,7 +6,7 @@ import { startTestDb, stopTestDb, type TestDb } from "@/test/integration-db";
 import { type WorkspaceContext } from "@/lib/workspace";
 import { createProduct } from "@/lib/products";
 import { createVisitorSession, loadWidgetProduct, visitorCookieName } from "@/lib/widget";
-import { WIDGET_RATE_LIMITS } from "@/lib/widget-rate-limit";
+import { WIDGET_RATE_LIMITS, rateLimitWidgetPreflight } from "@/lib/widget-rate-limit";
 
 /**
  * Issue #82: the messages route charges an IP-only preflight bucket BEFORE
@@ -92,6 +92,32 @@ describe("messages route preflight and token-keyed limits (issue #82)", () => {
     // The preflight is per IP, not global.
     expect((await POST(messagesRequest({ ip: "9.9.40.2" }))).status).toBe(401);
     expect(await db.prisma.chatVisitor.count()).toBe(0);
+  });
+
+  it("answers a malformed key 404 without a lookup and without spending the shared preflight budget", async () => {
+    const ip = "9.9.43.1";
+    const malformed = (method: "GET" | "POST") =>
+      new NextRequest(`http://localhost:3000/api/widget/messages?key=not-a-key&host=${HOST}`, {
+        method,
+        headers: { "x-forwarded-for": ip },
+      });
+    const lookup = vi.spyOn(db.prisma.product, "findFirst");
+    try {
+      for (let i = 0; i < WIDGET_RATE_LIMITS.ipUmbrella + 5; i++) {
+        const response = await (i % 2 ? GET(malformed("GET")) : POST(malformed("POST")));
+        expect(response.status).toBe(404);
+      }
+      expect(lookup).not.toHaveBeenCalled();
+    } finally {
+      lookup.mockRestore();
+    }
+    // The IP's budget is intact: a well-formed request still reaches the guard.
+    expect((await POST(messagesRequest({ ip }))).status).toBe(401);
+
+    // A saturated IP still gets 404, not 429, for a malformed key.
+    for (let i = 0; i < WIDGET_RATE_LIMITS.ipUmbrella; i++) rateLimitWidgetPreflight(messagesRequest({ ip }));
+    expect((await POST(malformed("POST"))).status).toBe(404);
+    expect((await POST(messagesRequest({ ip }))).status).toBe(429);
   });
 
   it("keys the write bucket on the authenticated cookie: rotated headers cannot escape it", async () => {

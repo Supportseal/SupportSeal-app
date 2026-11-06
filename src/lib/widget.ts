@@ -43,6 +43,7 @@ export function isWidgetKeyShape(widgetKey: string): boolean {
   return widgetKey.startsWith("pk_");
 }
 
+/** Loads the active (non-archived) Product for a public widget key, with its allowed domains; null when none matches. */
 export async function loadWidgetProduct(widgetKey: string): Promise<WidgetProduct | null> {
   if (!isWidgetKeyShape(widgetKey)) return null;
   const product = await prisma.product.findFirst({
