@@ -199,7 +199,9 @@ Product:
 ```sh
 curl --fail-with-body -sS -X POST "$SUPPORTSEAL_URL/api/products/$PRODUCT_ID/widget-key/rotate" \
   -H "Authorization: Bearer $SUPPORTSEAL_TOKEN" -o product.json
-export WIDGET_KEY=$(jq -r '.widgetKey' product.json)
+NEW_KEY=$(jq -r '.widgetKey // empty' product.json)
+: "${NEW_KEY:?Rotation failed; see product.json. WIDGET_KEY is unchanged}"
+export WIDGET_KEY=$NEW_KEY
 ```
 
 To use the form key (skip this if you only want the widget), post from your
