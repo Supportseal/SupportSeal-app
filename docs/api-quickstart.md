@@ -192,7 +192,9 @@ Workspace admin in the dashboard (Product **Developer** tab), not through the AP
 
 If the widget key is abused or leaked, rotate it. The old key stops working on
 every widget route at once (there is no grace period), so update the `data-key`
-in your snippet straight after. Visitors keep their open chats. The call takes no
+in your snippet straight after. Visitors keep their open chats, and a live-update
+stream that is already open runs until it reconnects. Every call rotates again, so
+after a timeout read the Product to see the current key before you retry. The call takes no
 body, needs the `products:write` scope, and answers `409 conflict` for an archived
 Product:
 

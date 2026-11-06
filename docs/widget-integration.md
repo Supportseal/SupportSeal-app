@@ -409,7 +409,9 @@ The widget key is public by design, and that is the whole model:
   go into your embed snippet. There is no grace period, so expect a short
   outage on sites until they are updated. Visitors who already have a chat
   keep their session and conversation, because a session belongs to the
-  Product, not to the key. Rotation is also how you revoke a key: there is no
+  Product, not to the key; a live-update stream that is already open keeps
+  running until it reconnects, and the reconnect must pass the new key's
+  lookup. Rotation is also how you revoke a key: there is no
   separate "revoked" state, and the retired key can never be reused. A
   rotation changes only the widget key; the form key, identity secret and
   domain allowlist are left alone. You can also narrow the allowed domains
