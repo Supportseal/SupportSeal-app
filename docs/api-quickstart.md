@@ -199,11 +199,14 @@ body, needs the `products:write` scope, and answers `409 conflict` for an archiv
 Product:
 
 ```sh
-curl --fail-with-body -sS -X POST "$SUPPORTSEAL_URL/api/products/$PRODUCT_ID/widget-key/rotate" \
-  -H "Authorization: Bearer $SUPPORTSEAL_TOKEN" -o product.json
-NEW_KEY=$(jq -r '.widgetKey // empty' product.json)
-: "${NEW_KEY:?Rotation failed; see product.json. WIDGET_KEY is unchanged}"
-export WIDGET_KEY=$NEW_KEY
+if curl --fail-with-body -sS -X POST "$SUPPORTSEAL_URL/api/products/$PRODUCT_ID/widget-key/rotate" \
+  -H "Authorization: Bearer $SUPPORTSEAL_TOKEN" -o product.json; then
+  NEW_KEY=$(jq -r '.widgetKey // empty' product.json)
+  : "${NEW_KEY:?Rotation response had no widgetKey; see product.json. WIDGET_KEY is unchanged}"
+  export WIDGET_KEY=$NEW_KEY
+else
+  echo "Rotation call failed; WIDGET_KEY is unchanged. A timeout may still have rotated the key server-side: read the Product before retrying." >&2
+fi
 ```
 
 To use the form key (skip this if you only want the widget), post from your
