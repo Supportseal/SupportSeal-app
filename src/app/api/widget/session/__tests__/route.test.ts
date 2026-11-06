@@ -1,11 +1,11 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 import { DELETE, POST } from "@/app/api/widget/session/route";
 import { startTestDb, stopTestDb, type TestDb } from "@/test/integration-db";
 import { type WorkspaceContext } from "@/lib/workspace";
 import { createProduct } from "@/lib/products";
-import { WIDGET_RATE_LIMITS, rateLimitWidgetRequest } from "@/lib/widget-rate-limit";
+import { WIDGET_RATE_LIMITS, rateLimitWidgetPreflight, rateLimitWidgetRequest } from "@/lib/widget-rate-limit";
 import { setVisitorIdentityAndContext, resolveVisitorSession, loadWidgetProduct } from "@/lib/widget";
 
 /**
@@ -128,6 +128,59 @@ function deleteRequest(input: { ip: string; token?: string; cookie?: string; ori
   if (input.origin) headers.set("origin", input.origin);
   return new NextRequest(url, { method: "DELETE", headers });
 }
+
+describe("POST/DELETE /api/widget/session preflight limiter (issue #18)", () => {
+  it("answers 429 without any product lookup once the IP preflight is saturated", async () => {
+    const ip = "6.6.6.6";
+    for (let i = 0; i < WIDGET_RATE_LIMITS.ipUmbrella; i++) {
+      expect(rateLimitWidgetPreflight(sessionRequest({ ip }))).toBe(true);
+    }
+
+    const lookup = vi.spyOn(db.prisma.product, "findFirst");
+    try {
+      // Well-formed keys, known and unknown alike: neither reaches the database.
+      const known = await POST(sessionRequest({ ip }));
+      const unknownKey = new NextRequest(
+        `http://localhost:3000/api/widget/session?key=pk_${"0".repeat(32)}&host=${HOST}`,
+        { method: "POST", headers: { "x-forwarded-for": ip } },
+      );
+      const unknown = await POST(unknownKey);
+      const revoke = await DELETE(
+        new NextRequest(`http://localhost:3000/api/widget/session?key=${productKey}&host=${HOST}`, {
+          method: "DELETE",
+          headers: { "x-forwarded-for": ip },
+        }),
+      );
+      for (const response of [known, unknown, revoke]) expect(response.status).toBe(429);
+      expect(await known.json()).toEqual({ error: "rate_limited" });
+      expect(lookup).not.toHaveBeenCalled();
+      expect(await db.prisma.chatVisitor.count()).toBe(0);
+
+      // Another IP is untouched and still boots normally (lookup happens).
+      const other = await POST(sessionRequest({ ip: "6.6.6.7" }));
+      expect(other.status).toBe(200);
+      expect(lookup).toHaveBeenCalledTimes(1);
+    } finally {
+      lookup.mockRestore();
+    }
+  });
+
+  it("still fails a malformed key with 404 under budget, without a lookup", async () => {
+    const lookup = vi.spyOn(db.prisma.product, "findFirst");
+    try {
+      const response = await POST(
+        new NextRequest(`http://localhost:3000/api/widget/session?key=not-a-key&host=${HOST}`, {
+          method: "POST",
+          headers: { "x-forwarded-for": "6.6.6.8" },
+        }),
+      );
+      expect(response.status).toBe(404);
+      expect(lookup).not.toHaveBeenCalled();
+    } finally {
+      lookup.mockRestore();
+    }
+  });
+});
 
 describe("DELETE /api/widget/session host sign-out reset (issue #151)", () => {
   it("revokes the token, expires the cookie, and the next boot is a fresh anonymous visitor", async () => {

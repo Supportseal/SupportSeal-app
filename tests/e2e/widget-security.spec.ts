@@ -43,6 +43,41 @@ test.describe("widget security", () => {
     expect(session.status()).toBe(404);
   });
 
+  test("a burst of well-formed keys is throttled by IP before the product lookup (issue #18)", async ({
+    request,
+  }) => {
+    const host = encodeURIComponent("http://localhost:3101");
+    // A throwaway proxy-observed address: the limiter keys on the last
+    // X-Forwarded-For entry, and this IP is private to the test.
+    const burstIp = "198.51.100.18";
+    const boot = (key: string, ip: string) =>
+      request.post(`/api/widget/session?key=${encodeURIComponent(key)}&host=${host}`, {
+        headers: { "x-forwarded-for": ip },
+      });
+    const unknownKey = `pk_${"0".repeat(32)}`;
+
+    // An unknown key is a 404 only because its lookup ran; once the IP's
+    // preflight budget is spent the same request is refused with 429 instead.
+    let lookups = 0;
+    for (; lookups < 400; lookups++) {
+      const response = await boot(unknownKey, burstIp);
+      if (response.status() === 429) break;
+      expect(response.status()).toBe(404);
+    }
+    expect(lookups).toBeGreaterThan(0);
+    expect(lookups).toBeLessThan(400);
+
+    // A real key from the saturated IP is refused too, not booted.
+    const refused = await boot(betaKey, burstIp);
+    expect(refused.status()).toBe(429);
+    expect(await refused.json()).toEqual({ error: "rate_limited" });
+
+    // Other IPs are unaffected: a normal boot still mints a session.
+    const normal = await boot(betaKey, "198.51.100.19");
+    expect(normal.status(), await normal.text()).toBe(200);
+    expect(((await normal.json()) as { token?: string }).token).toBeTruthy();
+  });
+
   test("an expired widget test link shows recovery instructions", async ({ page }) => {
     const payload = `${fixtures.beta.product.id}|${Date.now() - 1_000}`;
     const mac = createHmac("sha256", E2E_SHARED_SECRET).update(payload).digest("base64url");

@@ -2,7 +2,11 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { VISITOR_COOKIE_MAX_AGE_SECONDS } from "@/config/session-lifetimes";
 import { isServicePaused } from "@/lib/service-pause";
-import { rateLimitWidgetSessionMint, rateLimitWidgetRequest } from "@/lib/widget-rate-limit";
+import {
+  rateLimitWidgetPreflight,
+  rateLimitWidgetSessionMint,
+  rateLimitWidgetRequest,
+} from "@/lib/widget-rate-limit";
 
 import {
   createVisitorSession,
@@ -21,10 +25,21 @@ import {
 
 export const dynamic = "force-dynamic";
 
-/** Product lookup plus the embedding-origin allowlist shared by POST and DELETE. */
+/**
+ * Product lookup plus the embedding-origin allowlist shared by POST and
+ * DELETE. Issue #18: the IP-only preflight is charged first, so a flood of
+ * well-formed `pk_*` keys is refused before the first product query. It
+ * keys on the client IP alone (nothing about the product or workspace),
+ * and the product-scoped session / mint / revoke buckets still run after
+ * the lookup unchanged. A malformed key still short-circuits inside
+ * loadWidgetProduct without touching the database.
+ */
 async function loadAllowedProduct(
   request: NextRequest,
 ): Promise<{ product: WidgetProduct; hostParam: string | null } | NextResponse> {
+  if (!rateLimitWidgetPreflight(request)) {
+    return NextResponse.json({ error: "rate_limited" }, { status: 429 });
+  }
   const key = request.nextUrl.searchParams.get("key") ?? "";
   const hostParam = request.nextUrl.searchParams.get("host");
   const product = await loadWidgetProduct(key);
