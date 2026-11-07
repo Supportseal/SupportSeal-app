@@ -5,8 +5,18 @@ import { IconCheck, IconCopy } from "@tabler/icons-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { WidgetKeyRotate } from "./widget-key-rotate";
 
-export function WidgetSnippet({ snippet, widgetKey }: { snippet: string; widgetKey: string }) {
+export function WidgetSnippet({
+  snippet,
+  widgetKey,
+  rotateProductId,
+}: {
+  snippet: string;
+  widgetKey: string;
+  /** Set for Workspace admins of an active Product: shows "Rotate widget key". */
+  rotateProductId?: string;
+}) {
   const [copied, setCopied] = useState<"snippet" | "key" | null>(null);
 
   async function copy(value: string, which: "snippet" | "key") {
@@ -22,7 +32,8 @@ export function WidgetSnippet({ snippet, widgetKey }: { snippet: string; widgetK
           <h2 className="text-lg font-medium text-heading">Chat widget embed</h2>
           <p className="mt-1 text-sm text-muted">
             Paste this just before <code>&lt;/body&gt;</code> on every page where the widget should
-            appear. The key is public — it identifies the Product and grants no privileged access.
+            appear. The key is public — it identifies the Product and grants no privileged access, and
+            the allowed domains, rate limits and Origin checks bound what a copy of it can do.
           </p>
         </div>
         <div className="relative flex items-center gap-2 overflow-hidden rounded-md border border-ink-rule bg-brand-ink p-3 text-mint-100 dark:border-border">
@@ -49,6 +60,7 @@ export function WidgetSnippet({ snippet, widgetKey }: { snippet: string; widgetK
             {copied === "key" ? "Copied" : "Copy"}
           </Button>
         </div>
+        {rotateProductId ? <WidgetKeyRotate productId={rotateProductId} /> : null}
       </CardContent>
     </Card>
   );

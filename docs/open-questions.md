@@ -487,3 +487,18 @@ the behaviour.
 | VQ2 | Which secret? Reuse the widget key? | **Default:** a dedicated per-Product `identitySecret` (`is_…`, 32 random bytes). The widget key is public in the host page's HTML, so HMAC-ing with it would let any visitor forge a "verified" identity; the form key authorises posts by possession and is equally unsuitable. New Products get a secret at create; legacy Products allocate on demand from the Developer tab (the `formPublicKey` pattern); a Product with no secret simply never verifies. |
 | VQ3 | Rotation semantics? | **Default:** immediate, dashboard-only, Admin-only, refused while archived (identical to form-key rotation). A rotated secret invalidates hashes signed with the old one on the visitor's next `identify()`; already-verified visitors keep the badge until they identify again. No API endpoint exposes or rotates the secret — the same recorded FR-API-16 exemption as form-key rotation: a true secret has no business in API responses, and the dashboard is where the signing code is set up. |
 | VQ4 | Verification lifetime? | **Default:** the stamp lives on the visitor row (`identityVerifiedAt`) and is re-evaluated on every user-id-bearing `identify()`: match → stamped, mismatch or missing hash → cleared. `identify()` calls without a user id (email/name only) re-assert no identity and leave the stamp untouched. The badge shows only while the latest visitor session of the Conversation is verified. |
+
+## Widget key rotation (issue #19, 2026-11-06)
+
+Raised by [issue #19](https://github.com/Supportseal/SupportSeal-app/issues/19):
+the public widget key could not be rotated or revoked, only the form key could.
+The implemented direction is the smallest additive change that cuts off an
+abused key: an immediate rotation with no schema change. These are working
+defaults, not resolved policy approvals.
+
+| # | Question | Working position |
+| --- | --- | --- |
+| WQ1 | Rotation semantics? | **Default:** immediate single-key rotation (Admin-only, refused while archived), identical to form-key rotation (KQ2). The old key answers `404` on every widget route at once. It needs no migration: `widgetPublicKey` is overwritten in place. Visitor sessions bind to the Product, not the key, so open chats resume under the new key. |
+| WQ2 | Grace period for the old key? | **Open.** A cut-over window would need a previous-key column and an expiry, which is a schema change: `widgetKeyPrevious String? @unique` plus `widgetKeyPreviousExpiresAt DateTime?`, with the key lookup falling back to the previous key until it expires. Not built: it widens the lifetime of a possibly abused key, which is the thing a rotation exists to end. Revisit if hosted customers report painful outages. |
+| WQ3 | Revoke without a replacement? | **Open.** Rotation doubles as revocation (the old key never works again); archiving the Product also disables its keys and is reversible. A "key off, no key" state would need either a nullable `widgetPublicKey` (every widget lookup then handles a missing key) or a `widgetKeyRevokedAt` flag, so it needs a migration and is not built. |
+| WQ4 | API counterpart? | **Default (ADR-0005 parity):** `POST /api/products/{id}/widget-key/rotate` (`products:write`, token-only, shares the per-token write bucket). Unlike the form key and identity secret (FR-API-16 exemptions), the widget key is already public and returned by `GET /api/products/{id}`, so rotating it through the API leaks nothing a read does not. |

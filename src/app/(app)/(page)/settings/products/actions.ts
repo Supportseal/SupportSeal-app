@@ -10,6 +10,7 @@ import {
   removeProductDomain,
   rotateProductFormKey,
   rotateProductIdentitySecret,
+  rotateProductWidgetKey,
   setProductDiagnostics,
   setProductEscalation,
   setProductSupportEmail,
@@ -71,6 +72,19 @@ export async function rotateFormKeyAction(
   const ctx = await requireWorkspace("/settings/products");
   const productId = String(formData.get("productId") ?? "");
   const result = await rotateProductFormKey({ ctx, productId });
+  if (!result.ok) return { error: result.error };
+  revalidatePath(`/settings/products/${productId}`);
+  return {};
+}
+
+/** Widget tab "Rotate widget key" (issue #19): Admin-only, immediate. API counterpart: POST /api/products/{id}/widget-key/rotate. */
+export async function rotateWidgetKeyAction(
+  _prev: ProductFormState,
+  formData: FormData,
+): Promise<ProductFormState> {
+  const ctx = await requireWorkspace("/settings/products");
+  const productId = String(formData.get("productId") ?? "");
+  const result = await rotateProductWidgetKey({ ctx, productId });
   if (!result.ok) return { error: result.error };
   revalidatePath(`/settings/products/${productId}`);
   return {};

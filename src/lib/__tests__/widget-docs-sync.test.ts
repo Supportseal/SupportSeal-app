@@ -38,7 +38,9 @@ describe("widget docs stay in sync", () => {
       expect(doc).toContain("origin_not_allowed");
     }
     expect(guide).toContain("## Widget abuse model");
-    expect(guide).toContain("archive the Product");
+    expect(guide).toContain("Rotate widget key");
+    expect(guide).toContain("/widget-key/rotate");
+    expect(docs).toContain("rotate the widget key");
   });
 
   it("uses the widget key term only", () => {

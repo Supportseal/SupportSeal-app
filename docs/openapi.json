@@ -388,6 +388,82 @@
         }
       }
     },
+    "/api/products/{id}/widget-key/rotate": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "The Product id (`id` in a Product).",
+          "schema": {
+            "type": "string"
+          },
+          "example": "3f6c0a52-0b1e-4c52-9d1c-5f0e7a8f1c11"
+        }
+      ],
+      "post": {
+        "operationId": "rotateProductWidgetKey",
+        "tags": [
+          "Products"
+        ],
+        "summary": "Rotate a Product's public widget key",
+        "description": "Replaces the Product's public widget key (`widgetKey`) with a freshly generated one and returns the whole Product with the new key. The change is immediate and there is no grace period: the previous key stops working on every widget route at once (the widget's boot `config` call, `session` and `messages` answer `404 not_found` for it, so the embed never starts), so an abused or leaked key is retired in one call. Update the embed snippet on the customer's site afterwards. Visitors who already have a chat session keep it and their conversation, because sessions belong to the Product, not the key. Only the widget key changes: the form key, the domain allowlist and the identity secret are separate credentials and are left alone. The request takes no body. An archived Product answers `409 conflict`; unarchive it first. Token only: a session cookie is refused with `401 unauthorized`. Sends no email and has no other side effects.",
+        "x-required-scope": "products:write",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The Product with its new widget key.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Product"
+                },
+                "example": {
+                  "id": "3f6c0a52-0b1e-4c52-9d1c-5f0e7a8f1c11",
+                  "name": "Acme App",
+                  "archived": false,
+                  "primaryColor": "#7367f0",
+                  "supportEmail": "help@acme.example",
+                  "domains": [
+                    "acme.example",
+                    "www.acme.example"
+                  ],
+                  "widgetKey": "pk_Q9wErTyUiOpAsDfGhJkLzXcVbNm01234",
+                  "formKey": "fk_ZyXwVuTsRqPoNmLkJiHgFeDcBa987654"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/InsufficientScope"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/ProductArchivedConflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
     "/api/v1/whoami": {
       "get": {
         "operationId": "whoami",
@@ -1410,6 +1486,27 @@
               "error": {
                 "code": "not_found",
                 "message": "Product not found."
+              }
+            }
+          }
+        }
+      },
+      "ProductArchivedConflict": {
+        "description": "`conflict`: the Product is archived, so its widget key cannot be rotated. Unarchive it first. Nothing was changed.",
+        "headers": {
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "error": {
+                "code": "conflict",
+                "message": "This Product is archived; unarchive it first."
               }
             }
           }

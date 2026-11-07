@@ -401,11 +401,27 @@ The widget key is public by design, and that is the whole model:
   diagnostics build — are deliberately not rate-limited; they serve no tenant
   data. Limits are enforced in-process, so multi-process deployments get them
   per process.
-- **If a key is abused today:** narrow the Product's allowed domains if the
-  abuse routes through a hostname you control, or archive the Product and
-  create a new one — the new Product gets a fresh key and allowlist, and
-  historical conversations are preserved. There is no key rotation short of
-  that in V1.
+- **If a key is abused:** a Workspace Admin rotates it. In the dashboard,
+  open the Product's **Widget** tab and choose **Rotate widget key**; over the
+  API, `POST /api/products/{id}/widget-key/rotate` with a `products:write`
+  token. The change is immediate: the old key stops working on the boot
+  `config` call, `session` and `messages` at once (a `404`), and the new key must
+  go into your embed snippet. There is no grace period, so expect a short
+  outage on sites until they are updated. Visitors who already have a chat
+  keep their session and conversation, because a session belongs to the
+  Product, not to the key; a live-update stream that is already open keeps
+  running until it reconnects, and the reconnect must pass the new key's
+  lookup. Rotation is also how you revoke a key: there is no
+  separate "revoked" state, and the retired key can never be reused. A
+  rotation changes only the widget key; the form key, identity secret and
+  domain allowlist are left alone. You can also narrow the allowed domains
+  when the abuse routes through a hostname you control, or archive the
+  Product (its keys stop working until it is unarchived).
+- **What rotation does not do:** it cannot tell a real visitor from an abuser
+  who read the new key off your page, so pair it with the allowlist and the
+  rate limits above. Open decisions (a grace period, a revoke without a
+  replacement) are in
+  [open-questions.md](open-questions.md#widget-key-rotation-issue-19-2026-11-06).
 
 ## Email and DNS timing
 

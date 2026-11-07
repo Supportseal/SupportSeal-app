@@ -409,6 +409,43 @@ export async function rotateProductFormKey(input: {
 }
 
 /**
+ * Rotate the Product's public widget key (issue #19). The widget key is
+ * public by design and usable from any script that spoofs `host`, so this is
+ * the only way to cut off an abused key short of archiving the Product.
+ * Rotation is immediate and doubles as revocation: the previous key is
+ * unknown to every widget route (session, config, messages, stream, context,
+ * attachments, panel) the moment the row updates — no grace period, because
+ * keeping the old key alive needs a second column (docs/open-questions.md
+ * WQ2). Visitor sessions bind to the Product id, not the key, so open
+ * Conversations resume under the new key. Admin-only, refused while archived
+ * like every other Product setting. Returns the fresh row, like patchProduct,
+ * because the Workspace API serializes the Product in its response.
+ */
+export async function rotateProductWidgetKey(input: {
+  ctx: ProductWriteContext;
+  productId: string;
+}): Promise<{ ok: true; product: ProductWithDomains } | ProductFailure> {
+  if (input.ctx.role !== "ADMIN") return fail("forbidden", ADMIN_ONLY);
+
+  const product = await getProductForWorkspace(input.ctx.workspace.id, input.productId);
+  if (!product) return fail("not_found", "Product not found.");
+  if (product.archivedAt) return fail("conflict", "This Product is archived; unarchive it first.");
+
+  const widgetPublicKey = generateWidgetPublicKey();
+  // Workspace-scoped updateMany (FR-SEC-01); archivedAt: null keeps "refused
+  // while archived" atomic against a concurrent archive.
+  const updated = await prisma.product.updateMany({
+    where: { id: product.id, workspaceId: input.ctx.workspace.id, archivedAt: null },
+    data: { widgetPublicKey },
+  });
+  if (updated.count === 0) return fail("conflict", "Product not found or archived.");
+
+  const after = await getProductForWorkspace(input.ctx.workspace.id, product.id);
+  if (!after) return fail("not_found", "Product not found.");
+  return { ok: true, product: after };
+}
+
+/**
  * Allocate (when null, for Products that predate the column) or rotate the
  * Product's identity verification secret (issue #20). Rotation is
  * immediate: identify() hashes signed with the previous secret stop

@@ -14,6 +14,7 @@ type PreviewProduct = {
   primaryColor: string;
   widgetPublicKey: string;
   archived: boolean;
+  isAdmin: boolean;
 };
 
 /**
@@ -82,7 +83,11 @@ export function WidgetTab({ product }: { product: PreviewProduct }) {
         </CardContent>
       </Card>
 
-      <WidgetSnippet snippet={embedSnippet} widgetKey={product.widgetPublicKey} />
+      <WidgetSnippet
+        snippet={embedSnippet}
+        widgetKey={product.widgetPublicKey}
+        rotateProductId={product.isAdmin && !product.archived ? product.id : undefined}
+      />
     </div>
   );
 }
