@@ -265,9 +265,9 @@ test.describe.serial("self-hosted mode core flows", () => {
 
   test("agent sees the diagnostics chip and sheet", async () => {
     test.skip(!productKey, "core onboarding did not run");
-    await agentPage.goto("/inbox");
-    // The earlier agent reply left this visitor's conversation Pending.
-    await agentPage.getByRole("tab", { name: /^Pending/u }).click();
+    // The earlier agent reply left this visitor's conversation Pending; this
+    // visitor message moved it back to Open (FR-INBOX-02).
+    await agentPage.goto("/inbox?status=OPEN");
     const row = agentPage
       .locator("ul[aria-label='Conversations'] li a")
       .filter({ hasText: "Self-hosted diagnostics message 5ce9" });

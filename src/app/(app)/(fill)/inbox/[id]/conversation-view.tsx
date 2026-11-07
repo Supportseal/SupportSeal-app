@@ -36,7 +36,6 @@ import {
   type PaletteReply,
 } from "./saved-reply-palette";
 import { SaveReplyModal } from "./save-reply-modal";
-import { UNREAD_REFRESH_EVENT } from "@/components/layout/unread-title";
 import { UNREAD_MARK_BATCH } from "@/lib/unread-shared";
 
 import { ContextSection } from "./context-section";
@@ -265,8 +264,8 @@ export function ConversationView({
   }, [conversation.id, router]);
 
   // Mark displayed CUSTOMER messages read only while this tab is visible.
-  // Batches stop when the tab hides or the effect is cancelled; succeeded
-  // batches still refresh the count (break, so those IDs are not discarded).
+  // Batches stop when the tab hides or the effect is cancelled; IDs from
+  // batches that already succeeded are kept so they are not sent again.
   const markedReadRef = useRef<Set<string>>(new Set());
   const [focusTick, setFocusTick] = useState(0);
 
@@ -310,9 +309,6 @@ export function ConversationView({
         if (cancelled) break;
       }
       for (const id of succeeded) markedReadRef.current.add(id);
-      if (succeeded.length > 0) {
-        window.dispatchEvent(new CustomEvent(UNREAD_REFRESH_EVENT));
-      }
       if (failed && !cancelled) {
         toast.error("Could not mark messages as read — retrying when you next focus this tab.");
       }

@@ -19,7 +19,7 @@ design review list.
 | --- | --- | --- | --- |
 | D1 | Away mode scope | **Resolved:** one Workspace-wide Live/Away setting, not per Product | FR-CHAT-04; `design/app-shell.md`, `chat-widget.md` |
 | D2 | Email to an archived Product | **Resolved:** it bounces | FR-PROD-01; `design/product-settings.md`, `support-inbox.md` |
-| D3 | Reply to a Closed Conversation | **Resolved:** a customer or agent reply reopens the same Conversation; no new Conversation; it is counted once ever for billing (also resolves question 2 below) | FR-INBOX-02, FR-USE-01, architecture.md; `design/support-inbox.md`, `conversation-view.md`, `chat-widget.md` |
+| D3 | Reply to a Closed Conversation | **Resolved:** a customer or agent reply reopens the same Conversation (a customer reply also moves a Pending one back to Open, see Attention model below); no new Conversation; it is counted once ever for billing (also resolves question 2 below) | FR-INBOX-02, FR-USE-01, architecture.md; `design/support-inbox.md`, `conversation-view.md`, `chat-widget.md` |
 | D6 | Who deletes Conversations and Products | **Resolved:** Admins only | FR-ACC-01; `design/conversation-view.md`, `product-settings.md` |
 | D9 | Page URL capture | **Resolved:** the widget records the page URL automatically | FR-CTX-01/02; `design/chat-widget.md`, `conversation-view.md` |
 | D12 | Branding | **Resolved:** mint green; full palette, tokens and logo direction delegated to the design pass | `design/brand.md` |
@@ -502,3 +502,14 @@ defaults, not resolved policy approvals.
 | WQ2 | Grace period for the old key? | **Open.** A cut-over window would need a previous-key column and an expiry, which is a schema change: `widgetKeyPrevious String? @unique` plus `widgetKeyPreviousExpiresAt DateTime?`, with the key lookup falling back to the previous key until it expires. Not built: it widens the lifetime of a possibly abused key, which is the thing a rotation exists to end. Revisit if hosted customers report painful outages. |
 | WQ3 | Revoke without a replacement? | **Open.** Rotation doubles as revocation (the old key never works again); archiving the Product also disables its keys and is reversible. A "key off, no key" state would need either a nullable `widgetPublicKey` (every widget lookup then handles a missing key) or a `widgetKeyRevokedAt` flag, so it needs a migration and is not built. |
 | WQ4 | API counterpart? | **Default (ADR-0005 parity):** `POST /api/products/{id}/widget-key/rotate` (`products:write`, token-only, shares the per-token write bucket). Unlike the form key and identity secret (FR-API-16 exemptions), the widget key is already public and returned by `GET /api/products/{id}`, so rotating it through the API leaks nothing a read does not. |
+
+## Attention model: title counts open tickets; customer replies reopen Pending (2026-11-07)
+
+Raised by the maintainer on 2026-11-07: the number in the browser tab title
+was "completely disconnected from the open tickets the logged-in person is
+seeing". Two linked changes follow.
+
+| # | Question | Position |
+| --- | --- | --- |
+| AQ1 | What does the title prefix count? | **Maintainer-overridable default:** OPEN Conversations of the Workspace, the same definition as the inbox Open tab (not per agent). Previously: the signed-in agent's unread customer Messages in OPEN and PENDING Conversations (FR-INBOX-04), a different unit and scope from the inbox's Conversation counts, which made the two disagree by design; the title also refreshed only on focus/visibility/mark-read/a bounded poll, so a new chat did not move it. The title now also refreshes from the existing inbox event stream. Per-agent unread Messages and read receipts are unchanged and remain for read tracking. To revert, count `getUnreadCount` in the title again (`src/components/layout/unread-title.tsx`). |
+| AQ2 | Does a customer reply move a Pending Conversation back to Open? | **Maintainer-decided (2026-11-07):** yes — "else I won't ever see it". Any customer Message (widget visitor or inbound email, through `addCustomerMessage`) leaves the Conversation Open: Open stays Open, Pending becomes Open, Closed becomes Open as before (`closedAt` clears only when it was Closed). Agent replies still set Pending (FR-API-04/08 unchanged). The auto-close sweep only closes Pending Conversations, so a replied-to one is no longer a candidate. |

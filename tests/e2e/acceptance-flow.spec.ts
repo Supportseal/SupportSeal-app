@@ -236,14 +236,15 @@ test.describe.serial("V1 acceptance flow", () => {
   });
 
   test("unified inbox lists both Products; filter switches scope and back", async () => {
-    // The agent reply moved conversation A to Pending, so cover both tabs.
-    await agentPage.goto("/inbox?status=PENDING");
+    // The agent reply moved conversation A to Pending and the visitor's
+    // later attachment message moved it back to Open (FR-INBOX-02), so both
+    // Products' conversations are on the Open tab.
+    await agentPage.goto("/inbox?status=OPEN");
     const list = agentPage.locator('ul[aria-label="Conversations"]');
     await expect(list.getByText(productA.name).first()).toBeVisible();
-    await agentPage.getByRole("tab", { name: /Open/u }).click();
     await expect(list.getByText(productB.name).first()).toBeVisible({ timeout: 20_000 });
 
-    await agentPage.goto(`/inbox?product=${productAId}&status=PENDING`);
+    await agentPage.goto(`/inbox?product=${productAId}&status=OPEN`);
     await expect(agentPage.getByText("Product scope")).toBeVisible();
     await expect(list.getByText(productA.name).first()).toBeVisible();
     await expect(list.getByText(productB.name)).toHaveCount(0);
@@ -279,7 +280,7 @@ test.describe.serial("V1 acceptance flow", () => {
     await agentPage.getByLabel("Add tag").press("Enter");
     await expect(agentPage.getByLabel("Remove tag safari")).toBeVisible({ timeout: 20_000 });
 
-    await agentPage.goto("/inbox?status=PENDING");
+    await agentPage.goto("/inbox?status=OPEN");
     await expect(
       agentPage.locator('ul[aria-label="Conversations"]').getByText("safari").first(),
     ).toBeVisible();
@@ -460,8 +461,9 @@ test.describe.serial("V1 acceptance flow", () => {
       await agentPage.goto(`/inbox/${conversationAId}`);
       await expect(agentPage.getByRole("button", { name: "Close", exact: true })).toBeVisible();
       await agentPage.getByRole("button", { name: "Close", exact: true }).click();
-      // A is Pending, so the Open list beside the thread has no next
-      // conversation: Close lands on the empty state (#199).
+      // A is Pending again (the saved-reply Send above is an agent reply), so
+      // the Open list beside the thread has no next conversation: Close lands
+      // on the empty state (#199).
       await expect(agentPage).toHaveURL(/\/inbox\/?(\?.*)?$/u, { timeout: 8_000 });
     }).toPass({ timeout: 40_000 });
     await agentPage.goto(`/inbox/${conversationAId}`);

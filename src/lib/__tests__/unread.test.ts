@@ -3,7 +3,12 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestUser, startTestDb, stopTestDb, type TestDb } from "@/test/integration-db";
 import { createWorkspace, getPrimaryMembership, type WorkspaceContext } from "@/lib/workspace";
 import { createProduct } from "@/lib/products";
-import { createConversation, setConversationStatus, upsertContact } from "@/lib/conversations";
+import {
+  countOpenConversations,
+  createConversation,
+  setConversationStatus,
+  upsertContact,
+} from "@/lib/conversations";
 import {
   getUnreadCount,
   markCustomerMessagesRead,
@@ -289,5 +294,34 @@ describe("unread customer message tracking", () => {
 
     await markRead(alphaMembershipId, pendingConversation, pending.customerIds);
     await expectUnread(alphaMembershipId, 4);
+  });
+});
+
+describe("countOpenConversations (the title count)", () => {
+  it("counts only OPEN conversations, workspace-wide, independent of read state", async () => {
+    const open = await seedConversation(alpha, alphaProductId);
+    const read = await addMessages(open, { customer: 2 });
+    const pending = await seedConversation(alpha, alphaProductId);
+    const closed = await seedConversation(alpha, alphaProductId);
+    await seedConversation(alpha, alphaProductId);
+    await setConversationStatus({ ctx: alpha, conversationId: pending, status: "PENDING" });
+    await setConversationStatus({ ctx: alpha, conversationId: closed, status: "CLOSED" });
+    expect(await countOpenConversations(alpha.workspace.id)).toBe(2);
+
+    // Reading every message changes the unread count but not the open count.
+    await markRead(alphaMembershipId, open, read.customerIds);
+    await expectUnread(alphaMembershipId, 0);
+    expect(await countOpenConversations(alpha.workspace.id)).toBe(2);
+
+    await setConversationStatus({ ctx: alpha, conversationId: open, status: "CLOSED" });
+    expect(await countOpenConversations(alpha.workspace.id)).toBe(1);
+  });
+
+  it("never includes another Workspace's conversations (FR-SEC-01)", async () => {
+    await seedConversation(alpha, alphaProductId);
+    await seedConversation(beta, betaProductId);
+    await seedConversation(beta, betaProductId);
+    expect(await countOpenConversations(alpha.workspace.id)).toBe(1);
+    expect(await countOpenConversations(beta.workspace.id)).toBe(2);
   });
 });

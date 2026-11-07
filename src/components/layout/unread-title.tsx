@@ -1,38 +1,36 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 
+import { connectInboxStream } from "@/lib/inbox-stream-client";
+import { subscribeNotifyKicks } from "@/lib/notifications/client";
 import { unreadTitlePrefix } from "@/lib/unread-shared";
-
-/**
- * Window event dispatched after a successful mark-read write; the count is
- * refreshed only then, so a failed write never lowers the prefix.
- */
-export const UNREAD_REFRESH_EVENT = "supportseal:unread-refresh";
 
 const POLL_INTERVAL_MS = 15_000;
 const REFRESH_DEBOUNCE_MS = 300;
-
-type UnreadState = { count: number; capped: boolean } | null;
 
 function stripUnreadPrefix(title: string): string {
   return title.replace(/^\(\d+\+?\)\s+/, "");
 }
 
 /**
- * Signed-in page-title prefix (FR-INBOX-04): "(1) " … "(99+) ", nothing at
- * zero. Mounted once in the AppShell. A MutationObserver adopts external
- * title replacements (Next metadata on navigation) and ignores self-writes;
- * cleanup strips only a prefix this component still owns. Count refreshes on
- * mount, focus, visibility, the refresh event, and a ~15s poll. Abort plus a
- * request sequence drops stale responses.
+ * Signed-in page-title prefix (FR-INBOX-04): the Workspace's OPEN Conversations,
+ * "(1) " … "(99+) ", nothing at zero. Mounted once in the AppShell. A
+ * MutationObserver adopts external title replacements (Next metadata on
+ * navigation) and ignores self-writes; cleanup strips only a prefix this
+ * component still owns. Count refreshes on mount, focus, visibility, a ~15s
+ * poll, and live from the inbox stream. Abort plus a request sequence drops
+ * stale responses.
  */
 export function UnreadTitle() {
-  const [unread, setUnread] = useState<UnreadState>(null);
+  const [openCount, setOpenCount] = useState<number | null>(null);
+  const onInbox = usePathname().startsWith("/inbox");
   const baseRef = useRef<string | null>(null);
   const prefixRef = useRef<string | null>(null);
   const lastAppliedRef = useRef<string | null>(null);
   const applyRef = useRef<(() => void) | null>(null);
+  const refreshRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     baseRef.current = stripUnreadPrefix(document.title);
@@ -70,9 +68,9 @@ export function UnreadTitle() {
   }, []);
 
   useEffect(() => {
-    prefixRef.current = unread ? unreadTitlePrefix(unread.count, unread.capped) : null;
+    prefixRef.current = openCount === null ? null : unreadTitlePrefix(openCount, false);
     applyRef.current?.();
-  }, [unread]);
+  }, [openCount]);
 
   useEffect(() => {
     let stopped = false;
@@ -85,7 +83,7 @@ export function UnreadTitle() {
       stopped = true;
       if (poll) clearInterval(poll);
       poll = null;
-      setUnread(null);
+      setOpenCount(null);
     };
 
     const fetchCount = async () => {
@@ -104,9 +102,9 @@ export function UnreadTitle() {
           return;
         }
         if (!response.ok) return; // transient: retried by poll/focus/visibility
-        const data = (await response.json()) as { count: number; capped: boolean };
+        const data = (await response.json()) as { openConversations: number };
         if (requestId !== sequence || stopped) return;
-        setUnread(data);
+        setOpenCount(data.openConversations);
       } catch {
         // Aborted or offline: the next poll/focus retries.
       }
@@ -120,23 +118,39 @@ export function UnreadTitle() {
       if (refreshTimer) clearTimeout(refreshTimer);
       refreshTimer = setTimeout(() => void fetchCount(), REFRESH_DEBOUNCE_MS);
     };
+    refreshRef.current = onRefresh;
 
     void fetchCount();
     poll = setInterval(() => void fetchCount(), POLL_INTERVAL_MS);
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisibility);
-    window.addEventListener(UNREAD_REFRESH_EVENT, onRefresh);
 
     return () => {
       stopped = true;
+      refreshRef.current = null;
       if (poll) clearInterval(poll);
       if (refreshTimer) clearTimeout(refreshTimer);
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibility);
-      window.removeEventListener(UNREAD_REFRESH_EVENT, onRefresh);
       controller?.abort();
     };
   }, []);
+
+  // Wake the count on conversation create / status change / message. Inbox
+  // pages already hold the one inbox stream and broadcast a kick per event, so
+  // they only listen; every other signed-in page opens its own stream, so the
+  // tab holds a single connection either way.
+  useEffect(() => {
+    const refresh = () => refreshRef.current?.();
+    const unsubscribe = subscribeNotifyKicks(refresh);
+    const disconnect = onInbox
+      ? null
+      : connectInboxStream({ onConversation: refresh, onResync: refresh });
+    return () => {
+      unsubscribe();
+      disconnect?.();
+    };
+  }, [onInbox]);
 
   return null;
 }

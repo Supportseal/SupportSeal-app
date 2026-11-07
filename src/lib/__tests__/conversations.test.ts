@@ -179,6 +179,52 @@ describe("conversation lifecycle", () => {
     expect(afterReopen?.messages.length).toBe(3);
   });
 
+  it.each([
+    ["visitor", { kind: "visitor", visitorId: "v1" } as const],
+    ["email", { kind: "email", fromEmail: "sam@example.com" } as const],
+  ])("a %s customer reply moves a PENDING conversation back to OPEN", async (_name, source) => {
+    const conversationId = await seedConversation(alpha, alphaProductId, { body: "Export broken." });
+    await addAgentMessage({ ctx: alpha, conversationId, body: "Which browser?" });
+    const pending = await db.prisma.conversation.findUniqueOrThrow({ where: { id: conversationId } });
+    expect(pending.status).toBe("PENDING");
+
+    const reply = await addCustomerMessage({
+      workspaceId: alpha.workspace.id,
+      conversationId,
+      body: "Safari 18.",
+      source,
+    });
+    expect(reply.ok).toBe(true);
+
+    const after = await db.prisma.conversation.findUniqueOrThrow({ where: { id: conversationId } });
+    expect(after.status).toBe("OPEN");
+    expect(after.closedAt).toBeNull();
+    expect(after.lastMessageAt.getTime()).toBeGreaterThan(pending.lastMessageAt.getTime());
+    expect(
+      (await listConversations({ workspaceId: alpha.workspace.id, status: "OPEN" })).items.map((i) => i.id),
+    ).toContain(conversationId);
+  });
+
+  it("a customer reply keeps an OPEN conversation OPEN and clears closedAt only when reopening CLOSED", async () => {
+    const conversationId = await seedConversation(alpha, alphaProductId, { body: "Hello" });
+    const send = (body: string) =>
+      addCustomerMessage({
+        workspaceId: alpha.workspace.id,
+        conversationId,
+        body,
+        source: { kind: "visitor", visitorId: "v1" },
+      });
+    const row = () => db.prisma.conversation.findUniqueOrThrow({ where: { id: conversationId } });
+
+    await send("Still there?");
+    expect(await row()).toMatchObject({ status: "OPEN", closedAt: null });
+
+    await setConversationStatus({ ctx: alpha, conversationId, status: "CLOSED" });
+    expect((await row()).closedAt).not.toBeNull();
+    await send("One more thing");
+    expect(await row()).toMatchObject({ status: "OPEN", closedAt: null });
+  });
+
   it("keeps internal notes invisible to the customer timeline", async () => {
     const conversationId = await seedConversation(alpha, alphaProductId, {
       body: "Refund please",
