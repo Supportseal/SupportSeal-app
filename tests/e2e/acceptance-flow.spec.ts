@@ -461,8 +461,9 @@ test.describe.serial("V1 acceptance flow", () => {
       await agentPage.goto(`/inbox/${conversationAId}`);
       await expect(agentPage.getByRole("button", { name: "Close", exact: true })).toBeVisible();
       await agentPage.getByRole("button", { name: "Close", exact: true }).click();
-      // A is the last row of the Open list beside the thread (B is newer),
-      // so there is no next conversation: Close lands on the empty state (#199).
+      // A is Pending again (the saved-reply Send above is an agent reply), so
+      // the Open list beside the thread has no next conversation: Close lands
+      // on the empty state (#199).
       await expect(agentPage).toHaveURL(/\/inbox\/?(\?.*)?$/u, { timeout: 8_000 });
     }).toPass({ timeout: 40_000 });
     await agentPage.goto(`/inbox/${conversationAId}`);
