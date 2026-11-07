@@ -170,11 +170,18 @@ Every Product has two keys, both in the responses above. To read them later,
 from any machine with a token:
 
 ```sh
-curl --fail-with-body -sS "$SUPPORTSEAL_URL/api/products/$PRODUCT_ID" \
-  -H "Authorization: Bearer $SUPPORTSEAL_TOKEN" -o product.json; cat product.json
-export WIDGET_KEY=$(jq -r '.widgetKey // empty' product.json)
-export FORM_KEY=$(jq -r '.formKey // empty' product.json)
-: "${WIDGET_KEY:?No widget key; see the error above}"
+if install -m 600 /dev/null product.json && \
+   curl --fail-with-body -sS "$SUPPORTSEAL_URL/api/products/$PRODUCT_ID" \
+  -H "Authorization: Bearer $SUPPORTSEAL_TOKEN" -o product.json; then
+  cat product.json
+  export WIDGET_KEY=$(jq -r '.widgetKey // empty' product.json)
+  export FORM_KEY=$(jq -r '.formKey // empty' product.json)
+  : "${WIDGET_KEY:?No widget key; see the error above}"
+else
+  unset WIDGET_KEY FORM_KEY
+  echo "Product read failed; retry before using a key." >&2
+  false  # nonzero status for set -e scripts; does not close an interactive shell
+fi
 ```
 
 `GET /api/products` lists every Product with its keys.
