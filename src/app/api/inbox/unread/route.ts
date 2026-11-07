@@ -2,14 +2,17 @@ import { NextResponse } from "next/server";
 
 import { getSessionUser } from "@/lib/session";
 import { getPrimaryMembership } from "@/lib/workspace";
+import { countOpenConversations } from "@/lib/conversations";
 import { getUnreadCount } from "@/lib/unread";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Per-agent unread CUSTOMER message count (FR-INBOX-04) for the signed-in
- * member's primary Workspace. The count is scoped through the membership row
- * itself, so it can never leak another Workspace's messages.
+ * Attention counts (FR-INBOX-04) for the signed-in member's primary
+ * Workspace: `openConversations` (the page-title prefix; the same number as
+ * the inbox Open tab) and the per-agent unread CUSTOMER message count
+ * (`count`/`capped`). Both are scoped through the membership row, so they
+ * can never include another Workspace's data.
  */
 export async function GET() {
   const user = await getSessionUser();
@@ -17,9 +20,12 @@ export async function GET() {
   const membership = await getPrimaryMembership(user.id);
   if (!membership) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
-  const unread = await getUnreadCount({
-    membershipId: membership.id,
-    workspaceId: membership.workspaceId,
-  });
-  return NextResponse.json(unread, { headers: { "cache-control": "no-store" } });
+  const [unread, openConversations] = await Promise.all([
+    getUnreadCount({ membershipId: membership.id, workspaceId: membership.workspaceId }),
+    countOpenConversations(membership.workspaceId),
+  ]);
+  return NextResponse.json(
+    { ...unread, openConversations },
+    { headers: { "cache-control": "no-store" } },
+  );
 }

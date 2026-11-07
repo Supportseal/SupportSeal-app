@@ -212,6 +212,22 @@ describe("PENDING inactivity auto-close sweep", () => {
     });
   });
 
+  it("a customer reply to a stale PENDING conversation makes it OPEN, so it is no longer auto-close eligible", async () => {
+    const c = await pendingConversation({ lastMessageAt: daysAfter(-6) });
+    const reply = await addCustomerMessage({
+      workspaceId: ctx.workspace.id,
+      conversationId: c.id,
+      body: "Any update?",
+      source: { kind: "visitor", visitorId: "v1" },
+    });
+    expect(reply.ok).toBe(true);
+
+    // Even a sweep far in the future leaves OPEN conversations alone.
+    expect(await sweepAutoClose({ now: daysAfter(30) })).toEqual({ closed: 0 });
+    expect(await reload(c.id)).toMatchObject({ status: "OPEN", closedAt: null });
+    expect(await notes(c.id)).toHaveLength(0);
+  });
+
   it("hides the auto-close NOTE from the visitor thread, which shows CLOSED", async () => {
     const c = await pendingConversation({ lastMessageAt: daysAfter(-6) });
     await sweepAutoClose({ now: T0 });

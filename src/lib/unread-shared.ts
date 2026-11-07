@@ -16,7 +16,7 @@ export const MAX_MARK_IDS = 1_000;
 /** Mark-read batch size shared by the client sender and server writer. */
 export const UNREAD_MARK_BATCH = 250;
 
-/** Title prefix for an unread count: null at zero, "(99+) " above 99. */
+/** Title prefix for a count (open Conversations): null at zero, "(99+) " above 99. */
 export function unreadTitlePrefix(count: number, capped: boolean): string | null {
   if (count <= 0) return null;
   return capped || count > UNREAD_DISPLAY_CAP ? "(99+) " : `(${count}) `;

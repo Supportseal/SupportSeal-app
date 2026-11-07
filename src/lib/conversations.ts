@@ -240,7 +240,7 @@ export type CustomerMessageSource =
   | { kind: "visitor"; visitorId: string }
   | { kind: "email"; fromEmail: string };
 
-/** Append a customer-side message; reopens closed conversations. */
+/** Append a customer-side message; the Conversation is left OPEN (reopens Pending and Closed ones, FR-INBOX-02). */
 export async function addCustomerMessage(input: {
   workspaceId: string;
   conversationId: string;
@@ -312,7 +312,7 @@ export async function addCustomerMessage(input: {
       where: { id: conversation.id },
       data: {
         lastMessageAt: new Date(),
-        status: conversation.status === "CLOSED" ? "OPEN" : conversation.status,
+        status: "OPEN",
         closedAt: conversation.status === "CLOSED" ? null : undefined,
       },
     });
@@ -516,6 +516,14 @@ export async function updateConversation(input: {
     });
   }
   return { ok: true };
+}
+
+/**
+ * OPEN Conversations in a Workspace, ignoring any inbox Product filter.
+ * This is the signed-in page-title prefix (FR-INBOX-04), not a per-agent count.
+ */
+export async function countOpenConversations(workspaceId: string): Promise<number> {
+  return prisma.conversation.count({ where: { workspaceId, status: "OPEN" } });
 }
 
 export type ListConversationsInput = {

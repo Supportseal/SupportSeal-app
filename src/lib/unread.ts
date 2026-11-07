@@ -8,9 +8,9 @@ import { UNREAD_FETCH_LIMIT, UNREAD_MARK_BATCH, MAX_MARK_IDS } from "@/lib/unrea
  * Unread = no MessageReadReceipt row for the caller's membership, so
  * messages that predate the feature and messages that arrive concurrently
  * are never skipped (the failure mode of a timestamp watermark). Receipts
- * are durable: the count survives sessions and devices. The title count is
- * scoped to OPEN/PENDING conversations, matching the inbox's own
- * definition of what still needs attention.
+ * are durable: the count survives sessions and devices. The page-title
+ * count is not this metric: it counts OPEN conversations
+ * (countOpenConversations in conversations.ts, FR-INBOX-04).
  */
 
 export type UnreadCount = {
