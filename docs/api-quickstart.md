@@ -87,7 +87,8 @@ forwarding address. Blank or `null` stores none; send `{"supportEmail":null}` in
 `PATCH` later to remove it.
 
 ```sh
-install -m 600 /dev/null product.json  # responses carry keys; keep the file private
+# responses carry keys; only write them to a private file
+install -m 600 /dev/null product.json && \
 curl --fail-with-body -sS -X POST "$SUPPORTSEAL_URL/api/products" \
   -H "Authorization: Bearer $SUPPORTSEAL_TOKEN" \
   -H "Content-Type: application/json" \
@@ -200,15 +201,15 @@ body, needs the `products:write` scope, and answers `409 conflict` for an archiv
 Product:
 
 ```sh
-install -m 600 /dev/null product.json  # the response carries keys; keep the file private
-if curl --fail-with-body -sS -X POST "$SUPPORTSEAL_URL/api/products/$PRODUCT_ID/widget-key/rotate" \
+if install -m 600 /dev/null product.json && \
+   curl --fail-with-body -sS -X POST "$SUPPORTSEAL_URL/api/products/$PRODUCT_ID/widget-key/rotate" \
   -H "Authorization: Bearer $SUPPORTSEAL_TOKEN" -o product.json; then
   NEW_KEY=$(jq -r '.widgetKey // empty' product.json)
   : "${NEW_KEY:?Rotation response had no widgetKey; see product.json. WIDGET_KEY is unchanged}"
   export WIDGET_KEY=$NEW_KEY
 else
   echo "Rotation call failed; WIDGET_KEY is unchanged. A timeout may still have rotated the key server-side — and can complete after you look: read the Product, and if it still shows the old key, read it again after a short wait before retrying or embedding a key." >&2
-  exit 1
+  false  # nonzero status for set -e scripts; does not close an interactive shell
 fi
 ```
 
