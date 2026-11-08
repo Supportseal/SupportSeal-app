@@ -5,7 +5,8 @@ import { htmlToText } from "@/lib/email/html-text";
  * Over-stripping loses real customer content, so every rule only removes
  * text it can confidently attribute to the quoted original:
  *
- * - plain text: the "On <date>, <sender> wrote:" footer line plus the
+ * - plain text: the "On <date>, <sender> wrote:" footer (which may be
+ *   hard-wrapped over up to three lines) plus the
  *   "> "-prefixed quoted lines that follow it — and only when at least one
  *   "> " quoted line actually follows. Anything else — inline answers
  *   inside the quote, bottom-posted replies, signatures — is kept.
@@ -40,19 +41,43 @@ function isQuoteHeaderLine(line: string): boolean {
 }
 
 /**
+ * Clients hard-wrap text/plain at ~78 columns, so a long attribution
+ * ("On Mon, Nov 9, 2026, 00:19 Acme Support <no-reply@…>" / "wrote:")
+ * arrives split over two or three lines. Joins at most this many
+ * consecutive non-blank, unquoted lines when looking for the header.
+ */
+const MAX_HEADER_LINES = 3;
+
+/** Start and last line index of the first quote header, or null. */
+function findQuoteHeader(lines: string[]): { start: number; end: number } | null {
+  for (let start = 0; start < lines.length; start++) {
+    let joined = "";
+    for (let end = start; end < Math.min(lines.length, start + MAX_HEADER_LINES); end++) {
+      const line = lines[end].trim();
+      // A fresh "On <date>" line starts its own candidate; never let an
+      // earlier prose line that happens to start with a date absorb it.
+      if (!line || QUOTED_LINE.test(line) || (end > start && DATE_PREFIX.test(line))) break;
+      joined = joined ? `${joined} ${line}` : line;
+      if (isQuoteHeaderLine(joined)) return { start, end };
+    }
+  }
+  return null;
+}
+
+/**
  * Strip only the contiguous quoted/blank block immediately after the
  * header. Once customer prose resumes, preserve everything that follows,
  * including their own quoted lines. Without an immediate quote, keep all.
  */
 export function stripQuotedReplyText(text: string): string {
   const lines = text.split(/\r?\n/u);
-  const header = lines.findIndex(isQuoteHeaderLine);
-  if (header === -1) return text;
-  const tail = lines.slice(header + 1);
+  const header = findQuoteHeader(lines);
+  if (!header) return text;
+  const tail = lines.slice(header.end + 1);
   const firstContent = tail.findIndex((line) => line.trim());
   if (firstContent === -1 || !QUOTED_LINE.test(tail[firstContent])) return text;
   const replyStart = tail.findIndex((line) => line.trim() && !QUOTED_LINE.test(line));
-  return [...lines.slice(0, header), ...(replyStart === -1 ? [] : tail.slice(replyStart))]
+  return [...lines.slice(0, header.start), ...(replyStart === -1 ? [] : tail.slice(replyStart))]
     .join("\n").trim();
 }
 

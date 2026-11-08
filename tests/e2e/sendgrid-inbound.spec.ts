@@ -85,4 +85,35 @@ test.describe.serial("SendGrid Inbound Parse intake", () => {
     await otherPage.goto(`/inbox?q=${encodeURIComponent(nonce)}`);
     await expect(otherPage.locator('ul[aria-label="Conversations"] li a')).toHaveCount(0);
   });
+
+  test("shows only the customer's reply when Gmail hard-wraps the quote header", async () => {
+    const beta = loadFixtures().beta;
+    const wrappedSubject = `Wrapped quote ${nonce}`;
+    const result = await postInboundParse({
+      headers: `Message-ID: <wrapped-${nonce}@customer.test>`,
+      from: "Pat Customer <pat@customer.test>",
+      to: beta.product.inboundEmail,
+      subject: wrappedSubject,
+      text: [
+        "Thank you for your response.",
+        "",
+        "On Mon, Nov 9, 2026, 00:19 Beta Support <no-reply@supportseal.app>",
+        "wrote:",
+        "",
+        "> Hello. Thanks for reaching out. Unfortunately we can't help with that and",
+        "> it might be best to contact Home Affairs",
+        ">",
+      ].join("\r\n"),
+    });
+    expect(result.status).toBe(200);
+
+    await betaPage.goto(`/inbox?q=${encodeURIComponent(`Wrapped quote ${nonce}`)}`);
+    const row = betaPage.locator('ul[aria-label="Conversations"] li a').first();
+    await expect(row).toContainText(wrappedSubject);
+    await row.click();
+    await expect(betaPage.getByPlaceholder(/Write a reply/u)).toBeVisible();
+    await expect(betaPage.getByText("Thank you for your response.")).toHaveCount(2);
+    await expect(betaPage.getByText("contact Home Affairs")).toHaveCount(0);
+    await expect(betaPage.getByText("wrote:")).toHaveCount(0);
+  });
 });

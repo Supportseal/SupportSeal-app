@@ -41,6 +41,57 @@ describe("stripQuotedReplyText (issue #128)", () => {
     expect(stripQuotedReplyText(text)).toBe("That works for me, thanks!");
   });
 
+  it("strips a Gmail header hard-wrapped before 'wrote:' (live SS-188 shape)", () => {
+    const text = [
+      "Thank you for your response.",
+      "",
+      "On Mon, Nov 9, 2026, 00:19 CheckID SA Support <no-reply@supportseal.app>",
+      "wrote:",
+      "",
+      "> Hello. Thanks for reaching out. Unfortunately we can't help with that and",
+      "> it might be best to contact Home Affairs",
+      ">",
+    ].join("\r\n");
+    expect(stripQuotedReplyText(text)).toBe("Thank you for your response.");
+  });
+
+  it("strips a header wrapped over three lines (long sender name and address)", () => {
+    const text = [
+      "Got it.",
+      "On Mon, Nov 9, 2026 at 12:19 AM A Rather Long Product Name Support Team <",
+      "no-reply@supportseal.app>",
+      "wrote:",
+      "> earlier reply",
+    ].join("\n");
+    expect(stripQuotedReplyText(text)).toBe("Got it.");
+  });
+
+  it("keeps a wrapped attribution when no quoted lines follow", () => {
+    const text = "On Mon, Nov 9, 2026 my colleague\nwrote:\nthat the ID was ready.";
+    expect(stripQuotedReplyText(text)).toBe(text);
+  });
+
+  it("never lets an earlier dated prose line absorb the real header", () => {
+    const text = [
+      "On Nov 2, 2026 I applied at the office.",
+      "On Mon, Nov 9, 2026, 00:19 Support <no-reply@supportseal.app>",
+      "wrote:",
+      "> earlier reply",
+    ].join("\n");
+    expect(stripQuotedReplyText(text)).toBe("On Nov 2, 2026 I applied at the office.");
+  });
+
+  it("does not join more than three lines into a header", () => {
+    const text = [
+      "On Mon, Nov 9, 2026 we spoke",
+      "about the form",
+      "and the photo",
+      "and then you wrote:",
+      "> earlier reply",
+    ].join("\n");
+    expect(stripQuotedReplyText(text)).toBe(text);
+  });
+
   it("keeps prose that merely matches the header pattern when no quoted lines follow", () => {
     const text = "On 9 Oct, I wrote:\nPlease keep this entire message.";
     expect(stripQuotedReplyText(text)).toBe(text);
