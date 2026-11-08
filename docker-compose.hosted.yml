@@ -23,6 +23,11 @@ services:
         NEXT_PUBLIC_APP_NAME: SupportSeal
         # Client-bundle links to the marketing site are inlined at build time.
         NEXT_PUBLIC_MARKETING_URL: https://supportseal.app
+        # Umami sign-up funnel (hosted only; docs/analytics.md): the same
+        # Umami website as the marketing site, so a funnel spans both hosts.
+        # Set NEXT_PUBLIC_UMAMI_SCRIPT_URL to "off" in Coolify to turn it off.
+        NEXT_PUBLIC_UMAMI_SCRIPT_URL: ${NEXT_PUBLIC_UMAMI_SCRIPT_URL:-https://oumatjie.slouchypete.dev/script.js}
+        NEXT_PUBLIC_UMAMI_WEBSITE_ID: ${NEXT_PUBLIC_UMAMI_WEBSITE_ID:-101ae16e-31bd-4310-ac3b-efcf23eb0c87}
     environment:
       DATABASE_URL: ${DATABASE_URL}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}

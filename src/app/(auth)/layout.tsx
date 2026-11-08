@@ -1,3 +1,4 @@
+import { UmamiScript } from "@/components/analytics/umami-script";
 import { Logo } from "@/components/layout/logo";
 import { SupportWidget } from "@/components/support/support-widget";
 import { brand } from "@/lib/brand";
@@ -31,6 +32,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         <div className="w-full max-w-[26.5rem]">{children}</div>
       </div>
       <SupportWidget />
+      <UmamiScript />
     </div>
   );
 }

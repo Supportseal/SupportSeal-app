@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { track } from "@/lib/analytics";
 import { Logo } from "@/components/layout/logo";
 import { authClient } from "@/lib/auth-client";
 import { brand } from "@/lib/brand";
@@ -37,10 +38,12 @@ export function LoginForm({ providers = [] }: { providers?: SocialProvider[] }) 
     const password = String(formData.get("password") ?? "");
     const result = await authClient.signIn.email({ email, password });
     if (result.error) {
+      track("login_failed", { method: "email" });
       setError("Invalid email or password.");
       setPending(false);
       return;
     }
+    track("login_completed", { method: "email" });
     const destination = safeNextPath(searchParams.get("next"), window.location.origin);
     if (linkAfterSignIn) {
       const nextParam = encodeURIComponent(destination);

@@ -121,4 +121,17 @@ test.describe.serial("sign-in navigation", () => {
     await page.goto("/register");
     await expect(page).toHaveURL(/\/inbox\/?$/u);
   });
+
+  test("signing up with a taken email says so and points to sign-in", async ({ page }) => {
+    // Regression (issue #65): the form checked a kebab-case code better-auth
+    // never sends, so a returning visitor saw only the generic error.
+    const fixtures = loadFixtures();
+    await page.goto("/register");
+    await page.locator("#name").fill("Returning Owner");
+    await page.locator("#email").fill(fixtures.beta.owner.email);
+    await page.locator("#password").fill("correct-horse-returning");
+    await page.getByRole("button", { name: "Sign up" }).click();
+    await expect(page.getByText("An account with that email already exists. Sign in instead.")).toBeVisible();
+    await expect(page).toHaveURL(/\/register$/u);
+  });
 });
