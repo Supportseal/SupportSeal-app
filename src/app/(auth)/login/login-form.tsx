@@ -11,16 +11,20 @@ import { Label } from "@/components/ui/label";
 import { Logo } from "@/components/layout/logo";
 import { authClient } from "@/lib/auth-client";
 import { brand } from "@/lib/brand";
-import { GitHubButton, OrDivider } from "../github-button";
-import { ACCOUNT_NOT_LINKED, githubErrorMessage } from "../github-errors";
+import { parseSocialProvider, type SocialProvider } from "@/lib/social-auth";
+import { OrDivider, SocialButton } from "../social-button";
+import { ACCOUNT_NOT_LINKED, SOCIAL_PROVIDER_NAMES, socialErrorMessage } from "../social-errors";
 import { safeNextPath } from "./next-path";
 
-export function LoginForm({ githubEnabled = false }: { githubEnabled?: boolean }) {
+export function LoginForm({ providers = [] }: { providers?: SocialProvider[] }) {
   const searchParams = useSearchParams();
-  const githubError = githubEnabled ? searchParams.get("error") : null;
-  // GitHub found an existing, unlinked account with the same email: the
-  // password sign-in below proves ownership, then links GitHub to it.
-  const linkAfterSignIn = githubError === ACCOUNT_NOT_LINKED;
+  const socialError = providers.length > 0 ? searchParams.get("error") : null;
+  // Error links from before Google existed carry no provider: GitHub.
+  const errorProvider = parseSocialProvider(searchParams.get("provider")) ?? "github";
+  // The provider found an existing, unlinked account with the same email:
+  // the password sign-in below proves ownership, then links the provider.
+  const linkAfterSignIn =
+    socialError === ACCOUNT_NOT_LINKED && providers.includes(errorProvider);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -41,11 +45,11 @@ export function LoginForm({ githubEnabled = false }: { githubEnabled?: boolean }
     if (linkAfterSignIn) {
       const nextParam = encodeURIComponent(destination);
       const linked = await authClient.linkSocial({
-        provider: "github",
+        provider: errorProvider,
         callbackURL: destination,
-        errorCallbackURL: `/login?github_link=failed&next=${nextParam}`,
+        errorCallbackURL: `/login?social_link=failed&provider=${errorProvider}&next=${nextParam}`,
       });
-      if (!linked.error) return; // redirecting to GitHub
+      if (!linked.error) return; // redirecting to the provider
     }
     // Full document navigation, never router.push: auth pages render Links
     // to protected routes (the header logo → /inbox), and a logged-out
@@ -57,15 +61,14 @@ export function LoginForm({ githubEnabled = false }: { githubEnabled?: boolean }
     window.location.assign(destination);
   }
 
-  function signInWithGitHub() {
+  function signInWith(provider: SocialProvider) {
     const next = safeNextPath(searchParams.get("next"), window.location.origin);
-    const params = new URLSearchParams();
+    const params = new URLSearchParams({ provider });
     if (searchParams.get("next")) params.set("next", next);
-    const query = params.toString();
     return authClient.signIn.social({
-      provider: "github",
+      provider,
       callbackURL: next,
-      errorCallbackURL: `/login${query ? `?${query}` : ""}`,
+      errorCallbackURL: `/login?${params.toString()}`,
     });
   }
 
@@ -77,10 +80,10 @@ export function LoginForm({ githubEnabled = false }: { githubEnabled?: boolean }
         </div>
         <h4 className="text-[1.375rem] font-medium text-heading">Welcome to {brand.name}</h4>
         <p className="mt-1 mb-6 text-muted">Sign in to your Workspace</p>
-        {githubError ? (
-          <p className="mb-4 text-sm text-danger" data-github-error={githubError}>
-            {githubErrorMessage(githubError, "login")}
-            {githubError === "signup_disabled" ? (
+        {socialError ? (
+          <p className="mb-4 text-sm text-danger" data-social-error={socialError}>
+            {socialErrorMessage(socialError, "login", errorProvider)}
+            {socialError === "signup_disabled" ? (
               <>
                 {" "}
                 <Link href="/register" className="text-primary underline underline-offset-2">
@@ -90,9 +93,18 @@ export function LoginForm({ githubEnabled = false }: { githubEnabled?: boolean }
             ) : null}
           </p>
         ) : null}
-        {githubEnabled && !linkAfterSignIn ? (
+        {providers.length > 0 && !linkAfterSignIn ? (
           <>
-            <GitHubButton label="Sign in with GitHub" start={signInWithGitHub} />
+            <div className="space-y-3">
+              {providers.map((provider) => (
+                <SocialButton
+                  key={provider}
+                  provider={provider}
+                  label={`Sign in with ${SOCIAL_PROVIDER_NAMES[provider]}`}
+                  start={() => signInWith(provider)}
+                />
+              ))}
+            </div>
             <OrDivider />
           </>
         ) : null}
@@ -121,7 +133,11 @@ export function LoginForm({ githubEnabled = false }: { githubEnabled?: boolean }
           </div>
           {error ? <p className="text-sm text-danger">{error}</p> : null}
           <Button className="w-full" type="submit" disabled={pending}>
-            {pending ? "Signing in…" : linkAfterSignIn ? "Sign in and connect GitHub" : "Sign in"}
+            {pending
+              ? "Signing in…"
+              : linkAfterSignIn
+                ? `Sign in and connect ${SOCIAL_PROVIDER_NAMES[errorProvider]}`
+                : "Sign in"}
           </Button>
         </form>
         <p className="mt-6 text-center text-[0.9375rem]">

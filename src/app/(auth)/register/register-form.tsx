@@ -14,8 +14,9 @@ import {
   serializePlanIntent,
   type PlanIntent,
 } from "@/lib/plan-intent";
-import { GitHubButton, OrDivider } from "../github-button";
-import { ACCOUNT_NOT_LINKED, githubErrorMessage } from "../github-errors";
+import type { SocialProvider } from "@/lib/social-auth";
+import { OrDivider, SocialButton } from "../social-button";
+import { ACCOUNT_NOT_LINKED, SOCIAL_PROVIDER_NAMES, socialErrorMessage } from "../social-errors";
 
 type LegalLink = { slug: string; label: string; href: string };
 
@@ -52,30 +53,35 @@ function rememberPlanIntent(planIntent: PlanIntent | null) {
 export function RegisterForm({
   legalLinks = [],
   planIntent = null,
-  githubEnabled = false,
-  githubError = null,
+  providers = [],
+  socialError = null,
 }: {
   legalLinks?: LegalLink[];
   planIntent?: PlanIntent | null;
-  githubEnabled?: boolean;
-  githubError?: string | null;
+  providers?: SocialProvider[];
+  socialError?: { code: string; provider: SocialProvider } | null;
 }) {
+  const socialEnabled = providers.length > 0;
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
-  function signUpWithGitHub() {
+  function signUpWith(provider: SocialProvider) {
     rememberPlanIntent(planIntent);
     // Back to /register: it sends a signed-in visitor on to checkout (or
     // onboarding) for the picked plan, and to /inbox otherwise.
-    const here = planIntent
-      ? `/register?plan=${planIntent.plan}&interval=${planIntent.interval}`
-      : "/register";
+    const params = new URLSearchParams();
+    if (planIntent) {
+      params.set("plan", planIntent.plan);
+      params.set("interval", planIntent.interval);
+    }
+    const here = `/register${params.size ? `?${params.toString()}` : ""}`;
+    params.set("provider", provider);
     return authClient.signIn.social({
-      provider: "github",
+      provider,
       requestSignUp: true,
       callbackURL: here,
       newUserCallbackURL: "/onboarding",
-      errorCallbackURL: here,
+      errorCallbackURL: `/register?${params.toString()}`,
     });
   }
 
@@ -119,14 +125,14 @@ export function RegisterForm({
             Create your account and Workspace, then finish checkout.
           </p>
         ) : null}
-        {githubError ? (
-          <p className="mb-4 text-sm text-danger" data-github-error={githubError}>
-            {githubErrorMessage(githubError, "register")}
-            {githubError === ACCOUNT_NOT_LINKED ? (
+        {socialError ? (
+          <p className="mb-4 text-sm text-danger" data-social-error={socialError.code}>
+            {socialErrorMessage(socialError.code, "register", socialError.provider)}
+            {socialError.code === ACCOUNT_NOT_LINKED ? (
               <>
                 {" "}
                 <Link
-                  href={`/login?error=${ACCOUNT_NOT_LINKED}`}
+                  href={`/login?error=${ACCOUNT_NOT_LINKED}&provider=${socialError.provider}`}
                   className="text-primary underline underline-offset-2"
                 >
                   Sign in
@@ -135,9 +141,18 @@ export function RegisterForm({
             ) : null}
           </p>
         ) : null}
-        {githubEnabled ? (
+        {socialEnabled ? (
           <>
-            <GitHubButton label="Sign up with GitHub" start={signUpWithGitHub} />
+            <div className="space-y-3">
+              {providers.map((provider) => (
+                <SocialButton
+                  key={provider}
+                  provider={provider}
+                  label={`Sign up with ${SOCIAL_PROVIDER_NAMES[provider]}`}
+                  start={() => signUpWith(provider)}
+                />
+              ))}
+            </div>
             <OrDivider />
           </>
         ) : null}
@@ -163,14 +178,14 @@ export function RegisterForm({
             <p className="mt-1 text-xs text-muted">At least 8 characters.</p>
           </div>
           {error ? <p className="text-sm text-danger">{error}</p> : null}
-          {githubEnabled ? null : <SignupLegalNotice links={legalLinks} />}
+          {socialEnabled ? null : <SignupLegalNotice links={legalLinks} />}
           <Button className="w-full" type="submit" disabled={pending}>
             {pending ? "Creating account…" : "Sign up"}
           </Button>
         </form>
-        {/* With two ways to sign up, the notice sits under both so it
-            plainly covers the GitHub button too. */}
-        {githubEnabled ? (
+        {/* With several ways to sign up, the notice sits under all of them
+            so it plainly covers the provider buttons too. */}
+        {socialEnabled ? (
           <div className="mt-4">
             <SignupLegalNotice links={legalLinks} />
           </div>

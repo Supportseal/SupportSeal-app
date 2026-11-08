@@ -123,4 +123,30 @@ describe("register page", () => {
     expect(markup).toContain("You picked Pro (monthly).");
     expect(markup).toContain("An account with this email already exists.");
   });
+
+  it("offers Google next to GitHub and names Google in its error message", async () => {
+    vi.stubEnv("HOSTED_MODE", "1");
+    vi.stubEnv("GITHUB_CLIENT_ID", "id");
+    vi.stubEnv("GITHUB_CLIENT_SECRET", "secret");
+    vi.stubEnv("GOOGLE_CLIENT_ID", "gid");
+    vi.stubEnv("GOOGLE_CLIENT_SECRET", "gsecret");
+    const markup = renderToStaticMarkup(
+      await RegisterPage({
+        searchParams: Promise.resolve({ error: "account_not_linked", provider: "google" }),
+      }),
+    );
+    expect(markup.indexOf("Sign up with Google")).toBeGreaterThan(-1);
+    expect(markup.indexOf("Sign up with Google")).toBeLessThan(markup.indexOf("Sign up with GitHub"));
+    expect(markup).toContain("Sign in with your password to connect Google.");
+    expect(markup).toContain("/login?error=account_not_linked&amp;provider=google");
+  });
+
+  it("offers Google alone when only Google is configured", async () => {
+    vi.stubEnv("HOSTED_MODE", "1");
+    vi.stubEnv("GOOGLE_CLIENT_ID", "gid");
+    vi.stubEnv("GOOGLE_CLIENT_SECRET", "gsecret");
+    const markup = await render();
+    expect(markup).toContain("Sign up with Google");
+    expect(markup).not.toContain("Sign up with GitHub");
+  });
 });
