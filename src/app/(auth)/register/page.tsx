@@ -1,11 +1,11 @@
 import { redirect } from "next/navigation";
 
 import { publicLegalLinks } from "@/config/legal";
-import { isGitHubSignInEnabled } from "@/lib/github-auth";
 import { isHostedMode } from "@/lib/hosting";
 import { parsePlanIntent, planCheckoutPath, planOnboardingPath } from "@/lib/plan-intent";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/session";
+import { enabledSocialProviders, parseSocialProvider } from "@/lib/social-auth";
 import { getPrimaryMembership } from "@/lib/workspace";
 import { RegisterForm } from "./register-form";
 
@@ -19,6 +19,7 @@ export default async function RegisterPage({
     plan?: string | string[];
     interval?: string | string[];
     error?: string | string[];
+    provider?: string | string[];
   }>;
 } = {}) {
   // Choose Pro / Choose Business on the marketing pricing page link here
@@ -36,9 +37,11 @@ export default async function RegisterPage({
     const membership = await getPrimaryMembership(user.id);
     redirect(membership ? planCheckoutPath(planIntent) : planOnboardingPath(planIntent));
   }
-  const githubEnabled = isGitHubSignInEnabled();
-  const githubError =
-    githubEnabled && typeof params.error === "string" ? params.error : null;
+  const providers = enabledSocialProviders();
+  const socialError =
+    providers.length > 0 && typeof params.error === "string"
+      ? { code: params.error, provider: parseSocialProvider(params.provider) ?? "github" }
+      : null;
   // Self-hosted first run (FR-HOST-01): once the single Workspace exists,
   // registration closes — additional users arrive by invitation.
   if (!isHostedMode()) {
@@ -54,14 +57,14 @@ export default async function RegisterPage({
         </div>
       );
     }
-    return <RegisterForm githubEnabled={githubEnabled} githubError={githubError} />;
+    return <RegisterForm providers={providers} socialError={socialError} />;
   }
   return (
     <RegisterForm
       legalLinks={publicLegalLinks()}
       planIntent={planIntent}
-      githubEnabled={githubEnabled}
-      githubError={githubError}
+      providers={providers}
+      socialError={socialError}
     />
   );
 }

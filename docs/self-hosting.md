@@ -55,6 +55,7 @@ Copy `.env.example` and fill in at least the required values:
 | `CRON_SECRET` | no | Enables `POST /api/internal/escalations/sweep` (Bearer auth) so a scheduler can trigger the unanswered-request alert sweep every minute. Alerts also fire from in-app activity and timers without it; see [design/escalation.md](design/escalation.md). |
 | `HOSTED_MODE` | no | Leave unset for self-hosting. `1` enables multi-Workspace SaaS modules (billing). Never set this on a self-hosted install. |
 | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | no | Turn on "Sign in with GitHub". Both must be set; see [GitHub sign-in](#github-sign-in-optional). |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | no | Turn on "Sign in with Google". Both must be set; see [Google sign-in](#google-sign-in-optional). |
 | `TRUSTED_PROXY_HEADER` | no | Header your proxy sets with the real client IP (e.g. `cf-connecting-ip`), used by the per-IP rate limits instead of `X-Forwarded-For`. See [HTTPS / reverse proxy](#https--reverse-proxy) for the precondition. |
 | `REALTIME_DB_POLL` | no | Default on: every open chat stream also polls the database (every 2 s for the widget, 10 s for the inbox) so updates written by *another* app process still arrive. With a single app process — the shipped `docker compose` setup — set `off`: realtime updates still arrive instantly in-process, and idle open tabs then cost no queries (useful with a scale-to-zero database such as Neon). Keep it on when you run several app replicas. |
 | `SUPPORT_WIDGET_KEY` | no | A Product widget key (`pk_…`) to show your own support chat on the dashboard's settings and sign-in pages, so your team can reach whoever runs the install. Add this install's hostname to that Product's allowed domains. Unset = no widget. `SUPPORT_WIDGET_ORIGIN` sets the widget server when the Product lives on another installation (default: `NEXT_PUBLIC_APP_URL`). |
@@ -85,15 +86,40 @@ only.
 4. Register the app, copy the **Client ID**, then **Generate a new client
    secret**. Put both into `.env` and restart the app.
 
-How accounts are matched:
+## Google sign-in (optional)
 
-- A new account is created only from **Sign up with GitHub** on the register
-  page, and only when the primary email on GitHub is verified. On a
-  self-hosted install that already has its Workspace, GitHub sign-up is
+Sign-in and sign-up with Google appear only when both `GOOGLE_CLIENT_ID` and
+`GOOGLE_CLIENT_SECRET` are set. It works for Gmail and Google Workspace
+accounts.
+
+1. In the [Google Cloud console](https://console.cloud.google.com/) pick or
+   create a project, then open **Google Auth Platform → Branding** (older
+   consoles: **APIs & Services → OAuth consent screen**). Set the app name,
+   support email, your `NEXT_PUBLIC_APP_URL` as the home page and your domain
+   under authorised domains.
+2. Under **Audience** choose **External** and **Publish app** (moving it out
+   of *Testing*), otherwise only listed test users can sign in. The app asks
+   only for `openid`, `email` and `profile`, which need no Google review.
+3. Under **Clients → Create client** choose **Web application**. Add your
+   `NEXT_PUBLIC_APP_URL` (e.g. `https://support.example.com`) under
+   **Authorised JavaScript origins** and
+   `https://support.example.com/api/auth/callback/google` under
+   **Authorised redirect URIs**.
+4. Copy the **Client ID** and **Client secret** into `.env` and restart the
+   app.
+
+## How sign-in accounts are matched
+
+These rules are the same for Google and GitHub:
+
+- A new account is created only from **Sign up with Google/GitHub** on the
+  register page, and only when the provider reports the email as verified. On
+  a self-hosted install that already has its Workspace, this sign-up is
   closed like email sign-up; teammates still join by invitation.
 - An existing email-and-password account is never taken over silently. When
-  someone signs in with GitHub using the same email, they are asked to sign
-  in with their password once; GitHub is then connected to that account.
+  someone signs in with Google or GitHub using the same email, they are asked
+  to sign in with their password once; the provider is then connected to
+  that account.
 
 ## Email setup
 
