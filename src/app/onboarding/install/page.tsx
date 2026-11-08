@@ -43,15 +43,21 @@ export default function SupportWidget({ user }) {
   const id = user?.id;
   const email = user?.email;
   const name = user?.name;
+  // Optional: computed on your server, never in this component — see
+  // "Verified identity" below.
+  const userHash = user?.userHash;
 
   // The queue accepts identity before the script loads and after it.
   useEffect(() => {
     window.SupportSealWidget = window.SupportSealWidget || { q: [] };
     // Optional: pass your app's signed-in user, not a placeholder user.
     if (id) {
-      window.SupportSealWidget.q.push(["identify", { id, email, name }]);
+      window.SupportSealWidget.q.push([
+        "identify",
+        { id, email, name, userHash },
+      ]);
     }
-  }, [id, email, name]);
+  }, [id, email, name, userHash]);
 
   return (
     <Script
@@ -69,12 +75,18 @@ export default function SupportWidget({ user }) {
   const id = user?.id;
   const email = user?.email;
   const name = user?.name;
+  // Optional: computed on your server, never in this component — see
+  // "Verified identity" above.
+  const userHash = user?.userHash;
 
   useEffect(() => {
     window.SupportSealWidget = window.SupportSealWidget || { q: [] };
     // Optional: pass your app's signed-in user, not a placeholder user.
     if (id) {
-      window.SupportSealWidget.q.push(["identify", { id, email, name }]);
+      window.SupportSealWidget.q.push([
+        "identify",
+        { id, email, name, userHash },
+      ]);
     }
 
     // Install once, including during React development effect re-runs.
@@ -85,7 +97,7 @@ export default function SupportWidget({ user }) {
     script.src = ${JSON.stringify(`${appConfig.url}/widget.js`)};
     script.dataset.key = ${JSON.stringify(product.widgetPublicKey)};
     document.body.appendChild(script);
-  }, [id, email, name]);
+  }, [id, email, name, userHash]);
 
   return null;
 }`;
