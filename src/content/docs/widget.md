@@ -34,11 +34,15 @@ export default function SupportWidget({ user }) {
   const id = user?.id;
   const email = user?.email;
   const name = user?.name;
+  // Optional: computed on your server, never in this component.
+  const userHash = user?.userHash;
 
   useEffect(() => {
     window.SupportSealWidget = window.SupportSealWidget || { q: [] };
-    if (id) window.SupportSealWidget.q.push(["identify", { id, email, name }]);
-  }, [id, email, name]);
+    if (id) {
+      window.SupportSealWidget.q.push(["identify", { id, email, name, userHash }]);
+    }
+  }, [id, email, name, userHash]);
 
   return (
     <Script
@@ -64,10 +68,14 @@ export default function SupportWidget({ user }) {
   const id = user?.id;
   const email = user?.email;
   const name = user?.name;
+  // Optional: computed on your server, never in this component.
+  const userHash = user?.userHash;
 
   useEffect(() => {
     window.SupportSealWidget = window.SupportSealWidget || { q: [] };
-    if (id) window.SupportSealWidget.q.push(["identify", { id, email, name }]);
+    if (id) {
+      window.SupportSealWidget.q.push(["identify", { id, email, name, userHash }]);
+    }
 
     if (document.getElementById("support-widget-script")) return;
     const script = document.createElement("script");
@@ -76,7 +84,7 @@ export default function SupportWidget({ user }) {
     script.src = "https://YOUR-HOST/widget.js";
     script.dataset.key = "WIDGET_KEY";
     document.body.appendChild(script);
-  }, [id, email, name]);
+  }, [id, email, name, userHash]);
 
   return null;
 }
@@ -113,6 +121,12 @@ for a curl example.
 Pass your own app's user as `id`, `email` and `name` strings. Identity is support
 context, not authentication; never send passwords, tokens or secrets. Omit it for
 anonymous chat.
+
+To show a **Verified** badge for the user id, also pass a `userHash` your server
+computed for that user, as the examples above do; see
+[Verified identity](https://github.com/Supportseal/SupportSeal-app/blob/main/docs/widget-integration.md#verified-identity-optional)
+in the integration guide. Keep forwarding it on every `identify`: an identify
+without a matching hash clears an existing badge.
 
 ## Troubleshooting
 

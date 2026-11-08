@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -35,10 +37,30 @@ const product = {
   domains: [],
 };
 
-/** React SSR escapes quotes in text nodes; compare snippet text unescaped. */
+/** React SSR escapes text nodes; compare snippet text unescaped. */
 async function renderedSnippetText() {
   const markup = renderToStaticMarkup(await InstallStepPage());
-  return markup.replaceAll("&quot;", '"').replaceAll("&#x27;", "'");
+  return markup
+    .replaceAll("&quot;", '"')
+    .replaceAll("&#x27;", "'")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&amp;", "&");
+}
+
+/**
+ * The jsx example in docs/widget-integration.md that contains `marker`, with
+ * the guide's WIDGET_SERVER_URL / WIDGET_KEY placeholders filled in the way
+ * the install page fills them.
+ */
+function guideExample(...markers: string[]) {
+  const guide = readFileSync(path.resolve(__dirname, "../../../../docs/widget-integration.md"), "utf8");
+  const blocks = [...guide.matchAll(/```jsx\n([\s\S]*?)```/g)].map((m) => m[1]);
+  const matches = blocks.filter((b) => markers.every((m) => b.includes(m)));
+  expect(matches, `exactly one jsx block in the guide contains ${markers.join(" + ")}`).toHaveLength(1);
+  return matches[0]
+    .replaceAll("WIDGET_SERVER_URL", "http://localhost:3000")
+    .replaceAll("WIDGET_KEY", product.widgetPublicKey);
 }
 
 /**
@@ -77,5 +99,19 @@ describe("onboarding install page snippets", () => {
     expect(markup).toContain("copy the widget key and install snippet");
     expect(markup).not.toMatch(/\bpublic key\b/i);
     expect(markup).not.toMatch(/\bsite key\b/i);
+  });
+
+  // Drift guard (#83): a host pastes these examples, so they must be the
+  // guide's examples verbatim. userHash dropped here once made the Verified
+  // badge unreachable and let a hash-less effect re-run clear it (FR-CTX-03).
+  it.each([
+    ["next/script", ['import Script from "next/script"', '"identify"']],
+    ["plain React", ["document.createElement", '"identify"']],
+  ])("renders the guide's %s example verbatim, userHash included", async (_name, markers) => {
+    const markup = await renderedSnippetText();
+    const example = guideExample(...markers);
+
+    expect(example).toContain("userHash");
+    expect(markup).toContain(example.trimEnd());
   });
 });
