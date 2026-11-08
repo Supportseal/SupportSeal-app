@@ -22,8 +22,9 @@ people stop.
   from another path (for example after a client-side move into `/inbox`).
 - On only when the build sets `NEXT_PUBLIC_UMAMI_SCRIPT_URL` (https only) and
   `NEXT_PUBLIC_UMAMI_WEBSITE_ID`. Only `docker-compose.hosted.yml` passes
-  them (defaulting to the marketing site's Umami website, `off` disables it); `docker-compose.yml`, the Dockerfile defaults and `.env.example` leave
-  them empty, so self-hosted images load no tracker (FR-HOST-01, pinned by
+  them, defaulting to the marketing site's Umami website; setting the script
+  URL to `off` disables it. `docker-compose.yml`, the Dockerfile defaults
+  and `.env.example` leave them empty, so self-hosted images load no tracker (FR-HOST-01, pinned by
   `src/lib/__tests__/analytics.test.ts`). Values are inlined at build time
   because some of these pages are statically rendered, so a change needs a
   redeploy.

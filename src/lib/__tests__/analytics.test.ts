@@ -44,7 +44,7 @@ describe("resolveAnalytics (hosted Umami, off unless configured)", () => {
   });
 
   it("refuses non-https or attribute-breaking script URLs", () => {
-    for (const url of ["http://a.example.com/s.js", 'https://a.example.com/s.js"onload="x', "javascript:alert(1)"]) {
+    for (const url of ["http://a.example.com/s.js", 'https://a.example.com/s.js"onload="x', "javascript:alert(1)", "off"]) {
       expect(resolveAnalytics({ NEXT_PUBLIC_UMAMI_SCRIPT_URL: url, NEXT_PUBLIC_UMAMI_WEBSITE_ID: "w" }).enabled).toBe(false);
     }
   });
