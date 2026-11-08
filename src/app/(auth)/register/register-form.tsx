@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { EMAIL_TAKEN_CODE } from "@/app/invite/[token]/sign-up-flow";
+import { refFromSearch, track } from "@/lib/analytics";
 import { authClient } from "@/lib/auth-client";
 import {
   PLAN_INTENT_COOKIE,
@@ -64,8 +66,23 @@ export function RegisterForm({
   const socialEnabled = providers.length > 0;
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [started, setStarted] = useState(false);
+  const plan = planIntent?.plan ?? "none";
+
+  // Sign-up funnel (docs/analytics.md): a page view alone can be a bot or a
+  // link preview; typing in the form or clicking a provider is a person.
+  function funnelData() {
+    return { plan, ref: refFromSearch(window.location.search) };
+  }
+
+  function handleFirstInput() {
+    if (started) return;
+    setStarted(true);
+    track("signup_form_started", funnelData());
+  }
 
   function signUpWith(provider: SocialProvider) {
+    track("signup_social_clicked", { ...funnelData(), method: provider });
     rememberPlanIntent(planIntent);
     // Back to /register: it sends a signed-in visitor on to checkout (or
     // onboarding) for the picked plan, and to /inbox otherwise.
@@ -93,16 +110,22 @@ export function RegisterForm({
     const name = String(formData.get("name") ?? "").trim();
     const email = String(formData.get("email") ?? "");
     const password = String(formData.get("password") ?? "");
+    track("signup_submitted", { ...funnelData(), method: "email" });
     const result = await authClient.signUp.email({ name, email, password });
     if (result.error) {
+      // The old kebab-case "user-already-exists" check never matched, so a
+      // returning visitor saw the generic error instead of "Sign in".
+      const exists = result.error.code === EMAIL_TAKEN_CODE;
+      track("signup_failed", { method: "email", reason: exists ? "exists" : "other" });
       setError(
-        result.error.code === "user-already-exists"
+        exists
           ? "An account with that email already exists. Sign in instead."
           : "Could not create the account. Check the details and try again.",
       );
       setPending(false);
       return;
     }
+    track("signup_completed", { ...funnelData(), method: "email" });
     rememberPlanIntent(planIntent);
     // Full document navigation for the same reason as the login form: auth
     // pages prefetch protected routes (logo → /inbox), and a soft navigation
@@ -156,7 +179,7 @@ export function RegisterForm({
             <OrDivider />
           </>
         ) : null}
-        <form className="space-y-4" method="post" onSubmit={handleSubmit}>
+        <form className="space-y-4" method="post" onSubmit={handleSubmit} onInput={handleFirstInput}>
           <div>
             <Label htmlFor="name">Name</Label>
             <Input id="name" name="name" autoComplete="name" required maxLength={80} />

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { UmamiScript } from "@/components/analytics/umami-script";
 import { brand } from "@/lib/brand";
 import { Logo } from "@/components/layout/logo";
 
@@ -55,6 +56,7 @@ export function WizardShell({
         </p>
         {children}
       </main>
+      <UmamiScript />
     </div>
   );
 }
