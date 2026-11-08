@@ -37,6 +37,56 @@ describe("widget docs stay in sync", () => {
     }
   });
 
+  it("keeps the Astro, Vue 3 and Svelte sections after the React ones and forwards userHash in each identify example (FR-CTX-03)", () => {
+    const section = (heading: string) => {
+      const start = guide.indexOf(`\n## ${heading}\n`);
+      expect(start, `missing "## ${heading}" section`).toBeGreaterThan(-1);
+      const next = guide.indexOf("\n## ", start + 1);
+      return guide.slice(start, next === -1 ? undefined : next);
+    };
+    // Prose is hard-wrapped in the guide; compare it with whitespace collapsed.
+    const prose = (heading: string) => section(heading).replace(/\s+/g, " ");
+    const order = ["Plain React (no Next.js)", "Astro", "Vue 3", "Svelte", "One codebase, many sites"];
+    const positions = order.map((heading) => guide.indexOf(`\n## ${heading}\n`));
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+
+    const frameworks = [
+      { heading: "Astro", fence: "astro", reactive: "define:vars={{ identity }}" },
+      { heading: "Vue 3", fence: "vue", reactive: "watchEffect(() => {" },
+      { heading: "Svelte", fence: "svelte", reactive: "$effect(() => {" },
+    ];
+    for (const { heading, fence, reactive } of frameworks) {
+      const body = section(heading);
+      const examples = [...body.matchAll(new RegExp("```" + fence + "\\n([\\s\\S]*?)```", "g"))].map(
+        (m) => m[1],
+      );
+      expect(examples, heading).toHaveLength(1);
+      const [example] = examples;
+      // userHash is read from the user object, forwarded in the identify
+      // payload, and tracked by the reactivity mechanism.
+      expect(example, heading).toMatch(/const \{ id, email, name, userHash \} = /);
+      // The destructuring pattern is followed by " =", the payload is not.
+      expect(example, heading).toMatch(/\{ id, email, name, userHash \}(?! =)/);
+      expect(example, heading).toContain('"identify"');
+      expect(example, heading).toContain(reactive);
+      // Same placeholders as the other sections: install values are
+      // referenced from the dashboard, never duplicated.
+      expect(example, heading).toContain("WIDGET_SERVER_URL/widget.js");
+      expect(example, heading).toContain("WIDGET_KEY");
+      expect(body, heading).not.toMatch(/\bpk_[A-Za-z0-9]/);
+      expect(body, heading).toContain("#sign-out-reset-the-widget-session");
+    }
+
+    // Script-tag placement guidance points at the dashboard snippet once, in
+    // the Astro section, and the others reuse its placeholders.
+    expect(prose("Astro")).toContain("Settings → Products → your Product → Widget");
+    expect(section("Astro")).toContain("is:inline");
+    for (const heading of ["Vue 3", "Svelte"]) {
+      expect(prose(heading)).toContain("same placeholders as above");
+      expect(prose(heading)).toMatch(/once in your (app shell|root layout)/);
+    }
+  });
+
   it("documents the per-site env-var pattern", () => {
     for (const doc of [guide, docs]) {
       expect(doc).toContain("NEXT_PUBLIC_SUPPORTSEAL_WIDGET_KEY");
