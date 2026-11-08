@@ -24,6 +24,19 @@ describe("widget docs stay in sync", () => {
     }
   });
 
+  it("forwards userHash in every React identify example (FR-CTX-03)", () => {
+    for (const doc of [guide, docs]) {
+      const examples = [...doc.matchAll(/```jsx\n([\s\S]*?)```/g)]
+        .map((m) => m[1])
+        .filter((block) => block.includes('"identify"'));
+      expect(examples).toHaveLength(2);
+      for (const example of examples) {
+        expect(example).toMatch(/\{ id, email, name, userHash \}/);
+        expect(example).toContain("}, [id, email, name, userHash]);");
+      }
+    }
+  });
+
   it("documents the per-site env-var pattern", () => {
     for (const doc of [guide, docs]) {
       expect(doc).toContain("NEXT_PUBLIC_SUPPORTSEAL_WIDGET_KEY");
