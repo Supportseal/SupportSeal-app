@@ -70,10 +70,13 @@ export function track(event: AnalyticsEvent, data?: AnalyticsData): void {
   if (typeof window === "undefined") return;
   const umami = (window as unknown as { umami?: Umami }).umami;
   if (!umami || typeof umami.track !== "function") return;
+  // Analytics must never break the product: catch both a synchronous throw
+  // and a rejected promise (a failed send, or a tracker version whose send
+  // does not swallow its own errors).
   try {
-    void umami.track(event, sanitizeEventData(data));
+    Promise.resolve(umami.track(event, sanitizeEventData(data))).catch(() => {});
   } catch {
-    // analytics must never break the product
+    // ignored
   }
 }
 

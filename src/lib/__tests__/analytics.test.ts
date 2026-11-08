@@ -99,6 +99,16 @@ describe("track", () => {
     });
     expect(() => track("login_failed")).not.toThrow();
   });
+
+  it("swallows a rejected send", async () => {
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    vi.stubGlobal("window", { umami: { track: () => Promise.reject(new Error("offline")) } });
+    track("signup_submitted");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    process.off("unhandledRejection", unhandled);
+    expect(unhandled).not.toHaveBeenCalled();
+  });
 });
 
 describe("refFromSearch (first-touch channel)", () => {
