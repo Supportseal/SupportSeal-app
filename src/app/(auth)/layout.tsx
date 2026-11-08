@@ -20,11 +20,13 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         <svg className="pointer-events-none absolute inset-0 size-full" viewBox="0 0 640 800" aria-hidden>
           <circle cx="460" cy="150" r="150" fill="var(--vx-primary)" opacity="0.12" />
           <circle cx="80" cy="660" r="200" fill="var(--vx-primary)" opacity="0.1" />
-          <rect x="60" y="300" width="220" height="200" rx="24" fill="var(--vx-surface)" />
-          <rect x="84" y="332" width="172" height="16" rx="8" fill="var(--vx-primary-label)" />
-          <rect x="84" y="368" width="132" height="12" rx="6" fill="var(--vx-border)" />
-          <rect x="84" y="400" width="172" height="72" rx="12" fill="var(--vx-primary)" opacity="0.35" />
-          <circle cx="240" cy="280" r="36" fill="var(--vx-primary)" />
+          {/* The chat-card mockup sits in the top right, clear of the
+              vertically centred headline at any panel size. */}
+          <rect x="380" y="80" width="220" height="180" rx="24" fill="var(--vx-surface)" />
+          <rect x="404" y="108" width="172" height="16" rx="8" fill="var(--vx-primary-label)" />
+          <rect x="404" y="140" width="132" height="12" rx="6" fill="var(--vx-border)" />
+          <rect x="404" y="168" width="172" height="68" rx="12" fill="var(--vx-primary)" opacity="0.35" />
+          <circle cx="572" cy="72" r="32" fill="var(--vx-primary)" />
         </svg>
         <p className="relative z-10 text-sm text-muted">{brand.tagline}</p>
       </div>
