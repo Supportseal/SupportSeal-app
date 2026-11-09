@@ -314,14 +314,17 @@ the section that explains the topic in full.
 
 - **Every page answers with an error and `/api/health` reports `misconfigured`.**
   Cause: `BETTER_AUTH_SECRET` is not set, and production refuses to run
-  without it. Fix: fill it in (the `sed` line in the quick start does this) and
-  restart. See [Quick start](#quick-start).
+  without it. Fix: fill it in (the `sed` line in the quick start does this)
+  and run `docker compose up -d` again. See [Quick start](#quick-start).
 - **The app cannot reach the database (`/api/health`, which also checks the
   database, fails).**
   Cause: `DATABASE_URL` points at a PostgreSQL the app cannot reach, or the
-  `migrate` one-shot has not run (the app boots only after it). Fix: check
-  `DATABASE_URL` against the example for the compose `db` service, then run
-  `docker compose run --rm migrate`. See [Quick start](#quick-start),
+  `migrate` one-shot has not run (the app boots only after it). Fix: in the
+  shipped compose file `app` and `migrate` set their own `DATABASE_URL`
+  (pointing at the `db` service), so a value in `.env` does not apply to them;
+  with your own PostgreSQL, both services need its URL. Check that the
+  database is reachable, then run `docker compose run --rm migrate` and
+  `docker compose up -d`. See [Quick start](#quick-start),
   [Environment reference](#environment-reference) and [Upgrades](#upgrades).
 - **The app logs a `[db-alignment]` error at boot.**
   Cause: your own PostgreSQL (not the compose `db` service) is not running
@@ -352,7 +355,8 @@ the section that explains the topic in full.
   Cause: Cloudflare sits in front of your proxy, so the last
   `X-Forwarded-For` entry is the Cloudflare hop. Fix: set
   `TRUSTED_PROXY_HEADER=cf-connecting-ip`, and make sure the origin accepts
-  traffic only from that proxy. See
+  traffic only from Cloudflare (the proxy that sets that header), not
+  directly from the internet. See
   [Trusted client-IP header](#trusted-client-ip-header-trusted_proxy_header).
 
 **Email**
@@ -374,7 +378,8 @@ the section that explains the topic in full.
   [Advanced: support address and mail loops](#advanced-support-address-and-mail-loops-optional).
 - **Agent replies are recorded but not delivered.**
   Cause: no outbound provider is configured. Fix: set `SMTP_URL` or
-  `SENDGRID_API_KEY`. See [Email setup](#email-setup) (step 4) and
+  `SENDGRID_API_KEY` so future replies are delivered. See
+  [Email setup](#email-setup) (step 4) and
   [Environment reference](#environment-reference).
 
 ## Security notes
