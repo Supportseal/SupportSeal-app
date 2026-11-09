@@ -378,7 +378,8 @@ the section that explains the topic in full.
   [Advanced: support address and mail loops](#advanced-support-address-and-mail-loops-optional).
 - **Agent replies are recorded but not delivered.**
   Cause: no outbound provider is configured. Fix: set `SMTP_URL` or
-  `SENDGRID_API_KEY` so future replies are delivered. See
+  `SENDGRID_API_KEY` in `.env` and run `docker compose up -d` again so future
+  replies are delivered. See
   [Email setup](#email-setup) (step 4) and
   [Environment reference](#environment-reference).
 
