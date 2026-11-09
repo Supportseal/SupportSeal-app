@@ -305,6 +305,84 @@ docker compose up -d
 
 The migrate step is idempotent. Check `GET /api/health` after upgrading.
 
+## Troubleshooting
+
+The most common setup failures, symptom first. Each entry only points back to
+the section that explains the topic in full.
+
+**Setup and database**
+
+- **Every page answers with an error and `/api/health` reports `misconfigured`.**
+  Cause: `BETTER_AUTH_SECRET` is not set, and production refuses to run
+  without it. Fix: fill it in (the `sed` line in the quick start does this)
+  and run `docker compose up -d` again. See [Quick start](#quick-start).
+- **The app cannot reach the database (`/api/health`, which also checks the
+  database, fails).**
+  Cause: `DATABASE_URL` points at a PostgreSQL the app cannot reach, or the
+  `migrate` one-shot has not run (the app boots only after it). Fix: in the
+  shipped compose file `app` and `migrate` set their own `DATABASE_URL`
+  (pointing at the `db` service), so a value in `.env` does not apply to them;
+  with your own PostgreSQL, both services need its URL. Check that the
+  database is reachable, then run `docker compose run --rm migrate` and
+  `docker compose up -d`. See [Quick start](#quick-start),
+  [Environment reference](#environment-reference) and [Upgrades](#upgrades).
+- **The app logs a `[db-alignment]` error at boot.**
+  Cause: your own PostgreSQL (not the compose `db` service) is not running
+  with `timezone=UTC`, or its clock is out of sync with the app host. Fix: run
+  it with `timezone=UTC` and keep the clocks in sync. See
+  [Environment reference](#environment-reference).
+- **Something misbehaves after an upgrade.**
+  Cause: the migrate step was skipped, so pending Prisma migrations were not
+  applied. Fix: run `docker compose run --rm migrate` (idempotent, safe to
+  repeat), then `docker compose up -d` and check `GET /api/health`. See
+  [Upgrades](#upgrades).
+
+**Reverse proxy**
+
+- **Live chat messages arrive late or are held back.**
+  Cause: the proxy compresses (or, less likely, buffers) the
+  `text/event-stream` responses. Fix: exclude `text/event-stream` from
+  compression (`gzip_types` in nginx, the `encode` matcher in Caddy); the app
+  already sends `X-Accel-Buffering: no`, and `proxy_buffering off;` is harmless
+  extra headroom. See [HTTPS / reverse proxy](#https--reverse-proxy).
+- **The app logs a one-time warning that it cannot determine a client IP.**
+  Cause: no proxy header reached the app, for example port 3000 is published
+  directly (the per-IP limits are then skipped). Fix: run the app behind a
+  reverse proxy that passes `X-Forwarded-For`. See
+  [HTTPS / reverse proxy](#https--reverse-proxy) and
+  [Trusted client-IP header](#trusted-client-ip-header-trusted_proxy_header).
+- **Many visitors share one rate-limit bucket.**
+  Cause: Cloudflare sits in front of your proxy, so the last
+  `X-Forwarded-For` entry is the Cloudflare hop. Fix: set
+  `TRUSTED_PROXY_HEADER=cf-connecting-ip`, and make sure the origin accepts
+  traffic only from Cloudflare (the proxy that sets that header), not
+  directly from the internet. See
+  [Trusted client-IP header](#trusted-client-ip-header-trusted_proxy_header).
+
+**Email**
+
+- **Inbound mail never shows up in the inbox.**
+  Cause: a link in the chain is missing: the forward to the Product's inbound
+  address, the webhook to `/api/email/inbound` with the correct
+  `INBOUND_WEBHOOK_SECRET`, or (custom domain) the MX and TXT records, which
+  **Verify** checks with plain DNS lookups from the app server. Your mail
+  provider must also accept the domain (for SendGrid, an Inbound Parse hostname
+  matching `INBOUND_EMAIL_DOMAIN`). Fix: complete each step in order. See
+  [Email setup](#email-setup),
+  [Custom inbound mail domain](#custom-inbound-mail-domain-optional) and
+  [SendGrid](#sendgrid-hosted-provider-adr-0004).
+- **A customer's mail arrived at the provider but not in the conversation.**
+  Cause: SupportSeal ignores auto-responses and mail that looks like its own
+  (loop guards). Fix: open the delivery log, which lists ignored mail with the
+  reason. See
+  [Advanced: support address and mail loops](#advanced-support-address-and-mail-loops-optional).
+- **Agent replies are recorded but not delivered.**
+  Cause: no outbound provider is configured. Fix: set `SMTP_URL` or
+  `SENDGRID_API_KEY` in `.env` and run `docker compose up -d` again so future
+  replies are delivered. See
+  [Email setup](#email-setup) (step 4) and
+  [Environment reference](#environment-reference).
+
 ## Security notes
 
 - Keep `BETTER_AUTH_SECRET` and `INBOUND_WEBHOOK_SECRET` secret; rotate by
