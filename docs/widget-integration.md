@@ -294,6 +294,154 @@ The [sign-out guidance above](#sign-out-reset-the-widget-session) applies
 here too: queue the reset and redirect on `supportseal:reset-acknowledged`
 (or a timeout) from your sign-out handler, never from this effect.
 
+## Astro
+
+Astro renders pages to HTML on the server, so a plain script tag fits. Save
+this as `src/components/SupportWidget.astro` and render `<SupportWidget />`
+once in your root layout (for example just before `</body>` in
+`src/layouts/Layout.astro`), so every page that uses the layout loads the widget
+once. `WIDGET_SERVER_URL` and `WIDGET_KEY` are the same placeholders as above,
+taken from the dashboard snippet under **Settings → Products → your Product →
+Widget**.
+
+```astro
+---
+const { user } = Astro.props;
+const { id, email, name, userHash } = user ?? {};
+// Optional: userHash is computed on your server, never in this component —
+// see "Verified identity" above. Pass the signed-in user, not a placeholder.
+const identity = id ? { id, email, name, userHash } : null;
+---
+
+<script is:inline define:vars={{ identity }}>
+  window.SupportSealWidget = window.SupportSealWidget || { q: [] };
+  if (identity) {
+    window.SupportSealWidget.q.push(["identify", identity]);
+  }
+</script>
+<script is:inline async src="WIDGET_SERVER_URL/widget.js" data-key="WIDGET_KEY"></script>
+```
+
+Use `is:inline` on both scripts: without it, Astro tries to bundle the
+script, and the widget loader must stay a plain tag that reads its own
+`data-key`. Pass the signed-in user as `<SupportWidget user={Astro.locals.user} />`
+(however your auth integration exposes it), with string `id`, `email` and
+`name` fields plus the optional `userHash`. Omit the prop for anonymous chat.
+
+- **Identity needs a server-rendered page.** Identify values come from the
+  request, so they exist only on pages rendered on demand (`output: "server"`
+  or `export const prerender = false`). A prerendered page has no signed-in
+  user at build time; it loads the widget for anonymous chat.
+- **Navigation.** This section assumes ordinary page loads. If you enable
+  Astro's `<ClientRouter />` (view transitions), check on your site that the
+  widget survives navigation before shipping.
+
+The [sign-out guidance](#sign-out-reset-the-widget-session) applies here too:
+queue the reset from your sign-out handler, not from the identify script.
+
+## Vue 3
+
+Save this as `SupportWidget.vue` and render `<SupportWidget :user="user" />`
+once in your app shell (`App.vue`, outside `<RouterView>`), so route changes
+never remount it. `WIDGET_SERVER_URL` and `WIDGET_KEY` are the same
+placeholders as above.
+
+```vue
+<script setup>
+import { onMounted, watchEffect } from "vue";
+
+const props = defineProps({ user: { type: Object, default: null } });
+
+// onMounted runs only in the browser, so this is safe with SSR.
+onMounted(() => {
+  // The queue accepts identity before the script loads and after it.
+  watchEffect(() => {
+    // Optional: userHash is computed on your server, never in this
+    // component — see "Verified identity" above.
+    const { id, email, name, userHash } = props.user ?? {};
+    window.SupportSealWidget = window.SupportSealWidget || { q: [] };
+    if (id) {
+      window.SupportSealWidget.q.push([
+        "identify",
+        { id, email, name, userHash },
+      ]);
+    }
+  });
+
+  // Install once, including during hot-reload remounts.
+  if (document.getElementById("support-widget-script")) return;
+  const script = document.createElement("script");
+  script.id = "support-widget-script";
+  script.async = true;
+  script.src = "WIDGET_SERVER_URL/widget.js";
+  script.dataset.key = "WIDGET_KEY";
+  document.body.appendChild(script);
+});
+</script>
+
+<template></template>
+```
+
+The user object is your app's signed-in user, with string `id`, `email` and
+`name` fields plus the optional `userHash` your server computed. `watchEffect`
+re-runs when any of them change, including `userHash` arriving after sign-in.
+Omit the prop for anonymous chat. In Nuxt, render the component in `app.vue`
+the same way; no `<ClientOnly>` wrapper is needed because nothing runs during
+server rendering.
+
+The [sign-out guidance](#sign-out-reset-the-widget-session) applies here too:
+queue the reset from your sign-out handler, never from this effect.
+
+## Svelte
+
+These examples target Svelte 5 (runes). Save this as `SupportWidget.svelte` and
+render `<SupportWidget {user} />` once in your root layout (`+layout.svelte`
+in SvelteKit), so navigation never remounts it. `WIDGET_SERVER_URL` and
+`WIDGET_KEY` are the same placeholders as above.
+
+```svelte
+<script>
+  import { onMount } from "svelte";
+
+  let { user = null } = $props();
+
+  // $effect and onMount run only in the browser, so this is safe with SSR.
+  // The queue accepts identity before the script loads and after it.
+  $effect(() => {
+    // Optional: userHash is computed on your server, never in this
+    // component — see "Verified identity" above.
+    const { id, email, name, userHash } = user ?? {};
+    window.SupportSealWidget = window.SupportSealWidget || { q: [] };
+    if (id) {
+      window.SupportSealWidget.q.push([
+        "identify",
+        { id, email, name, userHash },
+      ]);
+    }
+  });
+
+  onMount(() => {
+    // Install once, including during hot-reload remounts.
+    if (document.getElementById("support-widget-script")) return;
+    const script = document.createElement("script");
+    script.id = "support-widget-script";
+    script.async = true;
+    script.src = "WIDGET_SERVER_URL/widget.js";
+    script.dataset.key = "WIDGET_KEY";
+    document.body.appendChild(script);
+  });
+</script>
+```
+
+In SvelteKit, return the signed-in user from `+layout.server.js` (including
+a `userHash` your server computed) and pass `data.user` from `+layout.svelte`:
+`<SupportWidget user={data.user} />`. The user has string `id`, `email` and
+`name` fields plus the optional `userHash`; `$effect` re-runs when any of them
+change. Omit the prop for anonymous chat.
+
+The [sign-out guidance](#sign-out-reset-the-widget-session) applies here too:
+queue the reset from your sign-out handler, never from this effect.
+
 ## One codebase, many sites
 
 Every site you support gets its own Product, with its own widget key, domain
