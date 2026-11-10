@@ -243,6 +243,14 @@ trusted value on every request**. In nginx terms: `allow` only Cloudflare's
 set `proxy_set_header CF-Connecting-IP $remote_addr;` — the address the
 proxy itself saw, so a forged value never survives the hop.
 
+The overwrite trades granularity for safety: for traffic that legitimately
+arrives via Cloudflare, `$remote_addr` is a Cloudflare edge, so all visitors
+through one edge share a single rate-limit bucket — the state the
+[Troubleshooting](#troubleshooting) entry *Many visitors share one rate-limit
+bucket* describes. Restricting the proxy to Cloudflare's ranges keeps the
+per-visitor keying; the overwrite is the fallback when the proxy cannot be
+restricted.
+
 The app logs a one-time warning when it cannot determine an IP, and when
 `X-Forwarded-For` carries several entries while `TRUSTED_PROXY_HEADER` is
 unset. The first means no proxy header reached the app. The second is normal
