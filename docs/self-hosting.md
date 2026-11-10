@@ -232,6 +232,17 @@ directly and sets the header, which is as spoofable as `X-Forwarded-For`.
 Requests missing the header all share one bucket, so a misconfiguration
 limits more, never less.
 
+A Cloudflare → your proxy → app chain adds a second layer to that
+precondition. Firewalling the app port stops direct traffic to the app, but
+not to the intermediate proxy: a client that reaches the proxy directly —
+bypassing Cloudflare — can set `cf-connecting-ip` itself, and a stock proxy
+forwards the value unchanged. The intermediate proxy must therefore
+**accept traffic only from Cloudflare**, or **overwrite the header with a
+trusted value on every request**. In nginx terms: `allow` only Cloudflare's
+[published IP ranges](https://www.cloudflare.com/ips/) and `deny all`, or
+set `proxy_set_header CF-Connecting-IP $remote_addr;` — the address the
+proxy itself saw, so a forged value never survives the hop.
+
 The app logs a one-time warning when it cannot determine an IP, and when
 `X-Forwarded-For` carries several entries while `TRUSTED_PROXY_HEADER` is
 unset. The first means no proxy header reached the app. The second is normal
