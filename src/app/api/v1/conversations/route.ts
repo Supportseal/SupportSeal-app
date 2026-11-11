@@ -1,6 +1,6 @@
 import { signCursor, verifyCursor, type CursorBinding } from "@/lib/api/cursor";
 import { PRIVATE_NO_STORE } from "@/lib/api-errors";
-import { invalidCursor, parseQuery } from "@/lib/api/query";
+import { invalidCursor, MAX_CURSOR_LENGTH, parseQuery } from "@/lib/api/query";
 import { v1Route } from "@/lib/api/v1-route";
 import { conversationListQuery, serializeConversation } from "@/lib/conversation-api";
 import { parseTicketSearch } from "@/lib/ticket";
@@ -32,6 +32,10 @@ export const GET = v1Route(
 
     let position: { id: string; createdAt: Date } | null = null;
     if (cursor !== undefined) {
+      // Checked here, not in the schema, so an oversized cursor answers the
+      // same invalid_cursor as every other wrong cursor ("and so does
+      // garbage", docs/api-quickstart.md) instead of invalid_request.
+      if (cursor.length > MAX_CURSOR_LENGTH) return invalidCursor();
       const payload = verifyCursor(binding, cursor);
       const id = typeof payload?.id === "string" ? payload.id : null;
       const when = typeof payload?.createdAt === "string" ? new Date(payload.createdAt) : null;

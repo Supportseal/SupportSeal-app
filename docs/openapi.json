@@ -571,6 +571,7 @@
             "description": "Only Conversations carrying this tag. The name is trimmed and lower-cased like a tag write, so `Billing` and `billing` match the same tag. A tag no Conversation carries yields an empty items array.",
             "schema": {
               "type": "string",
+              "minLength": 1,
               "maxLength": 40
             }
           },
@@ -1954,7 +1955,7 @@
       "Cursor": {
         "name": "cursor",
         "in": "query",
-        "description": "The previous page's nextCursor, unchanged. Opaque and signed: any other value, or the same value with different filters, is 400 invalid_cursor.",
+        "description": "The previous page's nextCursor, unchanged; an empty value counts as no cursor (the first page). Opaque and signed: any other value, or the same value with different filters, is 400 invalid_cursor.",
         "schema": {
           "type": "string",
           "maxLength": 512

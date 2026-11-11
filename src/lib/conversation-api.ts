@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { DEFAULT_LIST_LIMIT, MAX_CURSOR_LENGTH, MAX_LIST_LIMIT } from "@/lib/api/query";
+import { DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT } from "@/lib/api/query";
 import { formatTicketRef } from "@/lib/ticket";
 
 /** Largest body, in characters, of one reply or note; the dashboard composer's limit. */
@@ -113,7 +113,10 @@ export function serializeConversation(conversation: ConversationRow) {
  */
 export const conversationListQuery = z.strictObject({
   limit: z.coerce.number().int().min(1).max(MAX_LIST_LIMIT).default(DEFAULT_LIST_LIMIT),
-  cursor: z.string().min(1).max(MAX_CURSOR_LENGTH).optional(),
+  // An empty cursor is no cursor: a client forwarding an unset variable on the
+  // first page must not error. The length bound moved to the route, so an
+  // oversized cursor answers invalid_cursor like every other wrong cursor.
+  cursor: z.string().optional().transform((value) => (value ? value : undefined)),
   status: z.enum(["OPEN", "PENDING", "CLOSED"]).optional(),
   productId: z.uuid().optional(),
   contactId: z.uuid().optional(),

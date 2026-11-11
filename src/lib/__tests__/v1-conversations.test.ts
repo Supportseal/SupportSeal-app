@@ -588,6 +588,7 @@ describe("GET /api/v1/conversations", () => {
       ["another Workspace's", list(betaWriter, `?cursor=${encodeURIComponent(cursor)}`)],
       ["another route's", list(readOnly, `?cursor=${encodeURIComponent(signCursor({ workspaceId: alpha.workspaceId, route: "/api/v1/contacts" }, { id: "x" }))}`)],
       ["another filter set's", list(readOnly, `?status=OPEN&cursor=${encodeURIComponent(cursor)}`)],
+      ["oversized", list(readOnly, `?cursor=${"x".repeat(513)}`)],
     ];
     const answers = [];
     for (const [name, promise] of probes) {
@@ -604,6 +605,14 @@ describe("GET /api/v1/conversations", () => {
           "This cursor is not valid here. Send back the nextCursor of the previous response, unchanged, to the same endpoint with the same filters.",
       },
     });
+  });
+
+  it("treats an empty cursor as no cursor, so the first page always works", async () => {
+    const absent = await list(readOnly, "?limit=5");
+    expect(absent.status).toBe(200);
+    const forwarded = await list(readOnly, "?limit=5&cursor=");
+    expect(forwarded.status).toBe(200);
+    expect(await forwarded.json()).toEqual(await absent.json());
   });
 
   it("resumes without skipping when the cursor row is deleted", async () => {

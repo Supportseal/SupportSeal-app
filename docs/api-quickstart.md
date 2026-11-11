@@ -421,8 +421,10 @@ curl -sS "$SUPPORTSEAL_URL/api/v1/conversations?status=OPEN&limit=2&cursor=$NEXT
 The cursor is opaque and signed. It works only for this Workspace, this
 endpoint and the same filters (you may change `limit` between pages); one
 reused with different filters — or minted by another Workspace, or tampered
-with or truncated — answers `400 invalid_cursor`, and so does garbage. Start
-again from the first page instead of editing a cursor.
+with or truncated — answers `400 invalid_cursor`, and so does garbage. An
+empty `cursor` counts as no cursor, so forwarding an unset variable on the
+first page is safe. Start again from the first page instead of editing a
+cursor.
 
 ## Errors
 
