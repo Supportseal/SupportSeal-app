@@ -455,7 +455,7 @@ curl -sS "$SUPPORTSEAL_URL/api/v1/conversations/$CONVERSATION_ID/messages?limit=
       "conversationId": "e0a4b6c8-1d2f-4a35-9c7e-8b1d3f5a7c92",
       "kind": "customer",
       "body": "I cannot sign in since this morning — the page says invalid credentials.",
-      "author": { "type": "customer", "id": "a91c3e5f-7d02-4b68-8f14-2e6a0c9d3b75", "name": "Dana Fisher" },
+      "author": { "type": "customer", "id": null, "name": null },
       "attachments": [],
       "delivery": { "state": "not_applicable" },
       "createdAt": "2026-11-01T08:12:00.000Z"

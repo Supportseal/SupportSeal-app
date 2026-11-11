@@ -923,6 +923,9 @@ describe("GET /api/v1/conversations/{id}/messages", () => {
       "not_applicable",
     ]);
     expect(body.items.map((m: { author: { type: string } }) => m.author.type)).toEqual(["customer", "token", "user", "user"]);
+    // serializeMessage fills id/name only from a token or agent User row; the
+    // customer's identity lives on the Conversation (contactId), not the Message.
+    expect(body.items[0].author).toEqual({ type: "customer", id: null, name: null });
     const attachmentId = (await db.prisma.attachment.findFirstOrThrow({ where: { conversationId: threadId } })).id;
     expect(body.items[0].attachments).toEqual([
       { id: attachmentId, filename: "error.txt", contentType: "text/plain", size: 12, contentPath: `/api/v1/attachments/${attachmentId}/content` },

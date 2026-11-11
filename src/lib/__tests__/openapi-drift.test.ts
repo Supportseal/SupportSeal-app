@@ -462,16 +462,25 @@ const attachmentShape = z.strictObject({
   size: z.number().int(),
   contentPath: z.string().startsWith("/api/v1/attachments/"),
 });
-const messageShape = z.strictObject({
-  id: z.uuid(),
-  conversationId: z.uuid(),
-  kind: z.enum(["customer", "reply", "note"]),
-  body: z.string(),
-  author: z.strictObject({ type: z.enum(["customer", "user", "token"]), id: z.uuid().nullable(), name: z.string().nullable() }),
-  attachments: z.array(attachmentShape),
-  delivery: z.strictObject({ state: z.enum(["queued", "sent", "failed", "not_applicable"]) }),
-  createdAt: z.iso.datetime(),
-});
+const messageShape = z
+  .strictObject({
+    id: z.uuid(),
+    conversationId: z.uuid(),
+    kind: z.enum(["customer", "reply", "note"]),
+    body: z.string(),
+    author: z.strictObject({ type: z.enum(["customer", "user", "token"]), id: z.uuid().nullable(), name: z.string().nullable() }),
+    attachments: z.array(attachmentShape),
+    delivery: z.strictObject({ state: z.enum(["queued", "sent", "failed", "not_applicable"]) }),
+    createdAt: z.iso.datetime(),
+  })
+  // serializeMessage fills id/name only from authorToken or the agent User; a
+  // customer message has neither, so its author is always bare. ("user" with
+  // nulls is legal: the author's account was deleted, agentUserId SetNull.)
+  .superRefine((message, ctx) => {
+    if (message.author.type === "customer" && (message.author.id !== null || message.author.name !== null)) {
+      ctx.addIssue({ code: "custom", path: ["author"], message: "a customer message's author carries no id or name" });
+    }
+  });
 const conversationShape = z.strictObject({
   id: z.uuid(),
   ticket: z.string().regex(/^[A-Z]+-\d+$/u),

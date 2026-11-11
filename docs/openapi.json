@@ -945,8 +945,8 @@
                       "body": "I cannot sign in since this morning — the page says invalid credentials.",
                       "author": {
                         "type": "customer",
-                        "id": "a91c3e5f-7d02-4b68-8f14-2e6a0c9d3b75",
-                        "name": "Dana Fisher"
+                        "id": null,
+                        "name": null
                       },
                       "attachments": [],
                       "delivery": {
