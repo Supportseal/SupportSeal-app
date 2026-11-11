@@ -89,6 +89,25 @@ type ConversationRow = {
   updatedAt: Date;
 };
 
+/**
+ * Exactly the fields `serializeConversation` reads — the one select every
+ * conversation read shares (list, get-one and the PATCH re-read), so the
+ * "get-one is byte-identical to the list" contract is structural, not upkeep.
+ */
+export const conversationSelect = {
+  id: true,
+  ticketNumber: true,
+  productId: true,
+  contactId: true,
+  status: true,
+  channel: true,
+  subject: true,
+  lastMessageAt: true,
+  createdAt: true,
+  updatedAt: true,
+  tags: { select: { tag: { select: { name: true } } } },
+} as const;
+
 export function serializeConversation(conversation: ConversationRow) {
   return {
     id: conversation.id,
