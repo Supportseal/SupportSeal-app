@@ -349,6 +349,25 @@ describe("contact schemas vs the real serializer", () => {
     expect(Object.keys(doc.properties).sort(), `Contact fields differ from serializeContact in src/lib/contact-api.ts. ${SPEC_FIX}`).toEqual(Object.keys(contact).sort());
     expect([...doc.required].sort(), `Contact.required differs from serializeContact. ${SPEC_FIX}`).toEqual(Object.keys(contact).sort());
   });
+
+  // Field names alone cannot catch a published constraint drifting from the
+  // serializer's real contract (FR-API-03): name and email are nullable, the
+  // ids are uuids, the address is an email, and nothing else may appear. The
+  // example checks validate payloads against the zod shape, not the published
+  // JSON schema, so this table is what pins the spec side.
+  it("pins Contact's published types, nullability and formats", () => {
+    expect(spec.components.schemas.Contact, `Contact constraints drifted from serializeContact in src/lib/contact-api.ts. ${SPEC_FIX}`).toEqual({
+      type: "object",
+      additionalProperties: false,
+      required: ["id", "name", "email", "createdAt"],
+      properties: {
+        id: { type: "string", format: "uuid" },
+        name: { type: ["string", "null"], description: expect.any(String) },
+        email: { type: ["string", "null"], format: "email", description: expect.any(String) },
+        createdAt: { type: "string", format: "date-time" },
+      },
+    });
+  });
 });
 
 /** Every request/response example in the spec and the quickstart, tagged with what it must satisfy. */
