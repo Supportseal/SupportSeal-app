@@ -6,6 +6,7 @@ import { GET as listContactsRoute } from "@/app/api/v1/contacts/route";
 import { GET as getContactRoute } from "@/app/api/v1/contacts/[contactId]/route";
 import { signCursor } from "@/lib/api/cursor";
 import { NOT_FOUND_MESSAGE } from "@/lib/api/v1-route";
+import { CONTACT_EMAIL_REGEX } from "@/lib/contact-email";
 import { startTestDb, stopTestDb, type TestDb } from "@/test/integration-db";
 import { seedTenant, type TenantRows } from "@/test/tenant-fixtures";
 import { freshIp, mintToken, snapshot, v1Request } from "@/test/v1-harness";
@@ -119,6 +120,27 @@ describe("GET /api/v1/contacts", () => {
     const page = await list(alphaReader, "?email=nobody-here@example.test");
     expect(page.status).toBe(200);
     expect(await page.json()).toEqual({ items: [], nextCursor: null });
+  });
+
+  it("finds a stored sender longer than the widget's 254-character bound", async () => {
+    // Regression (PR 104 review): inbound mail stores parsed senders as-is,
+    // unbounded, while the widget/form entry points cap input at 254
+    // characters (normalizeContactEmail). The filter follows the store, not
+    // the entry points: a longer stored sender stays searchable, and a
+    // well-shaped value nobody carries is an empty page, never a 400.
+    const long = `${"l".repeat(140)}@${"d".repeat(120)}.example.test`;
+    expect(long.length).toBeGreaterThan(254);
+    expect(CONTACT_EMAIL_REGEX.test(long)).toBe(true);
+    await db.prisma.contact.create({
+      data: { workspaceId: alpha.workspaceId, email: long, createdAt: new Date(PAGE_BASE + 21 * 60_000) },
+    });
+    const stored = await list(alphaReader, `?email=${encodeURIComponent(long)}`);
+    expect(stored.status).toBe(200);
+    expect((await stored.json()).items.map((item: { email: string | null }) => item.email)).toEqual([long]);
+    const unknown = `${"x".repeat(140)}@${"y".repeat(120)}.example.test`;
+    const empty = await list(alphaReader, `?email=${encodeURIComponent(unknown)}`);
+    expect(empty.status).toBe(200);
+    expect(await empty.json()).toEqual({ items: [], nextCursor: null });
   });
 
   it("answers every wrong cursor the same way, and never with the row it names", async () => {

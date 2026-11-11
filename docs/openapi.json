@@ -1178,9 +1178,10 @@
           {
             "name": "email",
             "in": "query",
-            "description": "Only the Contact with this address. Accepted shapes are the Workspace's own acceptance (the same address a customer can submit in the chat widget or contact form, including for example a domain with consecutive dots); anything the Workspace would not accept is an invalid value. The address is matched lower-cased, the way the Workspace stores it, so any case spelling finds the same Contact; emails are unique per Workspace, so the filter answers at most one. An address no Contact carries answers an empty items array.",
+            "description": "Only the Contact with this address. Accepted values are the Workspace's address shape (the pattern): a local part, `@`, and a domain with at least one dot — the same shape a customer can submit in the chat widget or the contact form, including for example a domain with consecutive dots — with no length bound: inbound email stores parsed senders as-is, and a stored sender can be longer than the widget's 254-character entry bound, so those Contacts stay searchable. A value that does not match the pattern is a 400 invalid_request. The address is matched lower-cased, the way the Workspace stores it, so any case spelling finds the same Contact; emails are unique per Workspace, so the filter answers at most one. An address no Contact carries answers an empty items array.",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"
             }
           }
         ],

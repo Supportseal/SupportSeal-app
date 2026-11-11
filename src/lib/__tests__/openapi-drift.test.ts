@@ -8,6 +8,7 @@ import { API_ERROR_STATUS } from "@/lib/api-errors";
 import { API_SCOPES, type ApiScope } from "@/lib/api-scopes";
 import { DEFAULT_LIST_LIMIT, MAX_CURSOR_LENGTH, MAX_LIST_LIMIT } from "@/lib/api/query";
 import { conversationPatchBody, MAX_SEARCH_LENGTH, MAX_TAG_NAME_LENGTH, messageBody, serializeConversation, serializeMessage } from "@/lib/conversation-api";
+import { CONTACT_EMAIL_REGEX } from "@/lib/contact-email";
 import { serializeContact } from "@/lib/contact-api";
 import { createBody, MAX_BODY_BYTES, MAX_DOMAINS_PER_LIST, parseCreateBody, parsePatchBody, patchBody, serializeProduct } from "@/lib/product-api";
 import { MAX_API_PRODUCTS_PER_WORKSPACE, type ProductWithDomains } from "@/lib/products";
@@ -378,6 +379,16 @@ describe("contact schemas vs the real serializer", () => {
     // demand a strictly-shaped mailbox.
     const contact = serializeContact({ id: "a91c3e5f-7d02-4b68-8f14-2e6a0c9d3b75", name: null, email: "a@b..com", createdAt: new Date(0) });
     expect(contactShape.safeParse(contact).error?.message, "contactShape is stricter than the Workspace's own email acceptance (src/lib/contact-email.ts).").toBeUndefined();
+  });
+
+  it("publishes the email filter's real constraint: the shared pattern, no length cap", () => {
+    // The filter must accept every address the store can hold. Inbound mail
+    // stores parsed senders as-is (no 254-character bound), so a published
+    // maxLength — or a missing pattern — would let generated clients reject
+    // requests the API itself answers.
+    const emailParam = spec.paths["/api/v1/contacts"].get.parameters.find((parameter: Json) => parameter.name === "email");
+    expect(emailParam.schema.pattern, `The published email pattern drifted from CONTACT_EMAIL_REGEX (src/lib/contact-email.ts). ${SPEC_FIX}`).toBe(CONTACT_EMAIL_REGEX.source);
+    expect(emailParam.schema.maxLength ?? null, "The email filter deliberately has no maxLength: a stored inbound sender can be longer than the widget's 254-character entry bound and must stay searchable.").toBeNull();
   });
 });
 

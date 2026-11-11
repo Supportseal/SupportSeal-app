@@ -534,12 +534,14 @@ lower-cased, so any case spelling finds the same Contact (the curl above used
 mixed case). The filter accepts the same address shapes the Workspace itself
 accepts — a customer can submit `a@b..com` in the chat widget or the contact
 form, store it, and search for it — and a stored value has no strict mailbox
-shape, so treat `email` in responses as an opaque string. An email is unique
-within a Workspace, so the filter answers at most one; an address nobody
-carries answers an empty `items` array, and one the Workspace would not accept
-is a `400 invalid_request`. Anonymous chat visitors have `email: null`, and
-the filter never matches them; they appear in the unfiltered list like anyone
-else.
+shape, so treat `email` in responses as an opaque string. A value that is not
+an address shape the Workspace accepts is a `400 invalid_request`. There is no
+length limit on top of the shape, because inbound email stores parsed senders
+as-is: a sender longer than the widget's 254-character bound is a stored,
+searchable Contact like any other, and a well-shaped address nobody carries
+answers an empty `items` array. Anonymous chat visitors have `email: null`,
+and the filter never matches them; they appear in the unfiltered list like
+anyone else.
 
 With the id (set `CONTACT_ID` to the Contact's id), read the Contact on its
 own, in exactly the list item's shape:
@@ -663,8 +665,9 @@ human has created the token.
   after `Retry-After` and `internal_error` with backoff. On a timed-out `POST`,
   list Products before posting again.
 - **Scope:** the token acts in its own Workspace only: it can create and edit
-  Products and list, read, reply to, note and retag Conversations (steps 6-7). It
-  cannot read contacts or other tokens, or anything in another Workspace.
+  Products, list, read, reply to, note and retag Conversations (steps 6-7) and
+  read Contacts (step 8). It cannot read or create other tokens, or anything
+  in another Workspace.
 
 ## Self-hosted notes
 
