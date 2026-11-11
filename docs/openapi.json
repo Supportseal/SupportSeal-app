@@ -34,6 +34,10 @@
     {
       "name": "Conversations",
       "description": "List and read the Workspace's Conversations, reply to them, annotate, close and tag them."
+    },
+    {
+      "name": "Contacts",
+      "description": "The people behind the Conversations: list them, find one by email, read one by id. A Conversation's contactId identifies its Contact."
     }
   ],
   "security": [
@@ -867,20 +871,20 @@
               }
             }
           },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
           "400": {
             "$ref": "#/components/responses/InvalidRequest"
-          },
-          "409": {
-            "$ref": "#/components/responses/IdempotencyConflict"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
             "$ref": "#/components/responses/InsufficientScope"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/IdempotencyConflict"
           },
           "429": {
             "$ref": "#/components/responses/RateLimited"
@@ -1124,23 +1128,23 @@
               }
             }
           },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
           "400": {
             "$ref": "#/components/responses/InvalidRequest"
-          },
-          "402": {
-            "$ref": "#/components/responses/ServicePaused"
-          },
-          "409": {
-            "$ref": "#/components/responses/ReplyConflict"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
+          "402": {
+            "$ref": "#/components/responses/ServicePaused"
+          },
           "403": {
             "$ref": "#/components/responses/InsufficientScope"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/ReplyConflict"
           },
           "429": {
             "$ref": "#/components/responses/RateLimited"
@@ -1154,6 +1158,180 @@
             "bearerAuth": []
           }
         ]
+      }
+    },
+    "/api/v1/contacts": {
+      "get": {
+        "operationId": "listContacts",
+        "tags": [
+          "Contacts"
+        ],
+        "summary": "List Contacts, oldest first",
+        "x-required-scope": "contacts:read",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "name": "email",
+            "in": "query",
+            "description": "Only the Contact with this address. The address is matched lower-cased, the way the Workspace stores it, so any case spelling finds the same Contact; emails are unique per Workspace, so the filter answers at most one. An address no Contact carries answers an empty items array, and one padded with spaces is an invalid value.",
+            "schema": {
+              "type": "string",
+              "format": "email"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of the Workspace's Contacts, oldest first (createdAt, then id). There is no total count.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactList"
+                },
+                "example": {
+                  "items": [
+                    {
+                      "id": "a91c3e5f-7d02-4b68-8f14-2e6a0c9d3b75",
+                      "name": "Dana Fisher",
+                      "email": "dana@example.test",
+                      "createdAt": "2026-10-28T09:41:00.000Z"
+                    },
+                    {
+                      "id": "c47d1a9e-5b36-4f82-9d0c-7e2a8b4d1f63",
+                      "name": null,
+                      "email": null,
+                      "createdAt": "2026-10-30T14:05:00.000Z"
+                    }
+                  ],
+                  "nextCursor": null
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: an unknown query parameter or an invalid value (`details` names the parameter). `invalid_cursor`: the cursor is unknown, tampered or truncated, was minted for another Workspace, endpoint or filter set, or is reused against a different one.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "invalidRequest": {
+                    "summary": "An unknown or invalid query parameter",
+                    "value": {
+                      "error": {
+                        "code": "invalid_request",
+                        "message": "The query string is invalid.",
+                        "details": [
+                          {
+                            "field": "emial",
+                            "message": "Unknown query parameter."
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "invalidCursor": {
+                    "summary": "A cursor that does not verify here",
+                    "value": {
+                      "error": {
+                        "code": "invalid_cursor",
+                        "message": "This cursor is not valid here. Send back the nextCursor of the previous response, unchanged, to the same endpoint with the same filters."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/InsufficientScope"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/contacts/{contactId}": {
+      "get": {
+        "operationId": "getContact",
+        "tags": [
+          "Contacts"
+        ],
+        "summary": "Get a Contact",
+        "x-required-scope": "contacts:read",
+        "parameters": [
+          {
+            "name": "contactId",
+            "in": "path",
+            "required": true,
+            "description": "Contact id.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The Contact, in exactly the shape the list returns.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Contact"
+                },
+                "example": {
+                  "id": "a91c3e5f-7d02-4b68-8f14-2e6a0c9d3b75",
+                  "name": "Dana Fisher",
+                  "email": "dana@example.test",
+                  "createdAt": "2026-10-28T09:41:00.000Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/InsufficientScope"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
       }
     }
   },
@@ -1851,6 +2029,64 @@
           "nextCursor"
         ],
         "description": "One page of a list. Lists never carry a total count."
+      },
+      "Contact": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The Contact's name, when one is known; null otherwise."
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "email",
+            "description": "The Contact's address, stored lower-cased; null for an anonymous chat visitor who has not left one yet. Unique within the Workspace."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "email",
+          "createdAt"
+        ]
+      },
+      "ContactList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Contact"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Opaque and signed; bound to the Workspace, the endpoint and the exact filter set (including the lower-cased email). Pass it back as `cursor` for the next page. Null on the last page."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "nextCursor"
+        ]
       }
     },
     "responses": {

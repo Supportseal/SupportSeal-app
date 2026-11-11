@@ -8,6 +8,7 @@ import { API_ERROR_STATUS } from "@/lib/api-errors";
 import { API_SCOPES, type ApiScope } from "@/lib/api-scopes";
 import { DEFAULT_LIST_LIMIT, MAX_CURSOR_LENGTH, MAX_LIST_LIMIT } from "@/lib/api/query";
 import { conversationPatchBody, MAX_SEARCH_LENGTH, MAX_TAG_NAME_LENGTH, messageBody, serializeConversation, serializeMessage } from "@/lib/conversation-api";
+import { serializeContact } from "@/lib/contact-api";
 import { createBody, MAX_BODY_BYTES, MAX_DOMAINS_PER_LIST, parseCreateBody, parsePatchBody, patchBody, serializeProduct } from "@/lib/product-api";
 import { MAX_API_PRODUCTS_PER_WORKSPACE, type ProductWithDomains } from "@/lib/products";
 import { WIDGET_RATE_LIMITS } from "@/lib/widget-rate-limit";
@@ -130,6 +131,8 @@ describe("openapi.json success contract", () => {
       "GET /api/v1/conversations/{conversationId}/messages": ["200"],
       "PATCH /api/v1/conversations/{conversationId}": ["200"],
       "POST /api/v1/conversations/{conversationId}/messages": ["201"],
+      "GET /api/v1/contacts": ["200"],
+      "GET /api/v1/contacts/{contactId}": ["200"],
     });
   });
 });
@@ -149,6 +152,10 @@ describe("openapi.json status codes per operation", () => {
     "GET /api/v1/conversations/{conversationId}/messages": ["200", "400", "401", "403", "404", "429", "500"],
     "PATCH /api/v1/conversations/{conversationId}": ["200", "400", "401", "403", "404", "409", "429", "500"],
     "POST /api/v1/conversations/{conversationId}/messages": ["201", "400", "401", "402", "403", "404", "409", "429", "500"],
+    // The list has no id to miss (no 404) but validates its query; the single
+    // read takes no query (no 400) and answers unknown ids with the uniform 404.
+    "GET /api/v1/contacts": ["200", "400", "401", "403", "429", "500"],
+    "GET /api/v1/contacts/{contactId}": ["200", "401", "403", "404", "429", "500"],
   };
 
   it("documents exactly the statuses each operation can return", () => {
@@ -335,6 +342,15 @@ describe("conversation schemas vs the real serializers and zod bodies", () => {
   });
 });
 
+describe("contact schemas vs the real serializer", () => {
+  it("Contact has exactly the fields serializeContact returns", () => {
+    const contact = serializeContact({ id: "c", name: "Dana Fisher", email: "dana@example.test", createdAt: new Date(0) });
+    const doc = spec.components.schemas.Contact;
+    expect(Object.keys(doc.properties).sort(), `Contact fields differ from serializeContact in src/lib/contact-api.ts. ${SPEC_FIX}`).toEqual(Object.keys(contact).sort());
+    expect([...doc.required].sort(), `Contact.required differs from serializeContact. ${SPEC_FIX}`).toEqual(Object.keys(contact).sort());
+  });
+});
+
 /** Every request/response example in the spec and the quickstart, tagged with what it must satisfy. */
 type Example = {
   where: string;
@@ -350,6 +366,8 @@ type Example = {
     | "conversation"
     | "conversationList"
     | "messageList"
+    | "contact"
+    | "contactList"
     | "emptyList"
     | "error";
   value: unknown;
@@ -416,7 +434,7 @@ function quickstartExamples(): Example[] {
 
 /** Which paged list a non-empty envelope is, by its first item; empty ones check the envelope only (emptyList). */
 const listKind = (item: object): Example["kind"] =>
-  "kind" in item ? "messageList" : "ticket" in item ? "conversationList" : "product";
+  "kind" in item ? "messageList" : "ticket" in item ? "conversationList" : "email" in item ? "contactList" : "product";
 
 const bodyKind = (value: object): Example["kind"] => {
   const items = (value as { items?: unknown }).items;
@@ -435,7 +453,9 @@ const bodyKind = (value: object): Example["kind"] => {
         ? "message"
         : "ticket" in value
           ? "conversation"
-          : "product";
+          : "email" in value
+            ? "contact"
+            : "product";
 };
 
 const json = (value: unknown, method: string) =>
@@ -499,6 +519,13 @@ const listOf = <T extends z.ZodType>(item: T) =>
   z.strictObject({ items: z.array(item).min(1), nextCursor: z.string().min(1).nullable() });
 const conversationListShape = listOf(conversationShape);
 const messageListShape = listOf(messageShape);
+const contactShape = z.strictObject({
+  id: z.uuid(),
+  name: z.string().nullable(),
+  email: z.string().email().nullable(),
+  createdAt: z.iso.datetime(),
+});
+const contactListShape = listOf(contactShape);
 /** An empty page: a valid list response with no item whose shape could be checked. */
 const emptyListShape = z.strictObject({ items: z.array(z.unknown()).length(0), nextCursor: z.string().min(1).nullable() });
 const errorShape = z.strictObject({
@@ -535,6 +562,8 @@ describe.each([
       } else if (kind === "whoami") expect(whoamiShape.safeParse(value).error?.message, hint).toBeUndefined();
       else if (kind === "conversationList") expect(conversationListShape.safeParse(value).error?.message, hint).toBeUndefined();
       else if (kind === "messageList") expect(messageListShape.safeParse(value).error?.message, hint).toBeUndefined();
+      else if (kind === "contact") expect(contactShape.safeParse(value).error?.message, hint).toBeUndefined();
+      else if (kind === "contactList") expect(contactListShape.safeParse(value).error?.message, hint).toBeUndefined();
       else if (kind === "emptyList") expect(emptyListShape.safeParse(value).error?.message, hint).toBeUndefined();
       else expect(errorShape.safeParse(value).error?.message, hint).toBeUndefined();
     }
@@ -558,7 +587,7 @@ describe("api-quickstart.md vs the spec", () => {
       // The widget config and the live spec itself are public endpoints, not operations of this API.
       if (!url || url.startsWith("/api/widget/") || url === "/api/openapi.json") continue;
       const method = /-X (\w+)/u.exec(command)?.[1] ?? "GET";
-      called.add(`${method} ${url.replace("$PRODUCT_ID", "{id}").replace("$CONVERSATION_ID", "{conversationId}")}`);
+      called.add(`${method} ${url.replace("$PRODUCT_ID", "{id}").replace("$CONVERSATION_ID", "{conversationId}").replace("$CONTACT_ID", "{contactId}")}`);
     }
     expect(called.size, "No curl calls found in api-quickstart.md.").toBeGreaterThan(0);
     for (const call of called) {

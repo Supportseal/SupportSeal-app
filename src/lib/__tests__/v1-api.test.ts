@@ -4,6 +4,8 @@ import path from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
+import { GET as listContacts } from "@/app/api/v1/contacts/route";
+import { GET as getContact } from "@/app/api/v1/contacts/[contactId]/route";
 import { GET as listConversations } from "@/app/api/v1/conversations/route";
 import { GET as listMessages, POST as createMessage } from "@/app/api/v1/conversations/[conversationId]/messages/route";
 import { GET as getConversation, PATCH as updateConversation } from "@/app/api/v1/conversations/[conversationId]/route";
@@ -31,6 +33,7 @@ const noParams = { params: Promise.resolve({}) };
 type CrossTenantCase = { call: (token: string, ids: Ids) => Promise<Response>; writer?: true };
 
 const conversationParams = (ids: Ids) => ({ params: Promise.resolve({ conversationId: ids.Conversation }) });
+const contactParams = (ids: Ids) => ({ params: Promise.resolve({ contactId: ids.Contact }) });
 
 /**
  * One entry per implemented operationId. The coverage test below fails when a
@@ -64,6 +67,21 @@ const CROSS_TENANT: Record<string, CrossTenantCase> = {
     call: (token, ids) =>
       listMessages(v1Request("GET", `/api/v1/conversations/${ids.Conversation}/messages`, { token }), conversationParams(ids)),
   },
+  listContacts: {
+    // An email is a filter value, not a path id: the probe resolves Alpha's
+    // real address (fixture emails carry a per-run tag) and expects Beta's
+    // page to stay empty for it, exactly as for an unknown address.
+    call: async (token, ids) => {
+      const email = (await db.prisma.contact.findUnique({ where: { id: ids.Contact }, select: { email: true } }))?.email;
+      return listContacts(
+        v1Request("GET", `/api/v1/contacts?email=${encodeURIComponent(email ?? "customer-alpha@example.test")}`, { token }),
+        noParams,
+      );
+    },
+  },
+  getContact: {
+    call: (token, ids) => getContact(v1Request("GET", `/api/v1/contacts/${ids.Contact}`, { token }), contactParams(ids)),
+  },
   updateConversation: {
     writer: true,
     call: (token, ids) =>
@@ -84,7 +102,7 @@ beforeAll(async () => {
   alpha = await seedTenant(db.prisma, "alpha");
   beta = await seedTenant(db.prisma, "beta");
   alphaToken = (await mintToken(db.prisma, alpha.workspaceId, ["conversations:read"], { name: `token ${alpha.canary}` })).token;
-  betaToken = (await mintToken(db.prisma, beta.workspaceId, ["conversations:read"])).token;
+  betaToken = (await mintToken(db.prisma, beta.workspaceId, ["conversations:read", "contacts:read"])).token;
   betaWriterToken = (await mintToken(db.prisma, beta.workspaceId, ["conversations:reply", "conversations:write"])).token;
 });
 

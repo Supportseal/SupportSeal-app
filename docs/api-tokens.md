@@ -60,17 +60,19 @@ accept tokens only**, never a session cookie.
 | `conversations:read` | List the Workspace's Conversations (`GET /api/v1/conversations`), read one on its own (`GET /api/v1/conversations/{id}`) and read a Conversation's Messages (`GET /api/v1/conversations/{id}/messages`). Both scopes below imply it. |
 | `conversations:reply` | Send a reply to the customer (`POST /api/v1/conversations/{id}/messages` with `kind: "reply"`). A reply emails or chats a customer under the Product's name. |
 | `conversations:write` | Add an internal note (`kind: "note"`), and close, reopen or tag a Conversation (`PATCH /api/v1/conversations/{id}`). |
+| `contacts:read` | List the Workspace's Contacts (`GET /api/v1/contacts`, with the `email` exact-match filter) and read one by id (`GET /api/v1/contacts/{id}`). |
 
-Every token created in the dashboard has `products:write`, `conversations:reply`
-and `conversations:write`; the two conversation scopes imply
+Every token created in the dashboard has `products:write`, `conversations:reply`,
+`conversations:write` and `contacts:read`; the two conversation scopes imply
 `conversations:read`, so a fresh token can also list Conversations. A token
 created before `conversations:reply` and `conversations:write` were added keeps
-only `products:write`, so create a new one to work Conversations through the
-API. A token acts for the whole Workspace and cannot
+only `products:write`, and one created before `contacts:read` was added keeps
+the Product and conversation scopes without it, so create a new one to read
+Contacts through the API. A token acts for the whole Workspace and cannot
 reach another one. A token without the scope an
 endpoint needs gets `403 insufficient_scope`.
 
-> **Planned, not yet available:** a scope picker and finer scopes (contacts, webhooks and others) and a `tokens:admin` scope that lets a token create and revoke other tokens through the API. Until it ships, tokens are created in the dashboard only. See the [agent-first API plan](agent-api-plan.md).
+> **Planned, not yet available:** a scope picker and finer scopes (deleting contacts, webhooks and others) and a `tokens:admin` scope that lets a token create and revoke other tokens through the API. Until it ships, tokens are created in the dashboard only. See the [agent-first API plan](agent-api-plan.md).
 
 ## Errors
 
