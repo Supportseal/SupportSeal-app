@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+/** Billing-page control (rendered for Admins) that opens a Stripe Customer Portal session. */
 export function ManageSubscriptionButton() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);

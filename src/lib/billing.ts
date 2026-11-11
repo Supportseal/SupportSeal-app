@@ -78,6 +78,12 @@ export function paymentRevokesEntitlement(charges: readonly StripeCustomerCharge
   return payment.disputeStatus !== "won" && payment.disputeStatus !== "warning_closed";
 }
 
+/**
+ * The customer's CURRENT billing state (issue #23): the newest entitling
+ * subscription grants its price's plan unless the newest successful charge
+ * revokes it (full refund / unresolved dispute); no entitling subscription
+ * means FREE.
+ */
 function deriveBilling(
   subscriptions: StripeCustomerSubscription[],
   charges: StripeCustomerCharge[],
@@ -99,6 +105,11 @@ function matchesRow(
   return billing.plan === workspace.plan && billing.subscriptionId === workspace.stripeSubscriptionId;
 }
 
+/**
+ * Reads the customer's subscriptions and charges from Stripe and derives the
+ * billing state. Charges are read only while a subscription entitles
+ * something — a revocation can only take a plan away, never grant one.
+ */
 async function fetchBilling(customerId: string): Promise<CustomerBilling | { error: string }> {
   const subscriptions = await fetchStripeCustomerSubscriptions(customerId);
   if ("error" in subscriptions) return subscriptions;
