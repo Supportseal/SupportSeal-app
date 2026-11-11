@@ -17,6 +17,13 @@ export function ManageSubscriptionButton() {
         window.location.assign(data.url);
         return;
       }
+      if (data?.error === "no_billing_account") {
+        // The linked Stripe customer was deleted; the route just cleared the
+        // link, so a reload shows the upgrade path instead of this dead end
+        // (the revoked-subscription notice no longer applies either).
+        window.location.reload();
+        return;
+      }
     } catch {
       // offline / connection reset: fall through to the retryable error
     }

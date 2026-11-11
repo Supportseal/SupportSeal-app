@@ -147,9 +147,10 @@ export default async function BillingPage({
           {planId === "FREE" && stripeSubscriptionId ? (
             <p className="rounded-md bg-warning-label px-3 py-2 text-sm text-warning">
               This workspace is on the Free plan because its latest payment was refunded or is
-              under dispute, while the subscription is still active. Use Manage subscription to
-              cancel or update it — starting a new checkout now would create a second
-              subscription.
+              under dispute, while the subscription is still active.{" "}
+              {ctx.role === "ADMIN"
+                ? "Use Manage subscription to cancel or update it — starting a new checkout now would create a second subscription."
+                : "A workspace admin can manage the subscription — starting a new checkout now would create a second subscription."}
             </p>
           ) : planId === "FREE" ? (
             <UpgradePlans options={upgradeOptions} intent={intent} />
