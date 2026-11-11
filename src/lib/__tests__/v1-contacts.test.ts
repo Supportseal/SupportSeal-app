@@ -101,6 +101,20 @@ describe("GET /api/v1/contacts", () => {
     });
   });
 
+  it("finds an address the Workspace's permissive acceptance stored (a@b..com)", async () => {
+    // Regression (PR 104 review): the form accepts a@b..com
+    // (CONTACT_EMAIL_REGEX), so the filter must accept it too and the
+    // response must carry the stored value as-is.
+    await db.prisma.contact.create({
+      data: { workspaceId: alpha.workspaceId, email: "a@b..com", createdAt: new Date(PAGE_BASE + 20 * 60_000) },
+    });
+    const filtered = await list(alphaReader, `?email=${encodeURIComponent("a@b..com")}`);
+    expect(filtered.status).toBe(200);
+    expect((await filtered.json()).items.map((item: { email: string | null }) => item.email)).toEqual(["a@b..com"]);
+    const all = await (await list(alphaReader, "?limit=100")).json();
+    expect(all.items.some((item: { email: string | null }) => item.email === "a@b..com")).toBe(true);
+  });
+
   it("answers an email no Contact carries with an empty page, not an error", async () => {
     const page = await list(alphaReader, "?email=nobody-here@example.test");
     expect(page.status).toBe(200);

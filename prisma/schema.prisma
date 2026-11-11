@@ -355,6 +355,7 @@ model Contact {
 
   @@unique([workspaceId, email])
   @@index([workspaceId])
+  @@index([workspaceId, createdAt])
   @@map("contacts")
 }
 

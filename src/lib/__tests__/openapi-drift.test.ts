@@ -351,10 +351,13 @@ describe("contact schemas vs the real serializer", () => {
   });
 
   // Field names alone cannot catch a published constraint drifting from the
-  // serializer's real contract (FR-API-03): name and email are nullable, the
-  // ids are uuids, the address is an email, and nothing else may appear. The
-  // example checks validate payloads against the zod shape, not the published
-  // JSON schema, so this table is what pins the spec side.
+  // serializer's real contract (FR-API-03): name and email are nullable and
+  // the ids are uuids. email is deliberately a bare string, not
+  // format: email — the Workspace's acceptance is permissive (a@b..com is
+  // stored) and inbound senders are stored as parsed, so a strict format
+  // would reject real responses. The example checks validate payloads
+  // against the zod shape, not the published JSON schema, so this table is
+  // what pins the spec side.
   it("pins Contact's published types, nullability and formats", () => {
     expect(spec.components.schemas.Contact, `Contact constraints drifted from serializeContact in src/lib/contact-api.ts. ${SPEC_FIX}`).toEqual({
       type: "object",
@@ -363,10 +366,18 @@ describe("contact schemas vs the real serializer", () => {
       properties: {
         id: { type: "string", format: "uuid" },
         name: { type: ["string", "null"], description: expect.any(String) },
-        email: { type: ["string", "null"], format: "email", description: expect.any(String) },
+        email: { type: ["string", "null"], description: expect.any(String) },
         createdAt: { type: "string", format: "date-time" },
       },
     });
+  });
+
+  it("accepts the addresses the Workspace accepts, which need no strict email shape", () => {
+    // Regression (PR 104 review): the form accepts a@b..com, it is stored and
+    // returned as-is, so the shape the guard validates against must not
+    // demand a strictly-shaped mailbox.
+    const contact = serializeContact({ id: "a91c3e5f-7d02-4b68-8f14-2e6a0c9d3b75", name: null, email: "a@b..com", createdAt: new Date(0) });
+    expect(contactShape.safeParse(contact).error?.message, "contactShape is stricter than the Workspace's own email acceptance (src/lib/contact-email.ts).").toBeUndefined();
   });
 });
 
@@ -541,7 +552,9 @@ const messageListShape = listOf(messageShape);
 const contactShape = z.strictObject({
   id: z.uuid(),
   name: z.string().nullable(),
-  email: z.string().email().nullable(),
+  // Not z.email(): the Workspace's acceptance is permissive and inbound
+  // senders are stored as parsed, so stored addresses need no strict shape.
+  email: z.string().nullable(),
   createdAt: z.iso.datetime(),
 });
 const contactListShape = listOf(contactShape);

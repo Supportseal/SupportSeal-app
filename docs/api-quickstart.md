@@ -531,11 +531,15 @@ curl -sS "$SUPPORTSEAL_URL/api/v1/contacts?email=Dana@Example.TEST" \
 
 The `email` filter is an exact match, not a search: addresses are stored
 lower-cased, so any case spelling finds the same Contact (the curl above used
-mixed case). An email is unique within a Workspace, so the filter answers at
-most one; an address nobody carries answers an empty `items` array, and a
-malformed one is a `400 invalid_request`. Anonymous chat visitors have
-`email: null`, and the filter never matches them; they appear in the
-unfiltered list like anyone else.
+mixed case). The filter accepts the same address shapes the Workspace itself
+accepts — a customer can submit `a@b..com` in the chat widget or the contact
+form, store it, and search for it — and a stored value has no strict mailbox
+shape, so treat `email` in responses as an opaque string. An email is unique
+within a Workspace, so the filter answers at most one; an address nobody
+carries answers an empty `items` array, and one the Workspace would not accept
+is a `400 invalid_request`. Anonymous chat visitors have `email: null`, and
+the filter never matches them; they appear in the unfiltered list like anyone
+else.
 
 With the id (set `CONTACT_ID` to the Contact's id), read the Contact on its
 own, in exactly the list item's shape:

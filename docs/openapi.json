@@ -1178,10 +1178,9 @@
           {
             "name": "email",
             "in": "query",
-            "description": "Only the Contact with this address. The address is matched lower-cased, the way the Workspace stores it, so any case spelling finds the same Contact; emails are unique per Workspace, so the filter answers at most one. An address no Contact carries answers an empty items array, and one padded with spaces is an invalid value.",
+            "description": "Only the Contact with this address. Accepted shapes are the Workspace's own acceptance (the same address a customer can submit in the chat widget or contact form, including for example a domain with consecutive dots); anything the Workspace would not accept is an invalid value. The address is matched lower-cased, the way the Workspace stores it, so any case spelling finds the same Contact; emails are unique per Workspace, so the filter answers at most one. An address no Contact carries answers an empty items array.",
             "schema": {
-              "type": "string",
-              "format": "email"
+              "type": "string"
             }
           }
         ],
@@ -2049,8 +2048,7 @@
               "string",
               "null"
             ],
-            "format": "email",
-            "description": "The Contact's address, stored lower-cased; null for an anonymous chat visitor who has not left one yet. Unique within the Workspace."
+            "description": "The Contact's address as the Workspace accepted it (widget capture, contact form or inbound email), stored lower-cased; null for an anonymous chat visitor who has not left one yet. Acceptance is deliberately permissive so real customer addresses are never refused, and inbound senders are stored as parsed: treat the value as an opaque string, not a strictly-shaped mailbox. Unique within the Workspace."
           },
           "createdAt": {
             "type": "string",
