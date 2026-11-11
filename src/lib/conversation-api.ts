@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { listCursor, listLimit, MAX_LIST_LIMIT } from "@/lib/api/query";
+import { listCursor, listLimit } from "@/lib/api/query";
 import { formatTicketRef } from "@/lib/ticket";
 
 /** Largest body, in characters, of one reply or note; the dashboard composer's limit. */
