@@ -413,6 +413,7 @@ describe("refunds and disputes revoke the current payment (issue #23)", () => {
     ["a won dispute", [charge({ disputeStatus: "won" })], false],
     ["a closed fraud inquiry", [charge({ disputeStatus: "warning_closed" })], false],
     ["an unrecognized dispute status (fails closed)", [charge({ disputeStatus: "future_status" })], true],
+    ["an unreadable dispute (fails closed)", [charge({ disputeStatus: "unknown" })], true],
     ["a failed charge is not a payment", [charge({ status: "failed", refunded: true })], false],
     ["no charges yet (trial, or checkout just completed)", [], false],
     ["a refund of an older payment", [charge({ id: "ch_now" }), charge({ id: "ch_old", refunded: true })], false],
@@ -475,5 +476,16 @@ describe("refunds and disputes revoke the current payment (issue #23)", () => {
 
     expect(await reconcileWorkspacePlan(workspace.id)).toBe("FREE");
     expect(stripe.calls.map((url) => new URL(url).pathname)).toEqual(["/v1/subscriptions"]);
+  });
+
+  it("pages past a run of failed charges to find the last real payment", async () => {
+    const workspace = await seedWorkspace("PRO", "cus_page", "sub_page");
+    stripe.customers.set("cus_page", [{ id: "sub_page", status: "active" }]);
+    // failed renewal attempts (newest first) bury the refunded payment
+    const failed = Array.from({ length: 120 }, (_, i) => ({ id: `ch_f${i}`, status: "failed" }));
+    stripe.charges.set("cus_page", [...failed, { id: "ch_paid", refunded: true }]);
+
+    expect(await syncCustomerBilling("cus_page")).toBe(workspace.id);
+    expect((await state(workspace.id)).plan).toBe("FREE");
   });
 });

@@ -141,43 +141,70 @@ export async function fetchStripeCustomerSubscriptions(
   return { subscriptions };
 }
 
-/**
- * The customer's charges, newest first (issue #23): the newest successful
- * one is the payment behind the current entitlement, and its refund /
- * dispute state is derived from this list — never from a webhook payload.
- */
+/** Status of the charge's dispute, when one exists; "unknown" fails closed. */
 export type StripeCustomerCharge = {
   id: string;
   status: string | null;
   /** True once the charge is fully refunded; partial refunds stay false. */
   refunded: boolean;
-  /** Status of the charge's dispute, when one exists. */
   disputeStatus: string | null;
 };
 
+/** Pages of charges walked before giving up on finding a successful one. */
+const CHARGE_LIST_MAX_PAGES = 3;
+
+/**
+ * The customer's charges, newest first (issue #23): the newest successful
+ * one is the payment behind the current entitlement, and its refund /
+ * dispute state is derived from this list — never from a webhook payload.
+ * The dispute is requested expanded (a listed charge otherwise carries only
+ * its id), and further pages are fetched only while no successful charge
+ * has been seen, so a run of failed renewal attempts cannot hide the last
+ * real payment behind the page boundary.
+ */
 export async function fetchStripeCustomerCharges(
   customerId: string,
 ): Promise<{ charges: StripeCustomerCharge[] } | { error: string }> {
-  const query = new URLSearchParams({ customer: customerId, limit: "20" });
-  const list = await stripeGet<{
-    data?: {
-      id?: string;
-      status?: string;
-      refunded?: boolean;
-      dispute?: { status?: string } | null;
-    }[];
-  }>(`/v1/charges?${query}`);
-  if ("error" in list) return list;
-  if (!Array.isArray(list.data)) return { error: "stripe-request-failed" };
   const charges: StripeCustomerCharge[] = [];
-  for (const item of list.data) {
-    if (!item.id) continue;
-    charges.push({
-      id: item.id,
-      status: item.status ?? null,
-      refunded: item.refunded === true,
-      disputeStatus: item.dispute?.status ?? null,
-    });
+  for (let page = 0; page < CHARGE_LIST_MAX_PAGES; page += 1) {
+    const query = new URLSearchParams({ customer: customerId, limit: "100" });
+    query.append("expand[]", "data.dispute");
+    const after = charges.at(-1)?.id;
+    if (after) query.set("starting_after", after);
+    const list = await stripeGet<{
+      data?: {
+        id?: string;
+        status?: string;
+        refunded?: boolean;
+        dispute?: { status?: string } | string | null;
+      }[];
+      has_more?: boolean;
+    }>(`/v1/charges?${query}`);
+    if ("error" in list) return list;
+    if (!Array.isArray(list.data)) return { error: "stripe-request-failed" };
+    for (const item of list.data) {
+      if (!item.id) continue;
+      const dispute = item.dispute;
+      charges.push({
+        id: item.id,
+        status: item.status ?? null,
+        refunded: item.refunded === true,
+        // The expansion was requested, so a bare id string or a statusless
+        // object is unexpected — "unknown" still fails closed, because any
+        // dispute at all proves the payment is contested.
+        disputeStatus:
+          dispute
+            ? typeof dispute === "object" && dispute.status
+              ? dispute.status
+              : "unknown"
+            : null,
+      });
+    }
+    // The newest successful payment is in hand, the list is exhausted, or
+    // Stripe stopped paging: nothing older can change the derivation.
+    if (!list.has_more || list.data.length === 0 || charges.some((c) => c.status === "succeeded")) {
+      return { charges };
+    }
   }
   return { charges };
 }

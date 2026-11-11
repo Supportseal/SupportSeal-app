@@ -13,8 +13,8 @@ export type FakeCharge = {
   status?: string;
   /** True once fully refunded; partial refunds stay false (issue #23). */
   refunded?: boolean;
-  /** Embedded dispute, like Stripe's charge object carries. */
-  dispute?: { status: string } | null;
+  /** Embedded dispute, like Stripe's charge object carries (expanded). */
+  dispute?: { id?: string; status: string } | null;
 };
 
 /**
@@ -61,15 +61,31 @@ export function fakeStripe() {
       return new Response(JSON.stringify({ id: chargeId, object: "charge", customer: owner[0] }), { status: 200 });
     }
     if (new URL(url).pathname === "/v1/charges") {
-      const customer = new URL(url).searchParams.get("customer") ?? "";
-      const data = (charges.get(customer) ?? []).map((c) => ({
+      const listUrl = new URL(url);
+      const customer = listUrl.searchParams.get("customer") ?? "";
+      const limit = Number(listUrl.searchParams.get("limit") ?? "10") || 10;
+      const startingAfter = listUrl.searchParams.get("starting_after");
+      // Like Stripe: the dispute is an embedded object only when expanded,
+      // otherwise the charge carries just its id.
+      const expanded = listUrl.searchParams.getAll("expand[]").includes("data.dispute");
+      const all = charges.get(customer) ?? [];
+      const start = startingAfter ? all.findIndex((c) => c.id === startingAfter) + 1 : 0;
+      const slice = all.slice(Math.max(start, 0), Math.max(start, 0) + limit);
+      const data = slice.map((c) => ({
         id: c.id,
         object: "charge",
         status: c.status ?? "succeeded",
         refunded: c.refunded === true,
-        dispute: c.dispute ?? null,
+        dispute: c.dispute
+          ? expanded
+            ? { id: c.dispute.id ?? `dp_${c.id}`, object: "dispute", status: c.dispute.status }
+            : c.dispute.id ?? `dp_${c.id}`
+          : null,
       }));
-      return new Response(JSON.stringify({ object: "list", data }), { status: 200 });
+      return new Response(
+        JSON.stringify({ object: "list", data, has_more: start + slice.length < all.length }),
+        { status: 200 },
+      );
     }
     const customer = new URL(url).searchParams.get("customer") ?? "";
     const data = (customers.get(customer) ?? []).map((s) => ({
