@@ -3,7 +3,12 @@ import { NextResponse, type NextRequest } from "next/server";
 import { syncCustomerBilling } from "@/lib/billing";
 import { isHostedMode } from "@/lib/hosting";
 import { prisma } from "@/lib/prisma";
-import { verifyStripeSignature, type StripeEvent } from "@/lib/stripe";
+import {
+  fetchStripeChargeCustomer,
+  isMissingChargeError,
+  verifyStripeSignature,
+  type StripeEvent,
+} from "@/lib/stripe";
 import { guardBillingConfig, logWebhookSignatureFailureHint } from "@/lib/stripe-config";
 
 export const dynamic = "force-dynamic";
@@ -11,9 +16,10 @@ export const dynamic = "force-dynamic";
 /**
  * Stripe webhook (hosted only): verifies the signature over the raw body,
  * then treats the event purely as a TRIGGER (issue #202): it fetches the
- * customer's subscriptions from the Stripe API and writes the CURRENT state
- * keyed by stripeCustomerId — nothing is written from the event payload, so
- * delivery order, duplicates and replays cannot produce a wrong plan.
+ * customer's subscriptions (and the charges behind them, issue #23) from the
+ * Stripe API and writes the CURRENT state keyed by stripeCustomerId —
+ * nothing is written from the event payload, so delivery order, duplicates
+ * and replays cannot produce a wrong plan.
  * Delivery dedup is by event id in ProcessedStripeEvent rows: a COMPLETED
  * event is acked without reprocessing, while a claimed-but-uncompleted one
  * re-runs the idempotent sync so a retry racing a failing attempt is never
@@ -25,6 +31,16 @@ const TRIGGER_EVENT_TYPES = new Set([
   "customer.subscription.created",
   "customer.subscription.updated",
   "customer.subscription.deleted",
+  // Issue #23: money events re-derive the plan — the sync reads the
+  // customer's current charge state, so nothing is taken from these
+  // payloads. charge.succeeded lets a renewal recover a plan revoked by a
+  // lost dispute or refund without waiting for a billing-page read, and
+  // charge.dispute.updated catches a won dispute being reopened.
+  "charge.refunded",
+  "charge.succeeded",
+  "charge.dispute.created",
+  "charge.dispute.updated",
+  "charge.dispute.closed",
 ]);
 
 const PRUNE_INTERVAL_MS = 60 * 60 * 1000;
@@ -72,8 +88,26 @@ export async function POST(request: NextRequest) {
   }
 
   const event = JSON.parse(payload) as StripeEvent;
-  // The customer id is only the key to look current state up by.
-  const customerId = TRIGGER_EVENT_TYPES.has(event.type) ? event.data?.object?.customer : null;
+  // The customer id is only the key to look current state up by. Dispute
+  // events name a charge instead of a customer (issue #23): the key comes
+  // from one charge read — still a read, never the payload's dispute state.
+  let customerId: string | null = null;
+  if (TRIGGER_EVENT_TYPES.has(event.type)) {
+    customerId = event.data?.object?.customer ?? null;
+    const chargeId = event.data?.object?.charge;
+    if (!customerId && typeof chargeId === "string") {
+      const charge = await fetchStripeChargeCustomer(chargeId);
+      if ("error" in charge) {
+        // A charge that no longer exists maps to no Workspace; anything
+        // else fails the delivery (500) so Stripe retries it.
+        if (!isMissingChargeError(charge.error)) {
+          throw new Error(`Stripe charge lookup failed: ${charge.error}`);
+        }
+      } else {
+        customerId = charge.customerId;
+      }
+    }
+  }
 
   // Claim the event id BEFORE processing. A duplicate of a COMPLETED event
   // is acked untouched. A duplicate of a claim that never completed is in

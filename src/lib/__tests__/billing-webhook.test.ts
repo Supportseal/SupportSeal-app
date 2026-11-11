@@ -175,7 +175,8 @@ describe("Stripe webhook as a sync trigger (issue #202)", () => {
     expect((await postWebhook(freshWebhook, "evt_dedup", "customer.subscription.created", event)).status).toBe(200);
 
     expect(await db.prisma.processedStripeEvent.count({ where: { eventId: "evt_dedup" } })).toBe(1);
-    expect(stripe.fetch).toHaveBeenCalledTimes(1);
+    // one sync: subscriptions plus the charges behind the entitlement (issue #23)
+    expect(stripe.fetch).toHaveBeenCalledTimes(2);
   });
 
   it("a duplicate of an uncompleted claim still syncs, so an in-flight failure cannot strand the plan", async () => {
@@ -263,6 +264,91 @@ describe("Stripe webhook as a sync trigger (issue #202)", () => {
 
     await postWebhook(webhook, "evt_stale", "customer.subscription.deleted", { customer: "cus_stale" });
     expect(await state(workspace.id)).toEqual({ plan: "PRO", customer: "cus_current", sub: null });
+  });
+
+  it("a refunded current payment downgrades the Workspace to Free with a grace window (charge.refunded)", async () => {
+    const workspace = await seedWorkspace("Refund", { plan: "PRO", stripeCustomerId: "cus_refund" });
+    stripe.customers.set("cus_refund", [{ id: "sub_refund", status: "active" }]);
+    stripe.charges.set("cus_refund", [{ id: "ch_refund", refunded: true }]);
+
+    const response = await postWebhook(webhook, "evt_refund", "charge.refunded", {
+      id: "ch_refund",
+      object: "charge",
+      customer: "cus_refund",
+      refunded: true,
+    });
+    expect(response.status).toBe(200);
+    const row = await db.prisma.workspace.findUniqueOrThrow({ where: { id: workspace.id } });
+    expect(row.plan).toBe("FREE");
+    expect(row.freePlanSince).toBeInstanceOf(Date);
+  });
+
+  it("a dispute trigger resolves its customer through the charge and suspends the plan (charge.dispute.created)", async () => {
+    const workspace = await seedWorkspace("Disputed", { plan: "PRO", stripeCustomerId: "cus_disp" });
+    stripe.customers.set("cus_disp", [{ id: "sub_disp", status: "active" }]);
+    stripe.charges.set("cus_disp", [{ id: "ch_disp", dispute: { status: "needs_response" } }]);
+
+    const response = await postWebhook(webhook, "evt_disp", "charge.dispute.created", {
+      id: "dp_disp",
+      object: "dispute",
+      charge: "ch_disp",
+      status: "needs_response",
+    });
+    expect(response.status).toBe(200);
+    expect(stripe.calls).toContain("https://api.stripe.com/v1/charges/ch_disp");
+    expect((await state(workspace.id)).plan).toBe("FREE");
+  });
+
+  it("a won dispute trigger restores Pro (charge.dispute.closed)", async () => {
+    const workspace = await seedWorkspace("Recovered", { plan: "PRO", stripeCustomerId: "cus_won" });
+    stripe.customers.set("cus_won", [{ id: "sub_won", status: "active" }]);
+    stripe.charges.set("cus_won", [{ id: "ch_won", dispute: { status: "needs_response" } }]);
+    await postWebhook(webhook, "evt_won_suspend", "charge.dispute.created", { charge: "ch_won" });
+    expect((await state(workspace.id)).plan).toBe("FREE");
+
+    stripe.charges.set("cus_won", [{ id: "ch_won", dispute: { status: "won" } }]);
+    const response = await postWebhook(webhook, "evt_won_close", "charge.dispute.closed", {
+      id: "dp_won",
+      object: "dispute",
+      charge: "ch_won",
+      status: "won",
+    });
+    expect(response.status).toBe(200);
+    expect((await state(workspace.id)).plan).toBe("PRO");
+  });
+
+  it("a reopened dispute re-suspends a restored plan (charge.dispute.updated)", async () => {
+    const workspace = await seedWorkspace("Reopened", { plan: "PRO", stripeCustomerId: "cus_re" });
+    stripe.customers.set("cus_re", [{ id: "sub_re", status: "active" }]);
+    stripe.charges.set("cus_re", [{ id: "ch_re", dispute: { status: "won" } }]);
+    await postWebhook(webhook, "evt_re_won", "charge.dispute.closed", { charge: "ch_re" });
+    expect((await state(workspace.id)).plan).toBe("PRO");
+
+    stripe.charges.set("cus_re", [{ id: "ch_re", dispute: { status: "needs_response" } }]);
+    const response = await postWebhook(webhook, "evt_re_reopened", "charge.dispute.updated", {
+      id: "dp_re",
+      object: "dispute",
+      charge: "ch_re",
+      status: "needs_response",
+    });
+    expect(response.status).toBe(200);
+    expect((await state(workspace.id)).plan).toBe("FREE");
+  });
+
+  it("refund and dispute payloads are triggers only: unrefunded state keeps Pro", async () => {
+    const workspace = await seedWorkspace("TruthMoney", { plan: "PRO", stripeCustomerId: "cus_tm" });
+    stripe.customers.set("cus_tm", [{ id: "sub_tm", status: "active" }]);
+    stripe.charges.set("cus_tm", [{ id: "ch_tm" }]); // clean charge
+
+    await postWebhook(webhook, "evt_tm_refund", "charge.refunded", {
+      id: "ch_tm",
+      customer: "cus_tm",
+      refunded: true,
+    });
+    expect((await state(workspace.id)).plan).toBe("PRO");
+
+    await postWebhook(webhook, "evt_tm_lost", "charge.dispute.closed", { charge: "ch_tm", status: "lost" });
+    expect((await state(workspace.id)).plan).toBe("PRO");
   });
 
   it("prunes dedup rows older than 30 days opportunistically", async () => {
