@@ -667,7 +667,12 @@ human has created the token.
 - **Scope:** the token acts in its own Workspace only: it can create and edit
   Products, list, read, reply to, note and retag Conversations (steps 6-7) and
   read Contacts (step 8). It cannot read or create other tokens, or anything
-  in another Workspace.
+  in another Workspace. A token keeps exactly the scopes it was created with:
+  one minted before a scope was added never gains it, so those calls answer
+  `403 insufficient_scope`. Check the token's `scopes` with
+  `GET /api/v1/whoami` first; if a scope you need is missing, a human has to
+  create a fresh token in **Settings → API tokens** (the API cannot create
+  tokens, and revoking the old one is optional — both keep working).
 
 ## Self-hosted notes
 
