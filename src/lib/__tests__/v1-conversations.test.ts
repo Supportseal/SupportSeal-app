@@ -2,8 +2,10 @@ import { randomUUID } from "node:crypto";
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { GET as listConversationsRoute } from "@/app/api/v1/conversations/route";
 import { PATCH as updateConversationRoute } from "@/app/api/v1/conversations/[conversationId]/route";
 import { POST as createMessageRoute } from "@/app/api/v1/conversations/[conversationId]/messages/route";
+import { signCursor } from "@/lib/api/cursor";
 import { API_TOKEN_SCOPES } from "@/lib/api-tokens";
 import { completeIdempotency } from "@/lib/api/idempotency";
 import { ATTACHMENT_UNAVAILABLE_MESSAGE, addAgentMessage, getConversationDetail, updateConversation } from "@/lib/conversations";
@@ -11,7 +13,7 @@ import { deliverAgentReplyIfRouted } from "@/lib/email/routing";
 import { isServicePaused } from "@/lib/service-pause";
 import { startTestDb, stopTestDb, type TestDb } from "@/test/integration-db";
 import { seedTenant, type TenantRows } from "@/test/tenant-fixtures";
-import { mintToken, snapshot, v1Request } from "@/test/v1-harness";
+import { freshIp, mintToken, snapshot, v1Request } from "@/test/v1-harness";
 
 vi.mock("@/lib/email/routing", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/email/routing")>()),
@@ -347,7 +349,19 @@ describe("PATCH /api/v1/conversations/{id}", () => {
     expect(response.headers.get("cache-control")).toBe("private, no-store");
     const body = await response.json();
     expect(body).toMatchObject({ id: conversationId, status: "CLOSED", tags: ["billing", "bug"] });
-    expect(Object.keys(body).sort()).toEqual(["contactId", "createdAt", "id", "productId", "status", "tags", "ticket", "updatedAt"]);
+    expect(Object.keys(body).sort()).toEqual([
+      "channel",
+      "contactId",
+      "createdAt",
+      "id",
+      "lastMessageAt",
+      "productId",
+      "status",
+      "subject",
+      "tags",
+      "ticket",
+      "updatedAt",
+    ]);
     expect(await db.prisma.conversation.findUniqueOrThrow({ where: { id: conversationId } })).toMatchObject({ status: "CLOSED" });
     expect((await db.prisma.conversation.findUniqueOrThrow({ where: { id: conversationId } })).closedAt).not.toBeNull();
 
@@ -417,6 +431,234 @@ describe("PATCH /api/v1/conversations/{id}", () => {
     const result = await updateConversation({ workspaceId: beta.workspaceId, conversationId, changes: { status: "CLOSED" } });
     expect(result).toEqual({ ok: false, error: "Conversation not found." });
     expect(await db.prisma.conversation.findUniqueOrThrow({ where: { id: conversationId } })).toMatchObject({ status: "OPEN" });
+  });
+});
+
+describe("GET /api/v1/conversations", () => {
+  // 27 extra rows in Alpha next to the seeded one (28 total), staggered by the
+  // minute so pages, filters and cursor positions are all deterministic.
+  const PAGE_BASE = new Date("2026-01-01T00:00:00.000Z").getTime();
+  const ALPHA_TOTAL = 28;
+  const list = (token: string, query = "") =>
+    listConversationsRoute(v1Request("GET", `/api/v1/conversations${query}`, { token, ip: freshIp() }), {
+      params: Promise.resolve({}),
+    });
+  const alphaIds = async () =>
+    (
+      await db.prisma.conversation.findMany({
+        where: { workspaceId: alpha.workspaceId },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        select: { id: true },
+      })
+    ).map((row) => row.id);
+
+  beforeAll(async () => {
+    const productId = (alpha.where.Product as { id: string }).id;
+    const contactId = (alpha.where.Contact as { id: string }).id;
+    const data = Array.from({ length: ALPHA_TOTAL - 1 }, (_, i) => ({
+      workspaceId: alpha.workspaceId,
+      ticketNumber: i + 2,
+      productId,
+      contactId,
+      channel: (i % 2 === 0 ? "CHAT" : "EMAIL") as "CHAT" | "EMAIL",
+      status: (i % 9 === 0 ? "CLOSED" : i % 5 === 0 ? "PENDING" : "OPEN") as "OPEN" | "PENDING" | "CLOSED",
+      subject: i % 3 === 0 ? `Printer jam on floor ${i}` : null,
+      createdAt: new Date(PAGE_BASE + i * 60_000),
+      lastMessageAt: new Date(PAGE_BASE + i * 60_000 + 30_000),
+      updatedAt: new Date(PAGE_BASE + i * 60_000 + 45_000),
+    }));
+    await db.prisma.conversation.createMany({ data });
+    const vip = await db.prisma.tag.create({ data: { workspaceId: alpha.workspaceId, name: "vip" } });
+    const first = await db.prisma.conversation.findFirstOrThrow({
+      where: { workspaceId: alpha.workspaceId, ticketNumber: 2 },
+      select: { id: true },
+    });
+    await db.prisma.conversationTag.create({ data: { conversationId: first.id, tagId: vip.id } });
+  });
+
+  it("lists the Workspace's Conversations oldest first with the inbox's fields", async () => {
+    const response = await list(readOnly);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    const body = await response.json();
+    expect(Object.keys(body).sort()).toEqual(["items", "nextCursor"]); // never a total
+    expect(body.items).toHaveLength(25); // default limit
+    expect(body.items.map((item: { id: string }) => item.id)).toEqual((await alphaIds()).slice(0, 25));
+    const expected = await db.prisma.conversation.findUniqueOrThrow({
+      where: { id: body.items[0].id },
+      select: { ticketNumber: true, status: true, channel: true, subject: true, tags: { select: { tag: { select: { name: true } } } } },
+    });
+    expect(body.items[0]).toMatchObject({
+      ticket: `SS-${expected.ticketNumber}`,
+      status: expected.status,
+      channel: expected.channel,
+      subject: expected.subject,
+      tags: expected.tags.map((t) => t.tag.name),
+    });
+    expect(typeof body.items[0].lastMessageAt).toBe("string");
+  });
+
+  it.each([
+    ["status", () => "?status=CLOSED", { status: "CLOSED" as const }],
+    ["productId", () => `?productId=${(alpha.where.Product as { id: string }).id}`, {}],
+    ["contactId", () => `?contactId=${(alpha.where.Contact as { id: string }).id}`, {}],
+    [
+      "updatedAfter",
+      () => `?updatedAfter=${new Date(PAGE_BASE + 10 * 60_000 + 45_000).toISOString()}`,
+      { updatedAt: { gt: new Date(PAGE_BASE + 10 * 60_000 + 45_000) } },
+    ],
+  ])("filters by %s like the inbox list does", async (_name, query, extra) => {
+    const expected = await db.prisma.conversation.count({ where: { workspaceId: alpha.workspaceId, ...extra } });
+    expect(expected).toBeGreaterThan(0);
+    const body = await (await list(readOnly, `${query()}&limit=100`)).json();
+    expect(body.items).toHaveLength(expected);
+  });
+
+  it("matches a tag name case-insensitively after trimming, like a tag write", async () => {
+    const body = await (await list(readOnly, "?tag=%20VIP%20")).json();
+    expect(body.items).toHaveLength(1);
+    expect(body.items[0].ticket).toBe("SS-2");
+  });
+
+  it.each([
+    ["a subject", () => ["printer jam", { subject: { contains: "printer jam", mode: "insensitive" as const } }] as const],
+    ["a ticket reference", () => ["SS-12", { ticketNumber: 12 }] as const],
+    ["a contact's email", () => [alpha.canary, { contact: { email: { contains: alpha.canary, mode: "insensitive" as const } } }] as const],
+  ])("searches %s", async (_name, make) => {
+    const [q, extra] = make();
+    const expected = await db.prisma.conversation.count({ where: { workspaceId: alpha.workspaceId, ...extra } });
+    expect(expected).toBeGreaterThan(0);
+    const body = await (await list(readOnly, `?limit=100&q=${encodeURIComponent(q)}`)).json();
+    expect(body.items).toHaveLength(expected);
+  });
+
+  it("pages with opaque cursors and ends on a null nextCursor", async () => {
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    let pages = 0;
+    do {
+      const response = await list(readOnly, `?limit=10${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`);
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body.items).toHaveLength(Math.min(10, ALPHA_TOTAL - pages * 10));
+      seen.push(...body.items.map((item: { id: string }) => item.id));
+      cursor = body.nextCursor;
+      if (cursor !== null) {
+        expect(cursor).toMatch(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/u); // opaque: encoded, not a row id or timestamp
+        expect(cursor).not.toContain(body.items[body.items.length - 1].id);
+      }
+      pages += 1;
+    } while (cursor !== null);
+    expect(pages).toBe(3);
+    expect(seen).toEqual(await alphaIds());
+  });
+
+  it("caps the page size at 100 and refuses a limit outside it", async () => {
+    const capped = await list(readOnly, "?limit=100");
+    expect(capped.status).toBe(200);
+    expect((await capped.json()).items).toHaveLength(ALPHA_TOTAL);
+    for (const bad of ["?limit=101", "?limit=500", "?limit=0", "?limit=abc", "?limit=-1"]) {
+      const response = await list(readOnly, bad);
+      expect(response.status, bad).toBe(400);
+      expect((await response.json()).error.code).toBe("invalid_request");
+    }
+  });
+
+  it("refuses an unknown or malformed parameter, naming it", async () => {
+    const response = await list(readOnly, "?foo=1&status=OPEN");
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error.code).toBe("invalid_request");
+    expect(body.error.details).toEqual([{ field: "foo", message: "Unknown query parameter." }]);
+    for (const bad of ["?status=DELETED", `?updatedAfter=yesterday`, `?productId=${alpha.canary}`, "?tag="]) {
+      const refused = await list(readOnly, bad);
+      expect(refused.status, bad).toBe(400);
+      expect((await refused.json()).error.code).toBe("invalid_request");
+    }
+  });
+
+  it("answers every wrong cursor the same way, and never with the row it names", async () => {
+    const page = await (await list(readOnly, "?limit=5")).json();
+    const cursor = page.nextCursor as string;
+    expect(cursor).toBeDefined();
+    const probes: [string, Promise<Response>][] = [
+      ["garbage", list(readOnly, "?cursor=garbage")],
+      ["truncated", list(readOnly, `?cursor=${encodeURIComponent(cursor.slice(0, -2))}`)],
+      ["tampered", list(readOnly, `?cursor=${encodeURIComponent(`${cursor.slice(0, -3)}aaa${cursor.slice(-2)}`)}`)],
+      ["another Workspace's", list(betaWriter, `?cursor=${encodeURIComponent(cursor)}`)],
+      ["another route's", list(readOnly, `?cursor=${encodeURIComponent(signCursor({ workspaceId: alpha.workspaceId, route: "/api/v1/contacts" }, { id: "x" }))}`)],
+      ["another filter set's", list(readOnly, `?status=OPEN&cursor=${encodeURIComponent(cursor)}`)],
+    ];
+    const answers = [];
+    for (const [name, promise] of probes) {
+      const response = await promise;
+      expect(response.status, name).toBe(400);
+      expect(response.headers.get("cache-control")).toBe("private, no-store");
+      answers.push(await snapshot(response));
+    }
+    for (const answer of answers) expect(answer).toEqual(answers[0]);
+    expect(JSON.parse(answers[0].text)).toEqual({
+      error: {
+        code: "invalid_cursor",
+        message:
+          "This cursor is not valid here. Send back the nextCursor of the previous response, unchanged, to the same endpoint with the same filters.",
+      },
+    });
+  });
+
+  it("resumes without skipping when the cursor row is deleted", async () => {
+    const first = await (await list(readOnly, "?limit=1")).json();
+    const gone = first.items[0].id as string;
+    const restore = await db.prisma.conversation.findUniqueOrThrow({ where: { id: gone } });
+    await db.prisma.conversation.delete({ where: { id: gone } });
+    try {
+      // The cursor carries the deleted row's sort keys, so the page resumes
+      // after its position: nothing is skipped and nothing repeats.
+      const second = await (await list(readOnly, `?limit=10&cursor=${encodeURIComponent(first.nextCursor)}`)).json();
+      expect(second.items.map((item: { id: string }) => item.id)).toEqual((await alphaIds()).slice(0, 10));
+    } finally {
+      await db.prisma.conversation.create({ data: restore });
+    }
+  });
+
+  it("needs conversations:read; reply and write tokens hold it through implication", async () => {
+    const productOnly = (await mintToken(db.prisma, alpha.workspaceId, ["products:write"])).token;
+    const refused = await list(productOnly);
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toEqual({
+      error: {
+        code: "insufficient_scope",
+        message: "This API token does not have the conversations:read scope. Create a token that includes conversations:read and retry.",
+      },
+    });
+    for (const token of [replyOnly, writeOnly]) expect((await list(token)).status).toBe(200);
+  });
+
+  it("answers a foreign productId or contactId exactly like an unknown one", async () => {
+    const betaProduct = (beta.where.Product as { id: string }).id;
+    const betaContact = (beta.where.Contact as { id: string }).id;
+    const cases: [string, string][] = [
+      [`?productId=${betaProduct}`, `?productId=${randomUUID()}`],
+      [`?contactId=${betaContact}`, `?contactId=${randomUUID()}`],
+      [`?productId=${betaProduct}&contactId=${betaContact}`, `?productId=${randomUUID()}&contactId=${randomUUID()}`],
+    ];
+    for (const [foreign, unknown] of cases) {
+      const foreignAnswer = await snapshot(await list(readOnly, foreign));
+      const unknownAnswer = await snapshot(await list(readOnly, unknown));
+      expect(foreignAnswer).toEqual(unknownAnswer);
+      expect(foreignAnswer.status).toBe(404);
+      expect(foreignAnswer.text).not.toContain(beta.canary);
+    }
+  });
+
+  it("never lists or finds another Workspace's data", async () => {
+    const body = await (await list(betaWriter)).json();
+    expect(body.items).toHaveLength(1); // Beta's seeded Conversation only
+    expect(JSON.stringify(body)).not.toContain(alpha.canary);
+    expect(JSON.stringify(body)).not.toContain(alpha.workspaceId);
+
+    const searching = await (await list(betaWriter, `?q=${encodeURIComponent(alpha.canary)}`)).json();
+    expect(searching.items).toEqual([]);
   });
 });
 

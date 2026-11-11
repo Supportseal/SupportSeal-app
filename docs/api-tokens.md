@@ -57,13 +57,16 @@ accept tokens only**, never a session cookie.
 | Scope | Grants |
 | --- | --- |
 | `products:write` | Read Products (`GET /api/products`, `GET /api/products/[id]`) and create or edit them (`POST /api/products`, `PATCH /api/products/[id]`, including their domains). |
+| `conversations:read` | List the Workspace's Conversations (`GET /api/v1/conversations`), with the dashboard inbox's filters and pagination. Both scopes below imply it. |
 | `conversations:reply` | Send a reply to the customer (`POST /api/v1/conversations/{id}/messages` with `kind: "reply"`). A reply emails or chats a customer under the Product's name. |
 | `conversations:write` | Add an internal note (`kind: "note"`), and close, reopen or tag a Conversation (`PATCH /api/v1/conversations/{id}`). |
 
 Every token created in the dashboard has `products:write`, `conversations:reply`
-and `conversations:write`; a token created before `conversations:reply` and
-`conversations:write` were added keeps only `products:write`, so create a new
-one to reply through the API. A token acts for the whole Workspace and cannot
+and `conversations:write`; the two conversation scopes imply
+`conversations:read`, so a fresh token can also list Conversations. A token
+created before `conversations:reply` and `conversations:write` were added keeps
+only `products:write`, so create a new one to work Conversations through the
+API. A token acts for the whole Workspace and cannot
 reach another one. A token without the scope an
 endpoint needs gets `403 insufficient_scope`.
 
@@ -86,6 +89,7 @@ that names a field. Responses are `private, no-store`.
 | Status | `code` | Meaning |
 | --- | --- | --- |
 | `400` | `invalid_request` | The body is not valid JSON, is too large (64 KiB), has an unknown field, a domain list longer than 100 entries, a value fails validation, or a `PATCH` changes nothing (none of `name`, `primaryColor`, `supportEmail`, a non-empty `addDomains` or a non-empty `removeDomains`). `details` names the offending field. |
+| `400` | `invalid_cursor` | `GET /api/v1/conversations`: the `cursor` is garbage, tampered or truncated, was minted for another Workspace, endpoint or filter set, or is reused with different filters. Start again from the first page. |
 | `401` | `unauthorized` | The token is missing the `Bearer` scheme, malformed, unknown, revoked or expired, or a write came without a token. All token failures look identical on purpose. Carries `WWW-Authenticate: Bearer`. |
 | `403` | `insufficient_scope` | The token is valid but lacks the scope the endpoint needs. |
 | `403` | `forbidden` | A signed-in session that is not a Workspace admin (reads only). |

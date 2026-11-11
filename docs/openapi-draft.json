@@ -373,109 +373,6 @@
         }
       }
     },
-    "/api/v1/conversations": {
-      "get": {
-        "operationId": "listConversations",
-        "tags": [
-          "Conversations"
-        ],
-        "summary": "List Conversations, oldest first (the inbox order)",
-        "x-required-scope": "conversations:read",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Limit"
-          },
-          {
-            "$ref": "#/components/parameters/Cursor"
-          },
-          {
-            "name": "status",
-            "in": "query",
-            "schema": {
-              "enum": [
-                "OPEN",
-                "PENDING",
-                "CLOSED"
-              ]
-            }
-          },
-          {
-            "name": "productId",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "description": "A Product of another Workspace answers 404, exactly like an unknown one; it is never an empty list."
-          },
-          {
-            "name": "tag",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "maxLength": 40
-            }
-          },
-          {
-            "name": "contactId",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "q",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "maxLength": 200
-            },
-            "description": "Search within the Workspace only. `SS-123`, `#123` and `123` match a ticket number."
-          },
-          {
-            "name": "updatedAfter",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "format": "date-time"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "headers": {
-              "Cache-Control": {
-                "$ref": "#/components/headers/CacheControl"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConversationList"
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/InvalidRequest"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/InsufficientScope"
-          },
-          "429": {
-            "$ref": "#/components/responses/RateLimited"
-          }
-        }
-      }
-    },
     "/api/v1/conversations/{conversationId}": {
       "get": {
         "operationId": "getConversation",
@@ -2201,29 +2098,6 @@
           "tags",
           "createdAt",
           "updatedAt"
-        ]
-      },
-      "ConversationList": {
-        "type": "object",
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Conversation"
-            }
-          },
-          "nextCursor": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Opaque, signed, bound to Workspace, route and filters. Null on the last page."
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "items",
-          "nextCursor"
         ]
       },
       "ConversationPatch": {

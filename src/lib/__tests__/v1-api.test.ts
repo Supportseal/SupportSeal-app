@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
+import { GET as listConversations } from "@/app/api/v1/conversations/route";
 import { POST as createMessage } from "@/app/api/v1/conversations/[conversationId]/messages/route";
 import { PATCH as updateConversation } from "@/app/api/v1/conversations/[conversationId]/route";
 import { GET as whoami } from "@/app/api/v1/whoami/route";
@@ -37,6 +38,13 @@ const conversationParams = (ids: Ids) => ({ params: Promise.resolve({ conversati
  */
 const CROSS_TENANT: Record<string, CrossTenantCase> = {
   whoami: { call: (token) => whoami(v1Request("GET", "/api/v1/whoami", { token }), noParams) },
+  listConversations: {
+    call: (token, ids) =>
+      listConversations(
+        v1Request("GET", `/api/v1/conversations?productId=${ids.Product}&contactId=${ids.Contact}`, { token }),
+        noParams,
+      ),
+  },
   createMessage: {
     writer: true,
     call: (token, ids) =>
