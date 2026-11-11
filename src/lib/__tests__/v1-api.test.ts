@@ -5,8 +5,8 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { GET as listConversations } from "@/app/api/v1/conversations/route";
-import { POST as createMessage } from "@/app/api/v1/conversations/[conversationId]/messages/route";
-import { PATCH as updateConversation } from "@/app/api/v1/conversations/[conversationId]/route";
+import { GET as listMessages, POST as createMessage } from "@/app/api/v1/conversations/[conversationId]/messages/route";
+import { GET as getConversation, PATCH as updateConversation } from "@/app/api/v1/conversations/[conversationId]/route";
 import { GET as whoami } from "@/app/api/v1/whoami/route";
 import { Prisma } from "@/generated/prisma/client";
 import { generateApiToken } from "@/lib/api-tokens";
@@ -56,6 +56,13 @@ const CROSS_TENANT: Record<string, CrossTenantCase> = {
         }),
         conversationParams(ids),
       ),
+  },
+  getConversation: {
+    call: (token, ids) => getConversation(v1Request("GET", `/api/v1/conversations/${ids.Conversation}`, { token }), conversationParams(ids)),
+  },
+  listMessages: {
+    call: (token, ids) =>
+      listMessages(v1Request("GET", `/api/v1/conversations/${ids.Conversation}/messages`, { token }), conversationParams(ids)),
   },
   updateConversation: {
     writer: true,

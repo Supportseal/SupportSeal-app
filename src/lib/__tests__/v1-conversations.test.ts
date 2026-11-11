@@ -3,9 +3,10 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { GET as listConversationsRoute } from "@/app/api/v1/conversations/route";
-import { PATCH as updateConversationRoute } from "@/app/api/v1/conversations/[conversationId]/route";
-import { POST as createMessageRoute } from "@/app/api/v1/conversations/[conversationId]/messages/route";
+import { GET as getConversationRoute, PATCH as updateConversationRoute } from "@/app/api/v1/conversations/[conversationId]/route";
+import { GET as listMessagesRoute, POST as createMessageRoute } from "@/app/api/v1/conversations/[conversationId]/messages/route";
 import { signCursor } from "@/lib/api/cursor";
+import { NOT_FOUND_MESSAGE } from "@/lib/api/v1-route";
 import { API_TOKEN_SCOPES } from "@/lib/api-tokens";
 import { completeIdempotency } from "@/lib/api/idempotency";
 import { ATTACHMENT_UNAVAILABLE_MESSAGE, addAgentMessage, getConversationDetail, updateConversation } from "@/lib/conversations";
@@ -757,6 +758,252 @@ describe("GET /api/v1/conversations", () => {
 
     const searching = await (await list(betaWriter, `?q=${encodeURIComponent(alpha.canary)}`)).json();
     expect(searching.items).toEqual([]);
+  });
+});
+
+describe("GET /api/v1/conversations/{id}", () => {
+  const get = (token: string, id = conversationId) =>
+    getConversationRoute(v1Request("GET", `/api/v1/conversations/${id}`, { token, ip: freshIp() }), params(id));
+
+  it("returns the Conversation in exactly the list's shape", async () => {
+    const response = await get(readOnly);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    const body = await response.json();
+    const expected = await db.prisma.conversation.findUniqueOrThrow({
+      where: { id: conversationId },
+      select: {
+        ticketNumber: true,
+        productId: true,
+        contactId: true,
+        status: true,
+        channel: true,
+        subject: true,
+        tags: { select: { tag: { select: { name: true } } } },
+      },
+    });
+    expect(body).toMatchObject({
+      id: conversationId,
+      ticket: `SS-${expected.ticketNumber}`,
+      productId: expected.productId,
+      contactId: expected.contactId,
+      status: expected.status,
+      channel: expected.channel,
+      subject: expected.subject,
+      tags: expected.tags.map((t) => t.tag.name).sort(),
+    });
+    for (const field of ["createdAt", "updatedAt", "lastMessageAt"]) expect(typeof body[field]).toBe("string");
+  });
+
+  it("is byte-identical to the same row in the list", async () => {
+    const page = await (
+      await listConversationsRoute(v1Request("GET", "/api/v1/conversations?limit=100", { token: readOnly, ip: freshIp() }), {
+        params: Promise.resolve({}),
+      })
+    ).json();
+    const item = page.items.find((row: { id: string }) => row.id === conversationId);
+    expect(item).toBeDefined();
+    expect(await (await get(readOnly)).json()).toEqual(item);
+  });
+
+  it("answers an unknown or foreign id with the same 404", async () => {
+    const unknown = await snapshot(await get(readOnly, randomUUID()));
+    const foreign = await snapshot(await get(readOnly, (beta.where.Conversation as { id: string }).id));
+    expect(foreign).toEqual(unknown);
+    expect(unknown.status).toBe(404);
+    expect(JSON.parse(unknown.text)).toEqual({ error: { code: "not_found", message: NOT_FOUND_MESSAGE } });
+    expect(foreign.text).not.toContain(beta.canary);
+  });
+
+  it("needs conversations:read; reply and write tokens hold it through implication", async () => {
+    const productOnly = (await mintToken(db.prisma, alpha.workspaceId, ["products:write"])).token;
+    const refused = await get(productOnly);
+    expect(refused.status).toBe(403);
+    expect((await refused.json()).error.code).toBe("insufficient_scope");
+    for (const token of [replyOnly, writeOnly]) expect((await get(token)).status).toBe(200);
+  });
+});
+
+describe("GET /api/v1/conversations/{id}/messages", () => {
+  // One deterministic thread: customer question, a reply that mailed out, a
+  // reply that bounced, an internal note — staggered by the minute.
+  const THREAD_BASE = new Date("2026-03-01T00:00:00.000Z").getTime();
+  const ROUTE = "/api/v1/conversations/{conversationId}/messages";
+  let threadId: string;
+
+  const messages = (token: string, id: string, query = "") =>
+    listMessagesRoute(v1Request("GET", `/api/v1/conversations/${id}/messages${query}`, { token, ip: freshIp() }), params(id));
+
+  beforeAll(async () => {
+    const productId = (alpha.where.Product as { id: string }).id;
+    const contactId = (alpha.where.Contact as { id: string }).id;
+    const conversation = await db.prisma.conversation.create({
+      data: {
+        workspaceId: alpha.workspaceId,
+        ticketNumber: 901,
+        productId,
+        contactId,
+        channel: "EMAIL",
+        subject: "The ledger thread",
+        createdAt: new Date(THREAD_BASE),
+        lastMessageAt: new Date(THREAD_BASE + 180_000),
+        updatedAt: new Date(THREAD_BASE + 180_000),
+      },
+    });
+    threadId = conversation.id;
+    const author = await mintToken(db.prisma, alpha.workspaceId, ["conversations:reply"], { name: "Thread bot" });
+    const rows = [
+      { kind: "CUSTOMER" as const, body: "The printer is on fire", at: 0, token: null as string | null, user: null as string | null },
+      { kind: "AGENT" as const, body: "Emailed answer", at: 60_000, token: author.row.id, user: null },
+      { kind: "AGENT" as const, body: "Bounced answer", at: 120_000, token: null, user: alpha.userId },
+      { kind: "NOTE" as const, body: "Warranty expired", at: 180_000, token: null, user: null },
+    ];
+    const created: { id: string }[] = [];
+    for (const row of rows) {
+      created.push(
+        await db.prisma.message.create({
+          data: {
+            conversationId: threadId,
+            kind: row.kind,
+            body: row.body,
+            authorTokenId: row.token,
+            agentUserId: row.user,
+            createdAt: new Date(THREAD_BASE + row.at),
+          },
+        }),
+      );
+    }
+    await db.prisma.attachment.create({
+      data: {
+        workspaceId: alpha.workspaceId,
+        productId,
+        conversationId: threadId,
+        messageId: created[0].id,
+        filename: "error.txt",
+        contentType: "text/plain",
+        size: 12,
+        storageKey: "thread-error",
+      },
+    });
+    await db.prisma.emailDelivery.create({
+      data: {
+        workspaceId: alpha.workspaceId,
+        productId,
+        conversationId: threadId,
+        direction: "OUTBOUND",
+        status: "SENT",
+        agentMessageId: created[1].id,
+        toAddress: `customer-${alpha.canary}@example.test`,
+      },
+    });
+    await db.prisma.emailDelivery.create({
+      data: {
+        workspaceId: alpha.workspaceId,
+        productId,
+        conversationId: threadId,
+        direction: "OUTBOUND",
+        status: "FAILED",
+        agentMessageId: created[2].id,
+        reason: "bounced",
+      },
+    });
+  });
+
+  it("lists the thread oldest first, with authors, attachments and ledger-backed delivery", async () => {
+    const response = await messages(readOnly, threadId);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    const body = await response.json();
+    expect(Object.keys(body).sort()).toEqual(["items", "nextCursor"]); // never a total
+    expect(body.items.map((m: { kind: string }) => m.kind)).toEqual(["customer", "reply", "reply", "note"]);
+    expect(body.items.map((m: { delivery: { state: string } }) => m.delivery.state)).toEqual([
+      "not_applicable",
+      "sent",
+      "failed",
+      "not_applicable",
+    ]);
+    expect(body.items.map((m: { author: { type: string } }) => m.author.type)).toEqual(["customer", "token", "user", "user"]);
+    const attachmentId = (await db.prisma.attachment.findFirstOrThrow({ where: { conversationId: threadId } })).id;
+    expect(body.items[0].attachments).toEqual([
+      { id: attachmentId, filename: "error.txt", contentType: "text/plain", size: 12, contentPath: `/api/v1/attachments/${attachmentId}/content` },
+    ]);
+    expect(body.nextCursor).toBeNull();
+  });
+
+  it("pages with cursors bound to this Conversation and ends on a null nextCursor", async () => {
+    let cursor: string | null = null;
+    const seen: string[] = [];
+    do {
+      const body = await (await messages(readOnly, threadId, `?limit=2${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`)).json();
+      expect(body.items.length).toBeLessThanOrEqual(2);
+      expect(body.nextCursor === null || typeof body.nextCursor === "string").toBe(true);
+      seen.push(...body.items.map((m: { id: string }) => m.id));
+      cursor = body.nextCursor;
+    } while (cursor !== null);
+    const expected = (
+      await db.prisma.message.findMany({ where: { conversationId: threadId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { id: true } })
+    ).map((row) => row.id);
+    expect(seen).toEqual(expected);
+  });
+
+  it("answers every wrong cursor the same way, and never with the row it names", async () => {
+    const page = await (await messages(readOnly, threadId, "?limit=2")).json();
+    const cursor = page.nextCursor as string;
+    expect(cursor).toBeDefined();
+    const probes: [string, Promise<Response>][] = [
+      ["garbage", messages(readOnly, threadId, "?cursor=garbage")],
+      ["oversized", messages(readOnly, threadId, `?cursor=${"x".repeat(513)}`)],
+      ["another Conversation's", messages(readOnly, conversationId, `?cursor=${encodeURIComponent(signCursor({ workspaceId: alpha.workspaceId, route: ROUTE, pathIds: [threadId] }, { id: "x", createdAt: new Date(0).toISOString() }))}`)],
+      ["another route's", messages(readOnly, threadId, `?cursor=${encodeURIComponent(signCursor({ workspaceId: alpha.workspaceId, route: "/api/v1/conversations" }, { id: "x" }))}`)],
+      ["another Workspace's", messages(betaWriter, (beta.where.Conversation as { id: string }).id, `?cursor=${encodeURIComponent(cursor)}`)],
+    ];
+    const answers = [];
+    for (const [name, promise] of probes) {
+      const response = await promise;
+      expect(response.status, name).toBe(400);
+      expect(response.headers.get("cache-control")).toBe("private, no-store");
+      answers.push(await snapshot(response));
+    }
+    for (const answer of answers) expect(answer).toEqual(answers[0]);
+    expect(JSON.parse(answers[0].text)).toEqual({
+      error: { code: "invalid_cursor", message: expect.any(String) },
+    });
+    expect(answers[0].text).not.toContain(alpha.canary);
+  });
+
+  it("treats an empty cursor as no cursor, so the first page always works", async () => {
+    const absent = await (await messages(readOnly, threadId, "?limit=2")).json();
+    const forwarded = await messages(readOnly, threadId, "?limit=2&cursor=");
+    expect(forwarded.status).toBe(200);
+    expect(await forwarded.json()).toEqual(absent);
+  });
+
+  it("refuses an unknown or malformed parameter, naming it", async () => {
+    const response = await messages(readOnly, threadId, "?foo=1");
+    expect(response.status).toBe(400);
+    expect((await response.json()).error.details).toEqual([{ field: "foo", message: "Unknown query parameter." }]);
+    for (const bad of ["?limit=0", "?limit=101", "?limit=abc"]) {
+      const refused = await messages(readOnly, threadId, bad);
+      expect(refused.status, bad).toBe(400);
+      expect((await refused.json()).error.code).toBe("invalid_request");
+    }
+  });
+
+  it("answers an unknown or foreign Conversation id with the same 404", async () => {
+    const unknown = await snapshot(await messages(readOnly, randomUUID()));
+    const foreign = await snapshot(await messages(readOnly, (beta.where.Conversation as { id: string }).id));
+    expect(foreign).toEqual(unknown);
+    expect(unknown.status).toBe(404);
+    expect(JSON.parse(unknown.text)).toEqual({ error: { code: "not_found", message: NOT_FOUND_MESSAGE } });
+    expect(foreign.text).not.toContain(beta.canary);
+  });
+
+  it("needs conversations:read; reply and write tokens hold it through implication", async () => {
+    const productOnly = (await mintToken(db.prisma, alpha.workspaceId, ["products:write"])).token;
+    const refused = await messages(productOnly, threadId);
+    expect(refused.status).toBe(403);
+    expect((await refused.json()).error.code).toBe("insufficient_scope");
+    for (const token of [replyOnly, writeOnly]) expect((await messages(token, threadId)).status).toBe(200);
   });
 });
 

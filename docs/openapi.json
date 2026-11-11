@@ -709,6 +709,79 @@
       }
     },
     "/api/v1/conversations/{conversationId}": {
+      "get": {
+        "operationId": "getConversation",
+        "tags": [
+          "Conversations"
+        ],
+        "summary": "Get a Conversation",
+        "x-required-scope": "conversations:read",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "in": "path",
+            "required": true,
+            "description": "Conversation id. An id from another Workspace answers exactly like an unknown id (404).",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The Conversation, in exactly the shape the list returns.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conversation"
+                },
+                "example": {
+                  "id": "e0a4b6c8-1d2f-4a35-9c7e-8b1d3f5a7c92",
+                  "ticket": "SS-12",
+                  "productId": "7b2d9f41-3c58-4e0a-b6d1-9a4e2c8f5017",
+                  "contactId": "a91c3e5f-7d02-4b68-8f14-2e6a0c9d3b75",
+                  "status": "OPEN",
+                  "channel": "EMAIL",
+                  "subject": "Login issue",
+                  "lastMessageAt": "2026-11-02T09:41:00.000Z",
+                  "tags": [
+                    "billing"
+                  ],
+                  "createdAt": "2026-11-01T08:12:00.000Z",
+                  "updatedAt": "2026-11-02T09:41:00.000Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/InsufficientScope"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "description": "The Conversation on its own, for when an agent already knows the id — the same fields, in the same shape, as the items of `GET /api/v1/conversations`. There is no separate detail view: the Messages come from `GET /api/v1/conversations/{conversationId}/messages`, paginated.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
       "patch": {
         "operationId": "updateConversation",
         "tags": [
@@ -825,6 +898,148 @@
       }
     },
     "/api/v1/conversations/{conversationId}/messages": {
+      "get": {
+        "operationId": "listMessages",
+        "tags": [
+          "Conversations"
+        ],
+        "summary": "List a Conversation's Messages, oldest first",
+        "x-required-scope": "conversations:read",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "in": "path",
+            "required": true,
+            "description": "Conversation id. An id from another Workspace answers exactly like an unknown id (404).",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of the Conversation's Messages, oldest first — the thread, from the customer's first message. There is no total count.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageList"
+                },
+                "example": {
+                  "items": [
+                    {
+                      "id": "f52a9e31-c48b-4d07-9a6e-1b8d4f0a3c57",
+                      "conversationId": "e0a4b6c8-1d2f-4a35-9c7e-8b1d3f5a7c92",
+                      "kind": "customer",
+                      "body": "I cannot sign in since this morning — the page says invalid credentials.",
+                      "author": {
+                        "type": "customer",
+                        "id": "a91c3e5f-7d02-4b68-8f14-2e6a0c9d3b75",
+                        "name": "Dana Fisher"
+                      },
+                      "attachments": [],
+                      "delivery": {
+                        "state": "not_applicable"
+                      },
+                      "createdAt": "2026-11-01T08:12:00.000Z"
+                    },
+                    {
+                      "id": "8d3f6b0a-5c1e-4f2a-9b7d-6e8a1c3f5d92",
+                      "conversationId": "e0a4b6c8-1d2f-4a35-9c7e-8b1d3f5a7c92",
+                      "kind": "reply",
+                      "body": "We reset something on our side that was rejecting valid passwords. Please try signing in again and tell us if it persists.",
+                      "author": {
+                        "type": "token",
+                        "id": "c4e8a2f0-1b3d-4f5a-8e7c-6d9b0a2e4f81",
+                        "name": "Support agent"
+                      },
+                      "attachments": [],
+                      "delivery": {
+                        "state": "sent"
+                      },
+                      "createdAt": "2026-11-02T09:41:00.000Z"
+                    }
+                  ],
+                  "nextCursor": null
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: an unknown query parameter or an invalid value (`details` names the parameter). `invalid_cursor`: the cursor is unknown, tampered or truncated, was minted for another Workspace, endpoint or Conversation, or is reused against a different one.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "invalidRequest": {
+                    "summary": "An unknown or invalid query parameter",
+                    "value": {
+                      "error": {
+                        "code": "invalid_request",
+                        "message": "The query string is invalid.",
+                        "details": [
+                          {
+                            "field": "limt",
+                            "message": "Unknown query parameter."
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "invalidCursor": {
+                    "summary": "A cursor that does not verify here",
+                    "value": {
+                      "error": {
+                        "code": "invalid_cursor",
+                        "message": "This cursor is not valid here. Send back the nextCursor of the previous response, unchanged, to the same endpoint with the same filters."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/InsufficientScope"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "description": "The thread an agent works, in the same Message shape `POST` returns. `delivery.state` is read from the Workspace's delivery ledger: an emailed reply reads `sent` or `failed`, and everything else (a chat-only reply, a note, a customer message) reads `not_applicable`. `queued` is reserved and not emitted yet. The cursor is bound to this Workspace, this endpoint and this Conversation; `limit` and `cursor` behave exactly as on `GET /api/v1/conversations`.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
       "post": {
         "operationId": "createMessage",
         "tags": [
@@ -1448,6 +1663,29 @@
           "attachments",
           "delivery",
           "createdAt"
+        ]
+      },
+      "MessageList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Message"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Opaque, signed, and bound to the Workspace, the endpoint and this Conversation. Null on the last page."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "nextCursor"
         ]
       },
       "Attachment": {

@@ -374,55 +374,6 @@
       }
     },
     "/api/v1/conversations/{conversationId}": {
-      "get": {
-        "operationId": "getConversation",
-        "tags": [
-          "Conversations"
-        ],
-        "summary": "Get a Conversation",
-        "x-required-scope": "conversations:read",
-        "parameters": [
-          {
-            "name": "conversationId",
-            "in": "path",
-            "required": true,
-            "description": "Conversation id. An id from another Workspace answers exactly like an unknown id (404).",
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "headers": {
-              "Cache-Control": {
-                "$ref": "#/components/headers/CacheControl"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Conversation"
-                }
-              }
-            }
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/InsufficientScope"
-          },
-          "429": {
-            "$ref": "#/components/responses/RateLimited"
-          }
-        }
-      },
       "delete": {
         "operationId": "deleteConversation",
         "tags": [
@@ -453,66 +404,6 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/InsufficientScope"
-          },
-          "429": {
-            "$ref": "#/components/responses/RateLimited"
-          }
-        }
-      }
-    },
-    "/api/v1/conversations/{conversationId}/messages": {
-      "get": {
-        "operationId": "listMessages",
-        "tags": [
-          "Conversations"
-        ],
-        "summary": "List a Conversation's Messages, oldest first",
-        "x-required-scope": "conversations:read",
-        "parameters": [
-          {
-            "name": "conversationId",
-            "in": "path",
-            "required": true,
-            "description": "Conversation id. An id from another Workspace answers exactly like an unknown id (404).",
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "$ref": "#/components/parameters/Limit"
-          },
-          {
-            "$ref": "#/components/parameters/Cursor"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "headers": {
-              "Cache-Control": {
-                "$ref": "#/components/headers/CacheControl"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MessageList"
-                }
-              }
-            }
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "400": {
-            "$ref": "#/components/responses/InvalidRequest"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -2229,29 +2120,6 @@
           "body",
           "author",
           "createdAt"
-        ]
-      },
-      "MessageList": {
-        "type": "object",
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Message"
-            }
-          },
-          "nextCursor": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Opaque, signed, bound to Workspace, route and filters. Null on the last page."
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "items",
-          "nextCursor"
         ]
       },
       "MessageCreate": {

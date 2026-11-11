@@ -57,7 +57,7 @@ accept tokens only**, never a session cookie.
 | Scope | Grants |
 | --- | --- |
 | `products:write` | Read Products (`GET /api/products`, `GET /api/products/[id]`) and create or edit them (`POST /api/products`, `PATCH /api/products/[id]`, including their domains). |
-| `conversations:read` | List the Workspace's Conversations (`GET /api/v1/conversations`), with the dashboard inbox's filters and pagination. Both scopes below imply it. |
+| `conversations:read` | List the Workspace's Conversations (`GET /api/v1/conversations`), read one on its own (`GET /api/v1/conversations/{id}`) and read a Conversation's Messages (`GET /api/v1/conversations/{id}/messages`). Both scopes below imply it. |
 | `conversations:reply` | Send a reply to the customer (`POST /api/v1/conversations/{id}/messages` with `kind: "reply"`). A reply emails or chats a customer under the Product's name. |
 | `conversations:write` | Add an internal note (`kind: "note"`), and close, reopen or tag a Conversation (`PATCH /api/v1/conversations/{id}`). |
 

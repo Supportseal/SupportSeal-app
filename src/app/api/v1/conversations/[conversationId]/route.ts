@@ -7,6 +7,34 @@ import { parseBody } from "@/lib/product-api";
 export const dynamic = "force-dynamic";
 
 /**
+ * One Conversation of this Workspace (FR-API-08): the same shape the list
+ * returns, for when an agent already knows the id. An unknown or foreign id
+ * is the uniform 404.
+ */
+export const GET = v1Route<{ conversationId: string }>(
+  { operationId: "getConversation", scope: "conversations:read" },
+  async ({ db, params }) => {
+    const conversation = await db.conversation.findUniqueOrThrow({
+      where: { id: params.conversationId },
+      select: {
+        id: true,
+        ticketNumber: true,
+        productId: true,
+        contactId: true,
+        status: true,
+        channel: true,
+        subject: true,
+        lastMessageAt: true,
+        createdAt: true,
+        updatedAt: true,
+        tags: { select: { tag: { select: { name: true } } } },
+      },
+    });
+    return Response.json(serializeConversation(conversation), { headers: PRIVATE_NO_STORE });
+  },
+);
+
+/**
  * Close, reopen or tag a Conversation (FR-API-04). Status and tag changes
  * apply together or not at all; a body that changes nothing is a 400.
  */

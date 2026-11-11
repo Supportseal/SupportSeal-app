@@ -1,13 +1,102 @@
+import { signCursor, verifyCursor, type CursorBinding } from "@/lib/api/cursor";
 import { PRIVATE_NO_STORE, apiError } from "@/lib/api-errors";
+import { invalidCursor, MAX_CURSOR_LENGTH, parseQuery } from "@/lib/api/query";
 import { NOT_FOUND_MESSAGE, v1Route } from "@/lib/api/v1-route";
 import { ATTACHMENT_UNAVAILABLE_MESSAGE, addAgentMessage } from "@/lib/conversations";
-import { messageBody, serializeMessage, type DeliveryState } from "@/lib/conversation-api";
+import { messageBody, messageListQuery, serializeMessage, type DeliveryState } from "@/lib/conversation-api";
 import { deliverAgentReplyIfRouted } from "@/lib/email/routing";
 import { parseBody } from "@/lib/product-api";
 import { SERVICE_PAUSED_CODE } from "@/lib/service-pause";
 import { NotInScopeError } from "@/lib/workspace-scope";
 
 export const dynamic = "force-dynamic";
+
+const ROUTE = "/api/v1/conversations/{conversationId}/messages";
+
+/**
+ * The Conversation's Messages, oldest first — the thread an agent works
+ * (FR-API-08). The list's pagination contract, bound to this Workspace, this
+ * route and this Conversation; each reply carries its delivery state from the
+ * email ledger.
+ */
+export const GET = v1Route<{ conversationId: string }>(
+  { operationId: "listMessages", scope: "conversations:read" },
+  async ({ request, scope, db, params }) => {
+    const parsed = parseQuery(new URL(request.url).searchParams, messageListQuery);
+    if (!parsed.ok) return parsed.response;
+    const { limit, cursor } = parsed.query;
+
+    // Prove the parent Conversation exists in this Workspace first: a Message
+    // query alone would answer a foreign id with an empty list, not the 404.
+    const conversation = await db.conversation.findUniqueOrThrow({
+      where: { id: params.conversationId },
+      select: { id: true },
+    });
+    const binding: CursorBinding = { workspaceId: scope.workspaceId, route: ROUTE, pathIds: [conversation.id] };
+
+    let position: { id: string; createdAt: Date } | null = null;
+    if (cursor !== undefined) {
+      if (cursor.length > MAX_CURSOR_LENGTH) return invalidCursor();
+      const payload = verifyCursor(binding, cursor);
+      const id = typeof payload?.id === "string" ? payload.id : null;
+      const when = typeof payload?.createdAt === "string" ? new Date(payload.createdAt) : null;
+      if (id === null || when === null || Number.isNaN(when.getTime())) return invalidCursor();
+      position = { id, createdAt: when };
+    }
+
+    const rows = await db.message.findMany({
+      where: {
+        conversationId: conversation.id,
+        // The cursor carries only the sort keys (createdAt, id) of a row the
+        // caller already saw, so a page resumes even if that row was deleted.
+        ...(position
+          ? { OR: [{ createdAt: { gt: position.createdAt } }, { AND: [{ createdAt: position.createdAt }, { id: { gt: position.id } }] }] }
+          : {}),
+      },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      take: limit + 1,
+      select: {
+        id: true,
+        conversationId: true,
+        kind: true,
+        body: true,
+        createdAt: true,
+        author: { select: { id: true, name: true } },
+        authorToken: { select: { id: true, name: true } },
+        attachments: { select: { id: true, filename: true, contentType: true, size: true } },
+      },
+    });
+
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    const last = page.at(-1);
+
+    // One scoped ledger query per page, not per row: an emailed reply reads
+    // `sent` or `failed`, a chat-only reply (no row), a note or a customer
+    // message reads `not_applicable` — the states the create response uses.
+    const replies = page.filter((row) => row.kind === "AGENT").map((row) => row.id);
+    const ledger =
+      replies.length > 0
+        ? await db.emailDelivery.findMany({ where: { agentMessageId: { in: replies } }, select: { agentMessageId: true, status: true } })
+        : [];
+    const states = new Map(
+      ledger.flatMap((row): [string, DeliveryState][] => {
+        if (row.agentMessageId === null) return [];
+        // An agentMessageId row is outbound: SENT reached the customer, FAILED
+        // did not; the inbound statuses cannot appear on one.
+        return [[row.agentMessageId, row.status === "SENT" ? "sent" : row.status === "FAILED" ? "failed" : "not_applicable"]];
+      }),
+    );
+
+    return Response.json(
+      {
+        items: page.map((row) => serializeMessage(row, states.get(row.id) ?? "not_applicable")),
+        nextCursor: hasMore && last ? signCursor(binding, { id: last.id, createdAt: last.createdAt.toISOString() }) : null,
+      },
+      { headers: PRIVATE_NO_STORE },
+    );
+  },
+);
 
 /**
  * Send a reply or add an internal note (FR-API-04..07). A reply takes the

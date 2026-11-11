@@ -126,6 +126,8 @@ describe("openapi.json success contract", () => {
       "POST /api/products/{id}/widget-key/rotate": ["200"],
       "GET /api/v1/whoami": ["200"],
       "GET /api/v1/conversations": ["200"],
+      "GET /api/v1/conversations/{conversationId}": ["200"],
+      "GET /api/v1/conversations/{conversationId}/messages": ["200"],
       "PATCH /api/v1/conversations/{conversationId}": ["200"],
       "POST /api/v1/conversations/{conversationId}/messages": ["201"],
     });
@@ -143,6 +145,8 @@ describe("openapi.json status codes per operation", () => {
     "POST /api/products/{id}/widget-key/rotate": ["200", "401", "403", "404", "409", "429", "500"],
     "GET /api/v1/whoami": ["200", "401", "429", "500"],
     "GET /api/v1/conversations": ["200", "400", "401", "403", "404", "429", "500"],
+    "GET /api/v1/conversations/{conversationId}": ["200", "401", "403", "404", "429", "500"],
+    "GET /api/v1/conversations/{conversationId}/messages": ["200", "400", "401", "403", "404", "429", "500"],
     "PATCH /api/v1/conversations/{conversationId}": ["200", "400", "401", "403", "404", "409", "429", "500"],
     "POST /api/v1/conversations/{conversationId}/messages": ["201", "400", "401", "402", "403", "404", "409", "429", "500"],
   };
@@ -345,6 +349,8 @@ type Example = {
     | "message"
     | "conversation"
     | "conversationList"
+    | "messageList"
+    | "emptyList"
     | "error";
   value: unknown;
 };
@@ -408,13 +414,18 @@ function quickstartExamples(): Example[] {
   return out;
 }
 
-/** Which paged list an envelope is, by its first item; list examples are never empty. */
-const listKind = (item: object): Example["kind"] => ("ticket" in item ? "conversationList" : "product");
+/** Which paged list a non-empty envelope is, by its first item; empty ones check the envelope only (emptyList). */
+const listKind = (item: object): Example["kind"] =>
+  "kind" in item ? "messageList" : "ticket" in item ? "conversationList" : "product";
 
 const bodyKind = (value: object): Example["kind"] => {
   const items = (value as { items?: unknown }).items;
-  if (Array.isArray(items) && items.length > 0 && typeof items[0] === "object" && items[0] !== null) {
-    return listKind(items[0]);
+  if (Array.isArray(items)) {
+    // An empty page is a valid list response; with no item to inspect, only the
+    // envelope can be checked. Classifying it as a Product (the old fall-through)
+    // failed such an example with a misleading error.
+    if (items.length === 0) return "emptyList";
+    if (typeof items[0] === "object" && items[0] !== null) return listKind(items[0]);
   }
   return "products" in value
     ? "list"
@@ -478,6 +489,9 @@ const conversationShape = z.strictObject({
 const listOf = <T extends z.ZodType>(item: T) =>
   z.strictObject({ items: z.array(item).min(1), nextCursor: z.string().min(1).nullable() });
 const conversationListShape = listOf(conversationShape);
+const messageListShape = listOf(messageShape);
+/** An empty page: a valid list response with no item whose shape could be checked. */
+const emptyListShape = z.strictObject({ items: z.array(z.unknown()).length(0), nextCursor: z.string().min(1).nullable() });
 const errorShape = z.strictObject({
   error: z.strictObject({
     code: z.enum(Object.keys(API_ERROR_STATUS) as [keyof typeof API_ERROR_STATUS]),
@@ -511,6 +525,8 @@ describe.each([
         expect(list.error?.message, hint).toBeUndefined();
       } else if (kind === "whoami") expect(whoamiShape.safeParse(value).error?.message, hint).toBeUndefined();
       else if (kind === "conversationList") expect(conversationListShape.safeParse(value).error?.message, hint).toBeUndefined();
+      else if (kind === "messageList") expect(messageListShape.safeParse(value).error?.message, hint).toBeUndefined();
+      else if (kind === "emptyList") expect(emptyListShape.safeParse(value).error?.message, hint).toBeUndefined();
       else expect(errorShape.safeParse(value).error?.message, hint).toBeUndefined();
     }
   });
