@@ -195,9 +195,12 @@ describe("GET /api/v1/tags", () => {
     expect(asBeta.items).toEqual(betaTags.map((row) => ({ id: row.id, name: row.name })));
     const text = JSON.stringify(asBeta);
     for (const leak of ["lookup-01", alpha.canary, alpha.workspaceId]) expect(text).not.toContain(leak);
-    // And Alpha's list never carries Beta's tag names.
-    const asAlpha = JSON.stringify(await (await list(alphaReader, "?limit=100")).json());
-    for (const row of betaTags) expect(asAlpha).not.toContain(`"name": "${row.name}"`);
+    // And Alpha's list never carries Beta's tags. Compare parsed values, not
+    // formatted JSON: stringify emits "name":"x" without a space, so a
+    // `"name": "x"` substring search would pass vacuously.
+    const asAlpha = await (await list(alphaReader, "?limit=100")).json();
+    const alphaNames = asAlpha.items.map((item: { name: string }) => item.name);
+    for (const row of betaTags) expect(alphaNames).not.toContain(row.name);
   });
 });
 
