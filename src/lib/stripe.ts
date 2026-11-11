@@ -66,12 +66,13 @@ export async function createCheckoutSession(input: {
 /**
  * Webhook events are TRIGGERS only (issue #202): nothing but the customer id
  * is read from the payload, and it is only a key for fetching current state
- * from the Stripe API. Never write state from `data.object`.
+ * from the Stripe API. Never write state from `data.object`. Dispute events
+ * carry no customer, only the disputed charge's id (issue #23).
  */
 export type StripeEvent = {
   id: string;
   type: string;
-  data: { object: { customer?: string | null } };
+  data: { object: { customer?: string | null; charge?: string | null } };
 };
 
 export type StripeCustomerSubscription = {
@@ -138,6 +139,66 @@ export async function fetchStripeCustomerSubscriptions(
     });
   }
   return { subscriptions };
+}
+
+/**
+ * The customer's charges, newest first (issue #23): the newest successful
+ * one is the payment behind the current entitlement, and its refund /
+ * dispute state is derived from this list — never from a webhook payload.
+ */
+export type StripeCustomerCharge = {
+  id: string;
+  status: string | null;
+  /** True once the charge is fully refunded; partial refunds stay false. */
+  refunded: boolean;
+  /** Status of the charge's dispute, when one exists. */
+  disputeStatus: string | null;
+};
+
+export async function fetchStripeCustomerCharges(
+  customerId: string,
+): Promise<{ charges: StripeCustomerCharge[] } | { error: string }> {
+  const query = new URLSearchParams({ customer: customerId, limit: "20" });
+  const list = await stripeGet<{
+    data?: {
+      id?: string;
+      status?: string;
+      refunded?: boolean;
+      dispute?: { status?: string } | null;
+    }[];
+  }>(`/v1/charges?${query}`);
+  if ("error" in list) return list;
+  if (!Array.isArray(list.data)) return { error: "stripe-request-failed" };
+  const charges: StripeCustomerCharge[] = [];
+  for (const item of list.data) {
+    if (!item.id) continue;
+    charges.push({
+      id: item.id,
+      status: item.status ?? null,
+      refunded: item.refunded === true,
+      disputeStatus: item.dispute?.status ?? null,
+    });
+  }
+  return { charges };
+}
+
+/**
+ * A single charge's customer: dispute events carry only the charge id, so
+ * the webhook resolves its sync key through this read (issue #23).
+ */
+export async function fetchStripeChargeCustomer(
+  chargeId: string,
+): Promise<{ customerId: string | null } | { error: string }> {
+  const charge = await stripeGet<{ customer?: string | null }>(
+    `/v1/charges/${encodeURIComponent(chargeId)}`,
+  );
+  if ("error" in charge) return charge;
+  return { customerId: charge.customer || null };
+}
+
+/** Stripe's resource_missing error for a charge id (e.g. purged test data). */
+export function isMissingChargeError(error: string): boolean {
+  return /no such charge/i.test(error);
 }
 
 /**

@@ -4,8 +4,10 @@ import { prisma } from "@/lib/prisma";
 import { planForStripePrice } from "@/lib/stripe-prices";
 import {
   fetchStripeCheckoutSession,
+  fetchStripeCustomerCharges,
   fetchStripeCustomerSubscriptions,
   stripeSecret,
+  type StripeCustomerCharge,
   type StripeCustomerSubscription,
 } from "@/lib/stripe";
 
@@ -14,8 +16,10 @@ import {
  * is keyed by the Workspace's stripeCustomerId: a webhook event is only a
  * trigger to sync, and billing reads lazily re-sync too, so a delivery that
  * outlives Stripe's retry window never strands a paying Workspace on the
- * wrong plan. Both paths fetch the customer's subscriptions and write the
- * CURRENT state — idempotent, order-independent, no events emitted.
+ * wrong plan. Both paths fetch the customer's subscriptions (and, while one
+ * entitles, the charges behind it — issue #23: a refunded or disputed
+ * payment revokes the entitlement) and write the CURRENT state — idempotent,
+ * order-independent, no events emitted.
  *
  * FR-HOST-01: self-hosted (or a hosted app without Stripe keys) short-
  * circuits to the stored plan and never touches the network.
@@ -57,11 +61,32 @@ export function isEntitlingStatus(status: string): boolean {
   }
 }
 
-function deriveBilling(subscriptions: StripeCustomerSubscription[]): CustomerBilling {
+/**
+ * Issue #23: the customer's newest successful charge is the payment behind
+ * the current entitlement. A full refund (the money is back with the
+ * customer) or a dispute Stripe has not resolved in our favour revokes it.
+ * An older refunded or disputed charge is superseded by a later payment, a
+ * partial refund keeps the payment, and an unrecognized dispute status
+ * revokes too (fail closed). Charges can revoke a plan, never grant one.
+ */
+export function paymentRevokesEntitlement(charges: readonly StripeCustomerCharge[]): boolean {
+  // Stripe lists newest first; skipped/failed charges are not payments.
+  const payment = charges.find((charge) => charge.status === "succeeded");
+  if (!payment) return false;
+  if (payment.refunded) return true;
+  if (!payment.disputeStatus) return false;
+  return payment.disputeStatus !== "won" && payment.disputeStatus !== "warning_closed";
+}
+
+function deriveBilling(
+  subscriptions: StripeCustomerSubscription[],
+  charges: StripeCustomerCharge[],
+): CustomerBilling {
   // Stripe lists newest first, so the first entitling one is the current one.
   const entitling = subscriptions.find((s) => isEntitlingStatus(s.status));
   return {
-    plan: entitling ? planForStripePrice(entitling.price) : "FREE",
+    plan:
+      entitling && !paymentRevokesEntitlement(charges) ? planForStripePrice(entitling.price) : "FREE",
     subscriptionId: entitling?.id ?? null,
     workspaceId: (entitling ?? subscriptions.find((s) => s.workspaceId))?.workspaceId ?? null,
   };
@@ -75,8 +100,16 @@ function matchesRow(
 }
 
 async function fetchBilling(customerId: string): Promise<CustomerBilling | { error: string }> {
-  const result = await fetchStripeCustomerSubscriptions(customerId);
-  return "error" in result ? result : deriveBilling(result.subscriptions);
+  const subscriptions = await fetchStripeCustomerSubscriptions(customerId);
+  if ("error" in subscriptions) return subscriptions;
+  // Charges are only read while a subscription entitles something: refund /
+  // dispute state can only revoke a plan, never grant one (issue #23).
+  if (!subscriptions.subscriptions.some((s) => isEntitlingStatus(s.status))) {
+    return deriveBilling(subscriptions.subscriptions, []);
+  }
+  const charges = await fetchStripeCustomerCharges(customerId);
+  if ("error" in charges) return charges;
+  return deriveBilling(subscriptions.subscriptions, charges.charges);
 }
 
 /**

@@ -7,15 +7,26 @@ export type FakeSubscription = {
   price?: { id: string; lookup_key?: string | null };
 };
 
+export type FakeCharge = {
+  id: string;
+  /** Charge outcome; defaults to "succeeded" like the list routes below. */
+  status?: string;
+  /** True once fully refunded; partial refunds stay false (issue #23). */
+  refunded?: boolean;
+  /** Embedded dispute, like Stripe's charge object carries. */
+  dispute?: { status: string } | null;
+};
+
 /**
  * In-memory stand-in for the Stripe API surface billing reads: a customer's
- * subscription list, Checkout Sessions, and the price catalogue reads of the
- * key-mode guard. Mutate `customers` / `sessions` / `missingPrices` between
- * calls to change what Stripe "currently" reports; `calls` records every
- * request URL.
+ * subscription and charge lists, single-charge reads, Checkout Sessions, and
+ * the price catalogue reads of the key-mode guard. Mutate `customers` /
+ * `charges` / `sessions` / `missingPrices` between calls to change what
+ * Stripe "currently" reports; `calls` records every request URL.
  */
 export function fakeStripe() {
   const customers = new Map<string, FakeSubscription[]>();
+  const charges = new Map<string, FakeCharge[]>();
   const sessions = new Map<string, { status: string; customer: string | null }>();
   /** Price ids the key's mode cannot see (GET /v1/prices/:id → "No such price"). */
   const missingPrices = new Set<string>();
@@ -41,6 +52,25 @@ export function fakeStripe() {
       if (!session) return new Response(JSON.stringify({ error: { message: "no such session" } }), { status: 404 });
       return new Response(JSON.stringify({ id: sessionId, ...session }), { status: 200 });
     }
+    const chargeId = /\/v1\/charges\/([^/?]+)/.exec(url)?.[1];
+    if (chargeId) {
+      const owner = [...charges.entries()].find(([, list]) => list.some((c) => c.id === chargeId));
+      if (!owner) {
+        return new Response(JSON.stringify({ error: { message: `No such charge: '${chargeId}'` } }), { status: 404 });
+      }
+      return new Response(JSON.stringify({ id: chargeId, object: "charge", customer: owner[0] }), { status: 200 });
+    }
+    if (new URL(url).pathname === "/v1/charges") {
+      const customer = new URL(url).searchParams.get("customer") ?? "";
+      const data = (charges.get(customer) ?? []).map((c) => ({
+        id: c.id,
+        object: "charge",
+        status: c.status ?? "succeeded",
+        refunded: c.refunded === true,
+        dispute: c.dispute ?? null,
+      }));
+      return new Response(JSON.stringify({ object: "list", data }), { status: 200 });
+    }
     const customer = new URL(url).searchParams.get("customer") ?? "";
     const data = (customers.get(customer) ?? []).map((s) => ({
       id: s.id,
@@ -50,5 +80,5 @@ export function fakeStripe() {
     }));
     return new Response(JSON.stringify({ object: "list", data }), { status: 200 });
   });
-  return { customers, sessions, missingPrices, calls, failWith, fetch: fetchMock };
+  return { customers, charges, sessions, missingPrices, calls, failWith, fetch: fetchMock };
 }
