@@ -408,6 +408,22 @@ Filters combine freely and match the dashboard's inbox filters:
 An unknown query parameter is a `400 invalid_request` that names it
 (`details[].field`), so a misspelling (`statues`) cannot silently widen a list.
 
+A filter that matches nothing answers an empty page, not an error — `items`
+is `[]` and `nextCursor` is `null`, so there is no next page to ask for. This
+Workspace has no Conversation tagged `urgent` yet:
+
+```sh
+curl -sS "$SUPPORTSEAL_URL/api/v1/conversations?tag=urgent&limit=2" \
+  -H "Authorization: Bearer $SUPPORTSEAL_TOKEN"
+```
+
+```json
+{
+  "items": [],
+  "nextCursor": null
+}
+```
+
 A page carries at most `limit` Conversations — default 25, maximum 100, and a
 larger value is a `400 invalid_request`, not a silent cap. There is no total
 count. While `nextCursor` is a string, another page exists; pass it back as

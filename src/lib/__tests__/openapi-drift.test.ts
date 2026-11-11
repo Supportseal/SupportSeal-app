@@ -542,6 +542,14 @@ describe.each([
 });
 
 describe("api-quickstart.md vs the spec", () => {
+  it("shows an empty page, so the emptyList classification is exercised", () => {
+    const kinds = quickstartExamples().map((example) => example.kind);
+    expect(
+      kinds,
+      "api-quickstart.md no longer shows an empty page ({ items: [], nextCursor: null }); add one back so the drift guard's emptyList branch is not vacuous.",
+    ).toContain("emptyList");
+  });
+
   it("only calls documented methods on documented paths", () => {
     const documented = new Set(operations.map(({ method, path: route }) => `${method} ${route}`));
     const called = new Set<string>();
