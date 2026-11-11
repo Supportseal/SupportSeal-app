@@ -9,6 +9,7 @@ import { GET as getContact } from "@/app/api/v1/contacts/[contactId]/route";
 import { GET as listConversations } from "@/app/api/v1/conversations/route";
 import { GET as listMessages, POST as createMessage } from "@/app/api/v1/conversations/[conversationId]/messages/route";
 import { GET as getConversation, PATCH as updateConversation } from "@/app/api/v1/conversations/[conversationId]/route";
+import { GET as listTags } from "@/app/api/v1/tags/route";
 import { GET as whoami } from "@/app/api/v1/whoami/route";
 import { Prisma } from "@/generated/prisma/client";
 import { generateApiToken } from "@/lib/api-tokens";
@@ -41,6 +42,12 @@ const contactParams = (ids: Ids) => ({ params: Promise.resolve({ contactId: ids.
  */
 const CROSS_TENANT: Record<string, CrossTenantCase> = {
   whoami: { call: (token) => whoami(v1Request("GET", "/api/v1/whoami", { token }), noParams) },
+  listTags: {
+    // Tag names are values, not ids: the probe carries no id positions, and
+    // the assertion is simply that Beta's page answers only Beta's own tags,
+    // identically whether Alpha's rows exist or not.
+    call: (token) => listTags(v1Request("GET", "/api/v1/tags", { token }), noParams),
+  },
   listConversations: {
     call: (token, ids) =>
       listConversations(

@@ -1332,6 +1332,111 @@
           }
         }
       }
+    },
+    "/api/v1/tags": {
+      "get": {
+        "operationId": "listTags",
+        "tags": [
+          "Conversations"
+        ],
+        "summary": "List the Workspace's tags",
+        "x-required-scope": "conversations:read",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of the Workspace's tags, alphabetical by name (names are unique per Workspace). There is no total count.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagList"
+                },
+                "example": {
+                  "items": [
+                    {
+                      "id": "3f8b1c6a-9d24-4e7f-8a15-2c6d0b4e9f31",
+                      "name": "billing"
+                    },
+                    {
+                      "id": "8c2e7f4b-1a35-4d69-9b0f-5e8a3c7d2b64",
+                      "name": "onboarding"
+                    },
+                    {
+                      "id": "d47c9e2f-6b18-4a03-8f52-9d1e7a5c3b08",
+                      "name": "vip"
+                    }
+                  ],
+                  "nextCursor": null
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: an unknown query parameter or an invalid value (`details` names the parameter; this list takes only `limit` and `cursor`). `invalid_cursor`: the cursor is unknown, tampered or truncated, was minted for another Workspace or endpoint, or is reused against a different one.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "invalidRequest": {
+                    "summary": "An unknown query parameter",
+                    "value": {
+                      "error": {
+                        "code": "invalid_request",
+                        "message": "The query string is invalid.",
+                        "details": [
+                          {
+                            "field": "name",
+                            "message": "Unknown query parameter."
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "invalidCursor": {
+                    "summary": "A cursor that does not verify here",
+                    "value": {
+                      "error": {
+                        "code": "invalid_cursor",
+                        "message": "This cursor is not valid here. Send back the nextCursor of the previous response, unchanged, to the same endpoint with the same filters."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/InsufficientScope"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2078,6 +2183,47 @@
               "null"
             ],
             "description": "Opaque and signed; bound to the Workspace, the endpoint and the exact filter set (including the lower-cased email). Pass it back as `cursor` for the next page. Null on the last page."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "Tag": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "description": "The tag's name as every write stores it: trimmed, lower-cased, at most 40 characters. Unique within the Workspace. A tag exists from its first write (a PATCH's addTags or the dashboard) and stays in this list even once no Conversation carries it; names are created on first use, never pre-declared."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "TagList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Tag"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Opaque and signed; bound to the Workspace and the endpoint (this list takes no filters). Pass it back as `cursor` for the next page. Null on the last page."
           }
         },
         "additionalProperties": false,
