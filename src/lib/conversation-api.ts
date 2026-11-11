@@ -122,5 +122,8 @@ export const conversationListQuery = z.strictObject({
   contactId: z.uuid().optional(),
   tag: z.string().trim().min(1).max(MAX_TAG_NAME_LENGTH).optional(),
   q: z.string().max(MAX_SEARCH_LENGTH).optional(),
-  updatedAfter: z.iso.datetime().optional(),
+  // RFC 3339 `date-time`, as the spec publishes it (format: date-time): both
+  // `Z` and a numeric offset (`+01:00`) name an instant; `new Date()` parses
+  // either, and identical strings hash identically into the cursor binding.
+  updatedAfter: z.iso.datetime({ offset: true }).optional(),
 });

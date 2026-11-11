@@ -514,6 +514,16 @@ describe("GET /api/v1/conversations", () => {
     expect(body.items).toHaveLength(expected);
   });
 
+  it("accepts an RFC 3339 numeric offset in updatedAfter, as the same instant", async () => {
+    const when = new Date(PAGE_BASE + 10 * 60_000 + 45_000);
+    const zulu = await (await list(readOnly, `?updatedAfter=${when.toISOString()}&limit=100`)).json();
+    // The wall-clock spelling of instant T in +01:00 reads T+1h (00:11:45Z
+    // becomes 01:11:45+01:00), so the offset form names the same instant.
+    const shifted = new Date(when.getTime() + 60 * 60_000);
+    const offset = await (await list(readOnly, `?updatedAfter=${encodeURIComponent(`${shifted.toISOString().slice(0, 19)}+01:00`)}&limit=100`)).json();
+    expect(offset.items).toEqual(zulu.items);
+  });
+
   it("matches a tag name case-insensitively after trimming, like a tag write", async () => {
     const body = await (await list(readOnly, "?tag=%20VIP%20")).json();
     expect(body.items).toHaveLength(1);
