@@ -617,6 +617,85 @@ describe("GET /api/v1/conversations", () => {
     });
   });
 
+  it("answers a seeded fuzz of guessed ids and cursors like its class baseline, never 5xx", async () => {
+    // docs/agent-api-plan.md, "Required tests per phase" #4: a deterministic
+    // seeded loop, not a property-testing dependency, so a CI failure replays
+    // exactly. Every probe must equal the baseline of its class — 404 for a
+    // uuid-shaped unknown id, 400 invalid_request for a malformed value, one
+    // invalid_cursor for every wrong cursor, 200 for a filter that matches.
+    let seed = 0x5eed_c0de;
+    const step = () => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return seed;
+    };
+    const pick = (max: number) => step() % max;
+
+    const productId = (alpha.where.Product as { id: string }).id;
+    const contactId = (alpha.where.Contact as { id: string }).id;
+
+    const unknown = await snapshot(await list(readOnly, `?productId=${randomUUID()}`));
+    const malformed = await snapshot(await list(readOnly, "?productId=%20not-a-uuid"));
+    const wrongCursor = await snapshot(await list(readOnly, "?cursor=garbage"));
+    const matching = await snapshot(await list(readOnly, `?productId=${productId}&limit=100`));
+    expect(unknown.status).toBe(404);
+    expect(malformed.status).toBe(400);
+    expect(wrongCursor.status).toBe(400);
+    expect(matching.status).toBe(200);
+
+    // Guessed ids: random UUIDs; Alpha's ids with case changes, whitespace,
+    // %-encoding, trailing slashes, unicode look-alikes and SQL/NoSQL
+    // fragments; oversized and empty values.
+    const lookAlike = (value: string) => `${value.slice(0, pick(value.length))}\u0430${value.slice(pick(value.length) + 1)}`;
+    const idProbes: [string, string, typeof unknown][] = [
+      ["random uuid", `?productId=${randomUUID()}`, unknown],
+      ["case-changed Alpha id", `?productId=${productId.toUpperCase()}`, unknown], // ids are case-sensitive text, so this is an unknown id
+      ["%-encoded digits decode to the same id", `?productId=${productId.replaceAll("1", "%31")}&limit=100`, matching],
+      ["leading whitespace", `?productId=${encodeURIComponent(` ${productId}`)}`, malformed],
+      ["trailing whitespace", `?productId=${encodeURIComponent(`${productId} `)}`, malformed],
+      ["trailing slash", `?productId=${productId}%2F`, malformed],
+      ["unicode look-alike", `?productId=${encodeURIComponent(lookAlike(productId))}`, malformed],
+      ["SQL fragment", `?productId=${encodeURIComponent(`${productId}' OR '1'='1`)}`, malformed],
+      ["NoSQL fragment", `?productId=${encodeURIComponent(`${productId}'; db.conversation.drop()`)}`, malformed],
+      ["oversized", `?productId=${encodeURIComponent("p".repeat(600))}`, malformed],
+      ["empty", "?productId=", malformed],
+      ["random contact uuid", `?contactId=${randomUUID()}`, unknown],
+      ["case-changed contact id", `?contactId=${contactId.toUpperCase()}&limit=100`, unknown],
+    ];
+    for (const [name, query, baseline] of idProbes) {
+      const answer = await snapshot(await list(readOnly, query));
+      expect(answer.status, name).toBeLessThan(500);
+      expect(answer, name).toEqual(baseline);
+    }
+
+    // Cursor fuzz: random bytes, truncations and single-bit flips of a valid
+    // cursor, and replays against another Workspace and another filter set.
+    const page = await (await list(readOnly, "?limit=5")).json();
+    const cursor = page.nextCursor as string;
+    const bytes = Buffer.from(cursor, "utf8");
+    const flip = (at: number) => {
+      const copy = Buffer.from(bytes);
+      copy[at] ^= 1 << pick(8);
+      return copy.toString("utf8");
+    };
+    const randomBytes = (length: number) => Buffer.from(Array.from({ length }, () => pick(256))).toString("base64url");
+    const cursorProbes: [string, Promise<Response>][] = [
+      ["random bytes", list(readOnly, `?cursor=${encodeURIComponent(randomBytes(48))}`)],
+      ["oversized random bytes", list(readOnly, `?cursor=${encodeURIComponent(`${randomBytes(64)}.${randomBytes(451)}`)}`)],
+      ["truncated tail", list(readOnly, `?cursor=${encodeURIComponent(cursor.slice(0, -3))}`)],
+      ["truncated head", list(readOnly, `?cursor=${encodeURIComponent(cursor.slice(3))}`)],
+      ["bit flip at the head", list(readOnly, `?cursor=${encodeURIComponent(flip(0))}`)],
+      ["bit flip mid-payload", list(readOnly, `?cursor=${encodeURIComponent(flip(pick(bytes.length - 4) + 2))}`)],
+      ["bit flip in the signature", list(readOnly, `?cursor=${encodeURIComponent(flip(bytes.length - 2))}`)],
+      ["another Workspace", list(betaWriter, `?cursor=${encodeURIComponent(cursor)}`)],
+      ["another filter set", list(readOnly, `?status=OPEN&cursor=${encodeURIComponent(cursor)}`)],
+    ];
+    for (const [name, promise] of cursorProbes) {
+      const answer = await snapshot(await promise);
+      expect(answer.status, name).toBe(400);
+      expect(answer, name).toEqual(wrongCursor);
+    }
+  });
+
   it("treats an empty cursor as no cursor, so the first page always works", async () => {
     const absent = await list(readOnly, "?limit=5");
     expect(absent.status).toBe(200);
