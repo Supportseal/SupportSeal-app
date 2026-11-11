@@ -110,7 +110,7 @@ describe("billing webhook route", () => {
     expect(syncCustomerBilling.mock.calls).toEqual([["cus_1"]]);
   });
 
-  it.each(["charge.dispute.created", "charge.dispute.closed"])(
+  it.each(["charge.dispute.created", "charge.dispute.updated", "charge.dispute.closed"])(
     "%s resolves the customer through the dispute's charge and syncs it (issue #23)",
     async (type) => {
       fetchStripeChargeCustomer.mockResolvedValue({ customerId: "cus_1" });

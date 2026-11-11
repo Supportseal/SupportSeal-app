@@ -34,10 +34,12 @@ const TRIGGER_EVENT_TYPES = new Set([
   // Issue #23: money events re-derive the plan — the sync reads the
   // customer's current charge state, so nothing is taken from these
   // payloads. charge.succeeded lets a renewal recover a plan revoked by a
-  // lost dispute or refund without waiting for a billing-page read.
+  // lost dispute or refund without waiting for a billing-page read, and
+  // charge.dispute.updated catches a won dispute being reopened.
   "charge.refunded",
   "charge.succeeded",
   "charge.dispute.created",
+  "charge.dispute.updated",
   "charge.dispute.closed",
 ]);
 

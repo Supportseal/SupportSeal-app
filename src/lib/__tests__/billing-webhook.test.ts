@@ -317,6 +317,24 @@ describe("Stripe webhook as a sync trigger (issue #202)", () => {
     expect((await state(workspace.id)).plan).toBe("PRO");
   });
 
+  it("a reopened dispute re-suspends a restored plan (charge.dispute.updated)", async () => {
+    const workspace = await seedWorkspace("Reopened", { plan: "PRO", stripeCustomerId: "cus_re" });
+    stripe.customers.set("cus_re", [{ id: "sub_re", status: "active" }]);
+    stripe.charges.set("cus_re", [{ id: "ch_re", dispute: { status: "won" } }]);
+    await postWebhook(webhook, "evt_re_won", "charge.dispute.closed", { charge: "ch_re" });
+    expect((await state(workspace.id)).plan).toBe("PRO");
+
+    stripe.charges.set("cus_re", [{ id: "ch_re", dispute: { status: "needs_response" } }]);
+    const response = await postWebhook(webhook, "evt_re_reopened", "charge.dispute.updated", {
+      id: "dp_re",
+      object: "dispute",
+      charge: "ch_re",
+      status: "needs_response",
+    });
+    expect(response.status).toBe(200);
+    expect((await state(workspace.id)).plan).toBe("FREE");
+  });
+
   it("refund and dispute payloads are triggers only: unrefunded state keeps Pro", async () => {
     const workspace = await seedWorkspace("TruthMoney", { plan: "PRO", stripeCustomerId: "cus_tm" });
     stripe.customers.set("cus_tm", [{ id: "sub_tm", status: "active" }]);

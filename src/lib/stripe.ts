@@ -206,7 +206,11 @@ export async function fetchStripeCustomerCharges(
       return { charges };
     }
   }
-  return { charges };
+  // The page bound was hit while Stripe still had more and no successful
+  // charge was seen: the list is truncated, so its "no revocation" reading
+  // would be a guess — surface an error instead (the webhook retries, a
+  // read keeps the stored plan).
+  return { error: "stripe-request-failed" };
 }
 
 /**

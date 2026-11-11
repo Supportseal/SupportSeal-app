@@ -488,4 +488,18 @@ describe("refunds and disputes revoke the current payment (issue #23)", () => {
     expect(await syncCustomerBilling("cus_page")).toBe(workspace.id);
     expect((await state(workspace.id)).plan).toBe("FREE");
   });
+
+  it("never derives from a truncated charge list: the page bound fails the sync", async () => {
+    const workspace = await seedWorkspace("PRO", "cus_bound", "sub_bound");
+    stripe.customers.set("cus_bound", [{ id: "sub_bound", status: "active" }]);
+    // more failed charges than the pagination walks: "no revocation" here
+    // would be a guess from incomplete data
+    const failed = Array.from({ length: 301 }, (_, i) => ({ id: `ch_b${i}`, status: "failed" }));
+    stripe.charges.set("cus_bound", failed);
+
+    await expect(syncCustomerBilling("cus_bound")).rejects.toThrow("stripe-request-failed");
+    // the read path keeps the stored plan instead of writing a guess
+    resetSubscriptionResyncCacheForTest();
+    expect(await reconcileWorkspacePlan(workspace.id)).toBe("PRO");
+  });
 });
