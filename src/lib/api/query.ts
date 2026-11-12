@@ -12,6 +12,17 @@ export const MAX_CURSOR_LENGTH = 512;
 
 export type ParsedQuery<T> = { ok: true; query: T } | { ok: false; response: NextResponse };
 
+/** The `limit` every list endpoint shares: 1-100, default 25; a larger value is a 400, not a silent cap. */
+export const listLimit = z.coerce.number().int().min(1).max(MAX_LIST_LIMIT).default(DEFAULT_LIST_LIMIT);
+
+/**
+ * The `cursor` every list endpoint shares. An empty cursor is no cursor (a
+ * client forwarding an unset variable on the first page must not error); the
+ * length bound lives in the route, so an oversized cursor answers
+ * `invalid_cursor` like every other wrong cursor instead of `invalid_request`.
+ */
+export const listCursor = z.string().optional().transform((value) => (value ? value : undefined));
+
 /**
  * Validate a query string against a strict zod object: an unknown parameter
  * or a bad value is `400 invalid_request` naming the parameter, mirroring

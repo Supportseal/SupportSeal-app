@@ -126,6 +126,8 @@ describe("openapi.json success contract", () => {
       "POST /api/products/{id}/widget-key/rotate": ["200"],
       "GET /api/v1/whoami": ["200"],
       "GET /api/v1/conversations": ["200"],
+      "GET /api/v1/conversations/{conversationId}": ["200"],
+      "GET /api/v1/conversations/{conversationId}/messages": ["200"],
       "PATCH /api/v1/conversations/{conversationId}": ["200"],
       "POST /api/v1/conversations/{conversationId}/messages": ["201"],
     });
@@ -143,6 +145,8 @@ describe("openapi.json status codes per operation", () => {
     "POST /api/products/{id}/widget-key/rotate": ["200", "401", "403", "404", "409", "429", "500"],
     "GET /api/v1/whoami": ["200", "401", "429", "500"],
     "GET /api/v1/conversations": ["200", "400", "401", "403", "404", "429", "500"],
+    "GET /api/v1/conversations/{conversationId}": ["200", "401", "403", "404", "429", "500"],
+    "GET /api/v1/conversations/{conversationId}/messages": ["200", "400", "401", "403", "404", "429", "500"],
     "PATCH /api/v1/conversations/{conversationId}": ["200", "400", "401", "403", "404", "409", "429", "500"],
     "POST /api/v1/conversations/{conversationId}/messages": ["201", "400", "401", "402", "403", "404", "409", "429", "500"],
   };
@@ -345,6 +349,8 @@ type Example = {
     | "message"
     | "conversation"
     | "conversationList"
+    | "messageList"
+    | "emptyList"
     | "error";
   value: unknown;
 };
@@ -408,13 +414,18 @@ function quickstartExamples(): Example[] {
   return out;
 }
 
-/** Which paged list an envelope is, by its first item; list examples are never empty. */
-const listKind = (item: object): Example["kind"] => ("ticket" in item ? "conversationList" : "product");
+/** Which paged list a non-empty envelope is, by its first item; empty ones check the envelope only (emptyList). */
+const listKind = (item: object): Example["kind"] =>
+  "kind" in item ? "messageList" : "ticket" in item ? "conversationList" : "product";
 
 const bodyKind = (value: object): Example["kind"] => {
   const items = (value as { items?: unknown }).items;
-  if (Array.isArray(items) && items.length > 0 && typeof items[0] === "object" && items[0] !== null) {
-    return listKind(items[0]);
+  if (Array.isArray(items)) {
+    // An empty page is a valid list response; with no item to inspect, only the
+    // envelope can be checked. Classifying it as a Product (the old fall-through)
+    // failed such an example with a misleading error.
+    if (items.length === 0) return "emptyList";
+    if (typeof items[0] === "object" && items[0] !== null) return listKind(items[0]);
   }
   return "products" in value
     ? "list"
@@ -451,16 +462,25 @@ const attachmentShape = z.strictObject({
   size: z.number().int(),
   contentPath: z.string().startsWith("/api/v1/attachments/"),
 });
-const messageShape = z.strictObject({
-  id: z.uuid(),
-  conversationId: z.uuid(),
-  kind: z.enum(["customer", "reply", "note"]),
-  body: z.string(),
-  author: z.strictObject({ type: z.enum(["customer", "user", "token"]), id: z.uuid().nullable(), name: z.string().nullable() }),
-  attachments: z.array(attachmentShape),
-  delivery: z.strictObject({ state: z.enum(["queued", "sent", "failed", "not_applicable"]) }),
-  createdAt: z.iso.datetime(),
-});
+const messageShape = z
+  .strictObject({
+    id: z.uuid(),
+    conversationId: z.uuid(),
+    kind: z.enum(["customer", "reply", "note"]),
+    body: z.string(),
+    author: z.strictObject({ type: z.enum(["customer", "user", "token"]), id: z.uuid().nullable(), name: z.string().nullable() }),
+    attachments: z.array(attachmentShape),
+    delivery: z.strictObject({ state: z.enum(["queued", "sent", "failed", "not_applicable"]) }),
+    createdAt: z.iso.datetime(),
+  })
+  // serializeMessage fills id/name only from authorToken or the agent User; a
+  // customer message has neither, so its author is always bare. ("user" with
+  // nulls is legal: the author's account was deleted, agentUserId SetNull.)
+  .superRefine((message, ctx) => {
+    if (message.author.type === "customer" && (message.author.id !== null || message.author.name !== null)) {
+      ctx.addIssue({ code: "custom", path: ["author"], message: "a customer message's author carries no id or name" });
+    }
+  });
 const conversationShape = z.strictObject({
   id: z.uuid(),
   ticket: z.string().regex(/^[A-Z]+-\d+$/u),
@@ -478,6 +498,9 @@ const conversationShape = z.strictObject({
 const listOf = <T extends z.ZodType>(item: T) =>
   z.strictObject({ items: z.array(item).min(1), nextCursor: z.string().min(1).nullable() });
 const conversationListShape = listOf(conversationShape);
+const messageListShape = listOf(messageShape);
+/** An empty page: a valid list response with no item whose shape could be checked. */
+const emptyListShape = z.strictObject({ items: z.array(z.unknown()).length(0), nextCursor: z.string().min(1).nullable() });
 const errorShape = z.strictObject({
   error: z.strictObject({
     code: z.enum(Object.keys(API_ERROR_STATUS) as [keyof typeof API_ERROR_STATUS]),
@@ -511,12 +534,22 @@ describe.each([
         expect(list.error?.message, hint).toBeUndefined();
       } else if (kind === "whoami") expect(whoamiShape.safeParse(value).error?.message, hint).toBeUndefined();
       else if (kind === "conversationList") expect(conversationListShape.safeParse(value).error?.message, hint).toBeUndefined();
+      else if (kind === "messageList") expect(messageListShape.safeParse(value).error?.message, hint).toBeUndefined();
+      else if (kind === "emptyList") expect(emptyListShape.safeParse(value).error?.message, hint).toBeUndefined();
       else expect(errorShape.safeParse(value).error?.message, hint).toBeUndefined();
     }
   });
 });
 
 describe("api-quickstart.md vs the spec", () => {
+  it("shows an empty page, so the emptyList classification is exercised", () => {
+    const kinds = quickstartExamples().map((example) => example.kind);
+    expect(
+      kinds,
+      "api-quickstart.md no longer shows an empty page ({ items: [], nextCursor: null }); add one back so the drift guard's emptyList branch is not vacuous.",
+    ).toContain("emptyList");
+  });
+
   it("only calls documented methods on documented paths", () => {
     const documented = new Set(operations.map(({ method, path: route }) => `${method} ${route}`));
     const called = new Set<string>();

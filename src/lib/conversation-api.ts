@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT } from "@/lib/api/query";
+import { listCursor, listLimit } from "@/lib/api/query";
 import { formatTicketRef } from "@/lib/ticket";
 
 /** Largest body, in characters, of one reply or note; the dashboard composer's limit. */
@@ -89,6 +89,25 @@ type ConversationRow = {
   updatedAt: Date;
 };
 
+/**
+ * Exactly the fields `serializeConversation` reads — the one select every
+ * conversation read shares (list, get-one and the PATCH re-read), so the
+ * "get-one is byte-identical to the list" contract is structural, not upkeep.
+ */
+export const conversationSelect = {
+  id: true,
+  ticketNumber: true,
+  productId: true,
+  contactId: true,
+  status: true,
+  channel: true,
+  subject: true,
+  lastMessageAt: true,
+  createdAt: true,
+  updatedAt: true,
+  tags: { select: { tag: { select: { name: true } } } },
+} as const;
+
 export function serializeConversation(conversation: ConversationRow) {
   return {
     id: conversation.id,
@@ -112,11 +131,8 @@ export function serializeConversation(conversation: ConversationRow) {
  * 400 naming it.
  */
 export const conversationListQuery = z.strictObject({
-  limit: z.coerce.number().int().min(1).max(MAX_LIST_LIMIT).default(DEFAULT_LIST_LIMIT),
-  // An empty cursor is no cursor: a client forwarding an unset variable on the
-  // first page must not error. The length bound moved to the route, so an
-  // oversized cursor answers invalid_cursor like every other wrong cursor.
-  cursor: z.string().optional().transform((value) => (value ? value : undefined)),
+  limit: listLimit,
+  cursor: listCursor,
   status: z.enum(["OPEN", "PENDING", "CLOSED"]).optional(),
   productId: z.uuid().optional(),
   contactId: z.uuid().optional(),
@@ -126,4 +142,10 @@ export const conversationListQuery = z.strictObject({
   // `Z` and a numeric offset (`+01:00`) name an instant; `new Date()` parses
   // either, and identical strings hash identically into the cursor binding.
   updatedAfter: z.iso.datetime({ offset: true }).optional(),
+});
+
+/** `GET /api/v1/conversations/{id}/messages` query: the shared `limit`/`cursor` pair, nothing else. */
+export const messageListQuery = z.strictObject({
+  limit: listLimit,
+  cursor: listCursor,
 });

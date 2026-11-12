@@ -2,7 +2,7 @@ import { signCursor, verifyCursor, type CursorBinding } from "@/lib/api/cursor";
 import { PRIVATE_NO_STORE } from "@/lib/api-errors";
 import { invalidCursor, MAX_CURSOR_LENGTH, parseQuery } from "@/lib/api/query";
 import { v1Route } from "@/lib/api/v1-route";
-import { conversationListQuery, serializeConversation } from "@/lib/conversation-api";
+import { conversationListQuery, conversationSelect, serializeConversation } from "@/lib/conversation-api";
 import { parseTicketSearch } from "@/lib/ticket";
 import { NotInScopeError } from "@/lib/workspace-scope";
 
@@ -82,19 +82,7 @@ export const GET = v1Route(
       // tiebreak keeps pages deterministic when createdAt ties.
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       take: limit + 1,
-      select: {
-        id: true,
-        ticketNumber: true,
-        productId: true,
-        contactId: true,
-        status: true,
-        channel: true,
-        subject: true,
-        lastMessageAt: true,
-        createdAt: true,
-        updatedAt: true,
-        tags: { select: { tag: { select: { name: true } } } },
-      },
+      select: conversationSelect,
     });
 
     const hasMore = rows.length > limit;
