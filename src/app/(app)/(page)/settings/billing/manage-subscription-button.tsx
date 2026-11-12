@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+/** Billing-page control (rendered for Admins) that opens a Stripe Customer Portal session. */
 export function ManageSubscriptionButton() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -15,6 +16,13 @@ export function ManageSubscriptionButton() {
       data = (await response.json().catch(() => null)) as { url?: string; error?: string } | null;
       if (data?.url) {
         window.location.assign(data.url);
+        return;
+      }
+      if (data?.error === "no_billing_account") {
+        // The linked Stripe customer was deleted; the route just cleared the
+        // link, so a reload shows the upgrade path instead of this dead end
+        // (the revoked-subscription notice no longer applies either).
+        window.location.reload();
         return;
       }
     } catch {

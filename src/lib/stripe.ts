@@ -66,12 +66,13 @@ export async function createCheckoutSession(input: {
 /**
  * Webhook events are TRIGGERS only (issue #202): nothing but the customer id
  * is read from the payload, and it is only a key for fetching current state
- * from the Stripe API. Never write state from `data.object`.
+ * from the Stripe API. Never write state from `data.object`. Dispute events
+ * carry no customer, only the disputed charge's id (issue #23).
  */
 export type StripeEvent = {
   id: string;
   type: string;
-  data: { object: { customer?: string | null } };
+  data: { object: { customer?: string | null; charge?: string | null } };
 };
 
 export type StripeCustomerSubscription = {
@@ -138,6 +139,97 @@ export async function fetchStripeCustomerSubscriptions(
     });
   }
   return { subscriptions };
+}
+
+/** Status of the charge's dispute, when one exists; "unknown" fails closed. */
+export type StripeCustomerCharge = {
+  id: string;
+  status: string | null;
+  /** True once the charge is fully refunded; partial refunds stay false. */
+  refunded: boolean;
+  disputeStatus: string | null;
+};
+
+/** Pages of charges walked before giving up on finding a successful one. */
+const CHARGE_LIST_MAX_PAGES = 3;
+
+/**
+ * The customer's charges, newest first (issue #23): the newest successful
+ * one is the payment behind the current entitlement, and its refund /
+ * dispute state is derived from this list — never from a webhook payload.
+ * The dispute is requested expanded (a listed charge otherwise carries only
+ * its id), and further pages are fetched only while no successful charge
+ * has been seen, so a run of failed renewal attempts cannot hide the last
+ * real payment behind the page boundary.
+ */
+export async function fetchStripeCustomerCharges(
+  customerId: string,
+): Promise<{ charges: StripeCustomerCharge[] } | { error: string }> {
+  const charges: StripeCustomerCharge[] = [];
+  for (let page = 0; page < CHARGE_LIST_MAX_PAGES; page += 1) {
+    const query = new URLSearchParams({ customer: customerId, limit: "100" });
+    query.append("expand[]", "data.dispute");
+    const after = charges.at(-1)?.id;
+    if (after) query.set("starting_after", after);
+    const list = await stripeGet<{
+      data?: {
+        id?: string;
+        status?: string;
+        refunded?: boolean;
+        dispute?: { status?: string } | string | null;
+      }[];
+      has_more?: boolean;
+    }>(`/v1/charges?${query}`);
+    if ("error" in list) return list;
+    if (!Array.isArray(list.data)) return { error: "stripe-request-failed" };
+    for (const item of list.data) {
+      if (!item.id) continue;
+      const dispute = item.dispute;
+      charges.push({
+        id: item.id,
+        status: item.status ?? null,
+        refunded: item.refunded === true,
+        // The expansion was requested, so a bare id string or a statusless
+        // object is unexpected — "unknown" still fails closed, because any
+        // dispute at all proves the payment is contested.
+        disputeStatus:
+          dispute
+            ? typeof dispute === "object" && dispute.status
+              ? dispute.status
+              : "unknown"
+            : null,
+      });
+    }
+    // The newest successful payment is in hand, the list is exhausted, or
+    // Stripe stopped paging: nothing older can change the derivation.
+    if (!list.has_more || list.data.length === 0 || charges.some((c) => c.status === "succeeded")) {
+      return { charges };
+    }
+  }
+  // The page bound was hit while Stripe still had more and no successful
+  // charge was seen: the list is truncated, so its "no revocation" reading
+  // would be a guess — surface an error instead (the webhook retries, a
+  // read keeps the stored plan).
+  return { error: "stripe-request-failed" };
+}
+
+/**
+ * A single charge's customer: dispute events carry only the charge id, so
+ * the webhook resolves its sync key through this read (issue #23).
+ */
+export async function fetchStripeChargeCustomer(
+  chargeId: string,
+): Promise<{ customerId: string | null } | { error: string }> {
+  const charge = await stripeGet<{ customer?: string | null }>(
+    `/v1/charges/${encodeURIComponent(chargeId)}`,
+  );
+  if ("error" in charge) return charge;
+  return { customerId: charge.customer || null };
+}
+
+/** Stripe's resource_missing error for a charge id (e.g. purged test data). */
+export function isMissingChargeError(error: string): boolean {
+  return /no such charge/i.test(error);
 }
 
 /**

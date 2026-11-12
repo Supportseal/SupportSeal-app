@@ -46,8 +46,16 @@ export async function POST(request: NextRequest) {
   // workspace whose activation webhook was missed is not treated as Free
   // here — and a Workspace that already has a subscription cannot start a
   // second one (it manages the existing one in the customer portal).
+  // Issue #23: a refunded or disputed payment drops the plan to Free while
+  // the Stripe subscription itself stays active, so the retained
+  // subscription id — not the plan alone — is what blocks a second checkout
+  // (double billing) until the subscription is canceled in the portal.
   const currentPlan = await reconcileWorkspacePlan(membership.workspaceId, { fresh: true });
-  if (currentPlan !== "FREE") {
+  const workspace = await prisma.workspace.findUniqueOrThrow({
+    where: { id: membership.workspaceId },
+    select: { stripeCustomerId: true, stripeSubscriptionId: true },
+  });
+  if (currentPlan !== "FREE" || workspace.stripeSubscriptionId !== null) {
     return NextResponse.json({ error: "already_subscribed" }, { status: 409 });
   }
 
@@ -64,10 +72,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "billing_misconfigured" }, { status: 503 });
   }
 
-  const workspace = await prisma.workspace.findUniqueOrThrow({
-    where: { id: membership.workspaceId },
-    select: { stripeCustomerId: true },
-  });
   const startCheckout = (customerId?: string) =>
     createCheckoutSession({
       priceId,

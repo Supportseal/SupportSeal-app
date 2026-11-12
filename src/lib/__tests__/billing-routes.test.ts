@@ -187,6 +187,21 @@ describe("POST /api/billing/checkout double-subscribe guard", () => {
     expect(writes).toHaveLength(0);
   });
 
+  it("blocks a refunded Workspace on Free whose subscription is still live, so it cannot double-bill (issue #23)", async () => {
+    const writes = stubStripe();
+    const ws = await signIn("ADMIN", { plan: "PRO", stripeCustomerId: "cus_revoked" });
+    await db.prisma.workspace.update({ where: { id: ws.id }, data: { stripeSubscriptionId: "sub_revoked" } });
+    // The freshest sync derives FREE (fully refunded payment) while the
+    // subscription itself stays active in Stripe.
+    stripe.customers.set("cus_revoked", [{ id: "sub_revoked", status: "active", workspaceId: ws.id }]);
+    stripe.charges.set("cus_revoked", [{ id: "ch_revoked", refunded: true }]);
+
+    const response = await checkout();
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "already_subscribed" });
+    expect(writes).toHaveLength(0);
+  });
+
   it("reuses the linked customer when re-subscribing after a cancellation", async () => {
     const writes = stubStripe();
     const ws = await signIn("ADMIN", { stripeCustomerId: "cus_back" });
