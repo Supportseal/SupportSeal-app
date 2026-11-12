@@ -161,6 +161,17 @@ docker compose exec db psql -U supportseal -d supportseal -c \
    AND reason LIKE 'no email provider configured%';"
 ```
 
+With your own PostgreSQL instead of the compose `db` service, run the same
+query against it — export `DATABASE_URL` (`.env` is not read automatically)
+and invoke `psql` directly:
+
+```bash
+psql "$DATABASE_URL" -c \
+  "SELECT \"conversationId\", \"createdAt\" FROM email_deliveries
+   WHERE direction = 'OUTBOUND' AND status = 'SENT'
+   AND reason LIKE 'no email provider configured%';"
+```
+
 ### Custom inbound mail domain (optional)
 
 Besides forwarding, a Product can own a mail domain (Settings → Products →
