@@ -5,10 +5,12 @@ import { fakeStripe } from "@/test/stripe-fake";
 import { prisma } from "@/lib/prisma";
 import {
   isEntitlingStatus,
+  paymentRevokesEntitlement,
   reconcileWorkspacePlan,
   resetSubscriptionResyncCacheForTest,
   syncCustomerBilling,
 } from "@/lib/billing";
+import type { StripeCustomerCharge } from "@/lib/stripe";
 
 let db: TestDb;
 let stripe: ReturnType<typeof fakeStripe>;
@@ -137,7 +139,9 @@ describe("lazy subscription re-sync (issue #202)", () => {
     expect(await reconcileWorkspacePlan(workspace.id)).toBe("PRO");
 
     expect(await state(workspace.id)).toEqual({ plan: "PRO", stripeCustomerId: "cus_1", stripeSubscriptionId: "sub_1" });
-    expect(stripe.fetch).toHaveBeenCalledTimes(1);
+    // subscriptions first, then the charges behind the entitlement (issue #23)
+    expect(stripe.fetch).toHaveBeenCalledTimes(2);
+    expect(stripe.calls.map((url) => new URL(url).pathname)).toEqual(["/v1/subscriptions", "/v1/charges"]);
     expect(stripe.fetch).toHaveBeenCalledWith(
       "https://api.stripe.com/v1/subscriptions?customer=cus_1&status=all&limit=20",
       expect.objectContaining({
@@ -155,11 +159,11 @@ describe("lazy subscription re-sync (issue #202)", () => {
     await reconcileWorkspacePlan(workspace.id);
     await reconcileWorkspacePlan(workspace.id);
     await reconcileWorkspacePlan(workspace.id);
-    expect(stripe.fetch).toHaveBeenCalledTimes(1);
+    expect(stripe.fetch).toHaveBeenCalledTimes(2);
 
     const other = await seedWorkspace("FREE", "cus_2");
     await reconcileWorkspacePlan(other.id);
-    expect(stripe.fetch).toHaveBeenCalledTimes(2);
+    expect(stripe.fetch).toHaveBeenCalledTimes(4);
 
     // expiry: after the cache is dropped the next read hits Stripe again
     resetSubscriptionResyncCacheForTest();
@@ -277,7 +281,7 @@ describe("lazy subscription re-sync (issue #202)", () => {
       stripe.calls.length = 0;
       resetSubscriptionResyncCacheForTest();
       await reconcileWorkspacePlan(workspace.id);
-      expect(stripe.calls.map((url) => new URL(url).pathname)).toEqual(["/v1/subscriptions"]);
+      expect(stripe.calls.map((url) => new URL(url).pathname)).toEqual(["/v1/subscriptions", "/v1/charges"]);
     });
 
     it("polls an open session at most once per cache window and stays FREE", async () => {
@@ -390,5 +394,112 @@ describe("lazy subscription re-sync (issue #202)", () => {
     expect(await state(workspace.id)).toEqual({ plan: "FREE", stripeCustomerId: null, stripeSubscriptionId: null });
     expect(await syncCustomerBilling("cus_dead")).toBeNull();
     expect((await state(workspace.id)).stripeCustomerId).toBeNull();
+  });
+});
+
+describe("refunds and disputes revoke the current payment (issue #23)", () => {
+  /** A clean successful charge; overrides shape the payment's history. */
+  function charge(overrides: Partial<StripeCustomerCharge> = {}): StripeCustomerCharge {
+    return { id: "ch_1", status: "succeeded", refunded: false, disputeStatus: null, ...overrides };
+  }
+
+  it.each([
+    ["a fully refunded payment", [charge({ refunded: true })], true],
+    ["a partially refunded payment", [charge({ refunded: false })], false],
+    ["an open dispute (needs_response)", [charge({ disputeStatus: "needs_response" })], true],
+    ["a dispute under review", [charge({ disputeStatus: "under_review" })], true],
+    ["an open fraud inquiry", [charge({ disputeStatus: "warning_needs_response" })], true],
+    ["a lost dispute", [charge({ disputeStatus: "lost" })], true],
+    ["a won dispute", [charge({ disputeStatus: "won" })], false],
+    ["a closed fraud inquiry", [charge({ disputeStatus: "warning_closed" })], false],
+    ["an unrecognized dispute status (fails closed)", [charge({ disputeStatus: "future_status" })], true],
+    ["an unreadable dispute (fails closed)", [charge({ disputeStatus: "unknown" })], true],
+    ["a failed charge is not a payment", [charge({ status: "failed", refunded: true })], false],
+    ["no charges yet (trial, or checkout just completed)", [], false],
+    ["a refund of an older payment", [charge({ id: "ch_now" }), charge({ id: "ch_old", refunded: true })], false],
+    ["the newest payment refunded behind a clean older one", [charge({ id: "ch_now", refunded: true }), charge({ id: "ch_old" })], true],
+  ] as const)("%s -> revokes: %s", (_label, charges, expected) => {
+    expect(paymentRevokesEntitlement(charges)).toBe(expected);
+  });
+
+  it("a full refund downgrades Pro to Free and starts the Free grace window", async () => {
+    const workspace = await seedWorkspace("PRO", "cus_refund", "sub_refund");
+    stripe.customers.set("cus_refund", [{ id: "sub_refund", status: "active" }]);
+    stripe.charges.set("cus_refund", [{ id: "ch_refund", refunded: true }]);
+    const before = Date.now();
+
+    expect(await syncCustomerBilling("cus_refund")).toBe(workspace.id);
+    const row = await prisma.workspace.findUniqueOrThrow({ where: { id: workspace.id } });
+    expect(row.plan).toBe("FREE");
+    expect(row.stripeCustomerId).toBe("cus_refund"); // the link survives for recovery
+    expect(row.freePlanSince?.getTime()).toBeGreaterThanOrEqual(before);
+  });
+
+  it("an open dispute suspends the plan; a won dispute restores it", async () => {
+    const workspace = await seedWorkspace("PRO", "cus_disp", "sub_disp");
+    stripe.customers.set("cus_disp", [{ id: "sub_disp", status: "active" }]);
+
+    stripe.charges.set("cus_disp", [{ id: "ch_disp", dispute: { status: "needs_response" } }]);
+    await syncCustomerBilling("cus_disp");
+    expect((await state(workspace.id)).plan).toBe("FREE");
+
+    stripe.charges.set("cus_disp", [{ id: "ch_disp", dispute: { status: "won" } }]);
+    await syncCustomerBilling("cus_disp");
+    expect((await state(workspace.id)).plan).toBe("PRO");
+  });
+
+  it("a lost dispute stays Free until a later successful payment heals the plan", async () => {
+    const workspace = await seedWorkspace("PRO", "cus_lost", "sub_lost");
+    stripe.customers.set("cus_lost", [{ id: "sub_lost", status: "active" }]);
+
+    stripe.charges.set("cus_lost", [{ id: "ch_1", dispute: { status: "lost" } }]);
+    await syncCustomerBilling("cus_lost");
+    expect((await state(workspace.id)).plan).toBe("FREE");
+
+    // renewal: the newer successful charge outranks the lost-dispute one
+    stripe.charges.set("cus_lost", [{ id: "ch_2" }, { id: "ch_1", dispute: { status: "lost" } }]);
+    await syncCustomerBilling("cus_lost");
+    expect((await state(workspace.id)).plan).toBe("PRO");
+  });
+
+  it("the lazy read path reconciles refunds too (billing page)", async () => {
+    const workspace = await seedWorkspace("PRO", "cus_read", "sub_read");
+    stripe.customers.set("cus_read", [{ id: "sub_read", status: "active" }]);
+    stripe.charges.set("cus_read", [{ id: "ch_read", refunded: true }]);
+
+    expect(await reconcileWorkspacePlan(workspace.id)).toBe("FREE");
+  });
+
+  it("charges are only read while a subscription entitles something", async () => {
+    stripe.customers.set("cus_none", [{ id: "sub_none", status: "canceled" }]);
+    const workspace = await seedWorkspace("PRO", "cus_none", "sub_none");
+
+    expect(await reconcileWorkspacePlan(workspace.id)).toBe("FREE");
+    expect(stripe.calls.map((url) => new URL(url).pathname)).toEqual(["/v1/subscriptions"]);
+  });
+
+  it("pages past a run of failed charges to find the last real payment", async () => {
+    const workspace = await seedWorkspace("PRO", "cus_page", "sub_page");
+    stripe.customers.set("cus_page", [{ id: "sub_page", status: "active" }]);
+    // failed renewal attempts (newest first) bury the refunded payment
+    const failed = Array.from({ length: 120 }, (_, i) => ({ id: `ch_f${i}`, status: "failed" }));
+    stripe.charges.set("cus_page", [...failed, { id: "ch_paid", refunded: true }]);
+
+    expect(await syncCustomerBilling("cus_page")).toBe(workspace.id);
+    expect((await state(workspace.id)).plan).toBe("FREE");
+  });
+
+  it("never derives from a truncated charge list: the page bound fails the sync", async () => {
+    const workspace = await seedWorkspace("PRO", "cus_bound", "sub_bound");
+    stripe.customers.set("cus_bound", [{ id: "sub_bound", status: "active" }]);
+    // more failed charges than the pagination walks: "no revocation" here
+    // would be a guess from incomplete data
+    const failed = Array.from({ length: 301 }, (_, i) => ({ id: `ch_b${i}`, status: "failed" }));
+    stripe.charges.set("cus_bound", failed);
+
+    await expect(syncCustomerBilling("cus_bound")).rejects.toThrow("stripe-request-failed");
+    // the read path keeps the stored plan instead of writing a guess
+    resetSubscriptionResyncCacheForTest();
+    expect(await reconcileWorkspacePlan(workspace.id)).toBe("PRO");
   });
 });

@@ -2,11 +2,13 @@ import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // In-memory stand-in for the ProcessedStripeEvent claim table (issue #202):
-// unique eventId, completedAt stamped after processing.
-const { syncCustomerBilling, claims, processedStripeEvent } = vi.hoisted(() => {
+// unique eventId, completedAt stamped after processing. The charge→customer
+// read dispute triggers need (issue #23) is mocked the same way.
+const { syncCustomerBilling, fetchStripeChargeCustomer, claims, processedStripeEvent } = vi.hoisted(() => {
   const claims = new Map<string, { completedAt: Date | null; workspaceId?: string }>();
   return {
     syncCustomerBilling: vi.fn(),
+    fetchStripeChargeCustomer: vi.fn(),
     claims,
     processedStripeEvent: {
       create: async ({ data }: { data: { eventId: string } }) => {
@@ -37,6 +39,10 @@ const { syncCustomerBilling, claims, processedStripeEvent } = vi.hoisted(() => {
 
 vi.mock("@/lib/prisma", () => ({ prisma: { processedStripeEvent } }));
 vi.mock("@/lib/billing", () => ({ syncCustomerBilling }));
+vi.mock("@/lib/stripe", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/stripe")>()),
+  fetchStripeChargeCustomer,
+}));
 
 import { POST as webhook } from "@/app/api/billing/webhook/route";
 import { resetStripeConfigGuardForTest } from "@/lib/stripe-config";
@@ -72,6 +78,8 @@ beforeEach(() => {
   resetStripeConfigGuardForTest();
   syncCustomerBilling.mockReset();
   syncCustomerBilling.mockResolvedValue("ws_1");
+  fetchStripeChargeCustomer.mockReset();
+  fetchStripeChargeCustomer.mockResolvedValue({ customerId: null });
   claims.clear();
 });
 
@@ -81,6 +89,8 @@ describe("billing webhook route", () => {
     "customer.subscription.created",
     "customer.subscription.updated",
     "customer.subscription.deleted",
+    "charge.refunded",
+    "charge.succeeded",
   ])("%s triggers a sync of the event's customer", async (type) => {
     const response = await webhook(signedRequest(type, { id: "x_1", customer: "cus_1", status: "canceled" }));
     expect(response.status).toBe(200);
@@ -98,6 +108,44 @@ describe("billing webhook route", () => {
       }),
     );
     expect(syncCustomerBilling.mock.calls).toEqual([["cus_1"]]);
+  });
+
+  it.each(["charge.dispute.created", "charge.dispute.updated", "charge.dispute.closed"])(
+    "%s resolves the customer through the dispute's charge and syncs it (issue #23)",
+    async (type) => {
+      fetchStripeChargeCustomer.mockResolvedValue({ customerId: "cus_1" });
+      const response = await webhook(
+        signedRequest(type, { id: "dp_1", object: "dispute", charge: "ch_1", status: "needs_response" }),
+      );
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ received: true });
+      expect(fetchStripeChargeCustomer).toHaveBeenCalledExactlyOnceWith("ch_1");
+      expect(syncCustomerBilling).toHaveBeenCalledExactlyOnceWith("cus_1");
+    },
+  );
+
+  it("acknowledges a dispute whose charge maps to no customer, without syncing", async () => {
+    const response = await webhook(signedRequest("charge.dispute.created", { id: "dp_1", charge: "ch_none" }));
+    expect(response.status).toBe(200);
+    expect(fetchStripeChargeCustomer).toHaveBeenCalledExactlyOnceWith("ch_none");
+    expect(syncCustomerBilling).not.toHaveBeenCalled();
+  });
+
+  it("acknowledges a dispute whose charge no longer exists in Stripe", async () => {
+    fetchStripeChargeCustomer.mockResolvedValue({ error: "No such charge: 'ch_gone'" });
+    const response = await webhook(signedRequest("charge.dispute.created", { id: "dp_1", charge: "ch_gone" }));
+    expect(response.status).toBe(200);
+    expect(syncCustomerBilling).not.toHaveBeenCalled();
+  });
+
+  it("fails the delivery when the charge read fails, so Stripe retries", async () => {
+    fetchStripeChargeCustomer.mockResolvedValue({ error: "stripe-unreachable" });
+    await expect(
+      webhook(signedRequest("charge.dispute.closed", { id: "dp_1", charge: "ch_1", status: "won" })),
+    ).rejects.toThrow("stripe-unreachable");
+    expect(syncCustomerBilling).not.toHaveBeenCalled();
+    // nothing was claimed: the retry processes the delivery fresh
+    expect(claims.size).toBe(0);
   });
 
   it("acknowledges but ignores events that are not triggers or carry no customer", async () => {

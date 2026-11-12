@@ -30,10 +30,13 @@ export default async function BillingPage({
   // Lazy re-sync (issue #202): a missed webhook must not show (or bill) a
   // stale plan; self-hosted never reaches here.
   const planId = await reconcileWorkspacePlan(ctx.workspace.id);
-  // Read after the re-sync, which may have just linked the customer.
-  const { stripeCustomerId } = await prisma.workspace.findUniqueOrThrow({
+  // Read after the re-sync, which may have just linked the customer. A
+  // retained subscription id on a Free plan is the refunded/disputed state
+  // (issue #23): the subscription is still live in Stripe, so the page
+  // directs to the portal instead of upgrade buttons (double billing).
+  const { stripeCustomerId, stripeSubscriptionId } = await prisma.workspace.findUniqueOrThrow({
     where: { id: ctx.workspace.id },
-    select: { stripeCustomerId: true },
+    select: { stripeCustomerId: true, stripeSubscriptionId: true },
   });
   const [usage, pause] = await Promise.all([
     computeUsage(ctx.workspace.id, planForWorkspace(planId).id),
@@ -141,7 +144,17 @@ export default async function BillingPage({
             </p>
           ) : null}
 
-          {planId === "FREE" ? <UpgradePlans options={upgradeOptions} intent={intent} /> : null}
+          {planId === "FREE" && stripeSubscriptionId ? (
+            <p className="rounded-md bg-warning-label px-3 py-2 text-sm text-warning">
+              This workspace is on the Free plan because its latest payment was refunded or is
+              under dispute, while the subscription is still active.{" "}
+              {ctx.role === "ADMIN"
+                ? "Use Manage subscription to cancel or update it — starting a new checkout now would create a second subscription."
+                : "A workspace admin can manage the subscription — starting a new checkout now would create a second subscription."}
+            </p>
+          ) : planId === "FREE" ? (
+            <UpgradePlans options={upgradeOptions} intent={intent} />
+          ) : null}
           {stripeCustomerId && ctx.role === "ADMIN" ? <ManageSubscriptionButton /> : null}
         </CardContent>
       </Card>
