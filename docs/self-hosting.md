@@ -135,6 +135,43 @@ These rules are the same for Google and GitHub:
    are delivered from `"{Product} Support" <no-reply@…>` with a reply-to
    that threads back into the same conversation.
 
+### Recovering recorded-only replies
+
+When a reply is routed to email and no outbound provider is configured, it
+is stored in the conversation but never leaves the server: the delivery log
+(`email_deliveries` table) records it as `SENT` with the reason
+`no email provider configured — recorded only`. Configuring a provider
+(step 4) only covers replies sent from then on — each reply gets exactly
+one delivery attempt, and the recorded send already used it.
+
+To deliver such a reply, send it again as a new reply in the same
+conversation: it goes out through the configured provider and threads
+into the same exchange (same subject and ticket reference). Routing is
+decided per reply, so a chat-started conversation whose visitor is back
+delivers the new reply in chat — the visitor sees it live. The original
+stays in the thread — a chat-started conversation may have shown it to a
+returning visitor — so a short "resending" note reads better than an exact
+duplicate. No view lists these replies; to find the affected conversations,
+query the delivery log:
+
+```bash
+docker compose exec db psql -U supportseal -d supportseal -c \
+  "SELECT \"conversationId\", \"createdAt\" FROM email_deliveries
+   WHERE direction = 'OUTBOUND' AND status = 'SENT'
+   AND reason LIKE 'no email provider configured%';"
+```
+
+With your own PostgreSQL instead of the compose `db` service, run the same
+query against it — export `DATABASE_URL` (`.env` is not read automatically)
+and invoke `psql` directly:
+
+```bash
+psql "$DATABASE_URL" -c \
+  "SELECT \"conversationId\", \"createdAt\" FROM email_deliveries
+   WHERE direction = 'OUTBOUND' AND status = 'SENT'
+   AND reason LIKE 'no email provider configured%';"
+```
+
 ### Custom inbound mail domain (optional)
 
 Besides forwarding, a Product can own a mail domain (Settings → Products →
@@ -398,8 +435,10 @@ the section that explains the topic in full.
 - **Agent replies are recorded but not delivered.**
   Cause: no outbound provider is configured. Fix: set `SMTP_URL` or
   `SENDGRID_API_KEY` in `.env` and run `docker compose up -d` again so future
-  replies are delivered. See
-  [Email setup](#email-setup) (step 4) and
+  replies are delivered; replies recorded earlier are never re-sent
+  automatically. See
+  [Email setup](#email-setup) (step 4),
+  [Recovering recorded-only replies](#recovering-recorded-only-replies) and
   [Environment reference](#environment-reference).
 
 ## Security notes
