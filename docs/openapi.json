@@ -3,7 +3,7 @@
   "info": {
     "title": "SupportSeal Workspace API",
     "version": "1.0.0",
-    "summary": "Create, edit and read Products (and their widget and form keys), reply to and update Conversations, and introspect the calling token, with a Workspace API token.",
+    "summary": "Create, edit and read Products (and their widget and form keys), list and read the Workspace's Conversations, reply to and update Conversations, and introspect the calling token, with a Workspace API token.",
     "description": "The token-authenticated JSON API of a SupportSeal Workspace. It is identical on the hosted tier and on a self-hosted installation; only the base URL differs.\n\nTokens are created by a Workspace admin in the dashboard (**Settings → API tokens**) and shown once; they cannot be created through this API. A token acts for its whole Workspace and can never reach another one.\n\nHuman guides: [quickstart](api-quickstart.md), [API tokens](api-tokens.md), [widget integration](widget-integration.md).\n\nEvery response, success or error, is sent with `Cache-Control: private, no-store`. Every error has the same envelope (`ErrorResponse`); branch on `error.code`, never on `error.message`.\n\nThe error codes and statuses in this file are checked against `API_ERROR_STATUS` in `src/lib/api-errors.ts` by `src/lib/__tests__/openapi-drift.test.ts`; update the spec in the same change as the code.",
     "license": {
       "name": "AGPL-3.0-only",
@@ -33,7 +33,7 @@
     },
     {
       "name": "Conversations",
-      "description": "Reply to, annotate, close and tag the Workspace's Conversations."
+      "description": "List and read the Workspace's Conversations, reply to them, annotate, close and tag them."
     }
   ],
   "security": [
@@ -520,6 +520,194 @@
         ]
       }
     },
+    "/api/v1/conversations": {
+      "get": {
+        "operationId": "listConversations",
+        "tags": [
+          "Conversations"
+        ],
+        "summary": "List Conversations, oldest first (the inbox order)",
+        "x-required-scope": "conversations:read",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Only Conversations in this status. Omit it for every status.",
+            "schema": {
+              "enum": [
+                "OPEN",
+                "PENDING",
+                "CLOSED"
+              ]
+            }
+          },
+          {
+            "name": "productId",
+            "in": "query",
+            "description": "Only Conversations of this Product. A Product id that is unknown or from another Workspace answers 404, exactly like an unknown id; it is never an empty list.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "contactId",
+            "in": "query",
+            "description": "Only Conversations of this Contact. An unknown or foreign Contact id answers 404 like an unknown id.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "description": "Only Conversations carrying this tag. The name is trimmed and lower-cased like a tag write, so `Billing` and `billing` match the same tag. A tag no Conversation carries yields an empty items array.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "The inbox search, within this Workspace only: subject, ticket reference (`SS-123`, `#123`, `123`), the contact's name or email, and any message body.",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "updatedAfter",
+            "in": "query",
+            "description": "Only Conversations whose updatedAt is strictly after this ISO 8601 timestamp.",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of Conversations, oldest first. There is no total count.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationList"
+                },
+                "example": {
+                  "items": [
+                    {
+                      "id": "e0a4b6c8-1d2f-4a35-9c7e-8b1d3f5a7c92",
+                      "ticket": "SS-12",
+                      "productId": "7b2d9f41-3c58-4e0a-b6d1-9a4e2c8f5017",
+                      "contactId": "a91c3e5f-7d02-4b68-8f14-2e6a0c9d3b75",
+                      "status": "OPEN",
+                      "channel": "EMAIL",
+                      "subject": "Login issue",
+                      "lastMessageAt": "2026-11-02T09:41:00.000Z",
+                      "tags": [
+                        "billing"
+                      ],
+                      "createdAt": "2026-11-01T08:12:00.000Z",
+                      "updatedAt": "2026-11-02T09:41:00.000Z"
+                    },
+                    {
+                      "id": "c3d94e60-8e5a-4f2b-9d31-0f7a5b1c6e84",
+                      "ticket": "SS-13",
+                      "productId": "7b2d9f41-3c58-4e0a-b6d1-9a4e2c8f5017",
+                      "contactId": "b62d8f4a-1c9e-4a73-8d52-9f3b7a1e5c06",
+                      "status": "PENDING",
+                      "channel": "CHAT",
+                      "subject": null,
+                      "lastMessageAt": "2026-11-02T10:03:00.000Z",
+                      "tags": [],
+                      "createdAt": "2026-11-01T11:45:00.000Z",
+                      "updatedAt": "2026-11-02T10:03:00.000Z"
+                    }
+                  ],
+                  "nextCursor": "eyJpZCI6ImMzZDk0ZTYwLThlNWEtNGYyYi05ZDMxLTBmN2E1YjFjNmU4NCIsImNyZWF0ZWRBdCI6IjIwMjYtMTEtMDFUMTE6NDU6MDAuMDAwWiJ9.dVRkw4y6LpHsFqN2zE8OxzJmTuWc9bAgK1hR5Yo0fDg"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: an unknown query parameter or an invalid value (`details` names the parameter). `invalid_cursor`: the cursor is unknown, tampered or truncated, was minted for another Workspace, endpoint or filter set, or is reused with different filters.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "invalidRequest": {
+                    "summary": "An unknown or invalid query parameter",
+                    "value": {
+                      "error": {
+                        "code": "invalid_request",
+                        "message": "The query string is invalid.",
+                        "details": [
+                          {
+                            "field": "statues",
+                            "message": "Unknown query parameter."
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "invalidCursor": {
+                    "summary": "A cursor that does not verify here",
+                    "value": {
+                      "error": {
+                        "code": "invalid_cursor",
+                        "message": "This cursor is not valid here. Send back the nextCursor of the previous response, unchanged, to the same endpoint with the same filters."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/InsufficientScope"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "description": "The inbox list for agents (FR-API-08): the same filters the dashboard takes, oldest first, on the token's Workspace only. Pagination: `limit` (1-100, default 25) and the opaque, signed `cursor` from the previous response's `nextCursor`; cursors are bound to the Workspace, the endpoint and the exact filter set, so a cursor from another list (or another Workspace) is a `400 invalid_cursor`. Lists never return a total.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v1/conversations/{conversationId}": {
       "patch": {
         "operationId": "updateConversation",
@@ -594,6 +782,9 @@
                   "productId": "7b2d9f41-3c58-4e0a-b6d1-9a4e2c8f5017",
                   "contactId": "a91c3e5f-7d02-4b68-8f14-2e6a0c9d3b75",
                   "status": "CLOSED",
+                  "channel": "EMAIL",
+                  "subject": "Login issue",
+                  "lastMessageAt": "2026-10-31T04:12:00.000Z",
                   "tags": [
                     "billing"
                   ],
@@ -994,6 +1185,7 @@
         "type": "string",
         "enum": [
           "invalid_request",
+          "invalid_cursor",
           "unauthorized",
           "forbidden",
           "insufficient_scope",
@@ -1009,6 +1201,7 @@
         "description": "Stable and machine-readable. `x-error-status` gives the HTTP status of each code.",
         "x-error-status": {
           "invalid_request": 400,
+          "invalid_cursor": 400,
           "unauthorized": 401,
           "forbidden": 403,
           "insufficient_scope": 403,
@@ -1348,6 +1541,25 @@
               "CLOSED"
             ]
           },
+          "channel": {
+            "enum": [
+              "CHAT",
+              "EMAIL"
+            ],
+            "description": "Where the Conversation started: the chat widget or the Product's support email."
+          },
+          "subject": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The email subject, when the Conversation arrived by email; null otherwise."
+          },
+          "lastMessageAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the last message (customer or reply) arrived."
+          },
           "tags": {
             "type": "array",
             "items": {
@@ -1370,10 +1582,37 @@
           "productId",
           "contactId",
           "status",
+          "channel",
+          "subject",
+          "lastMessageAt",
           "tags",
           "createdAt",
           "updatedAt"
         ]
+      },
+      "ConversationList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Conversation"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Opaque and signed; bound to the Workspace, the endpoint and the exact filter set. Pass it back as `cursor` for the next page. Null on the last page."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "description": "One page of a list. Lists never carry a total count."
       }
     },
     "responses": {
@@ -1702,6 +1941,26 @@
       }
     },
     "parameters": {
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "description": "Page size, 1-100. Above 100 is a 400, not a silent cap.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 25
+        }
+      },
+      "Cursor": {
+        "name": "cursor",
+        "in": "query",
+        "description": "The previous page's nextCursor, unchanged; an empty value counts as no cursor (the first page). Opaque and signed: any other value, or the same value with different filters, is 400 invalid_cursor.",
+        "schema": {
+          "type": "string",
+          "maxLength": 512
+        }
+      },
       "IdempotencyKey": {
         "name": "Idempotency-Key",
         "in": "header",

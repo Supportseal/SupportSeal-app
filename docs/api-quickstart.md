@@ -345,6 +345,87 @@ neither does:
 curl -sS -X PATCH "$SUPPORTSEAL_URL/api/v1/conversations/$CONVERSATION_ID" -H "Authorization: Bearer $SUPPORTSEAL_TOKEN" -H "Content-Type: application/json" -d '{"status":"CLOSED","addTags":["billing"]}'
 ```
 
+## 7. Work the inbox
+
+Step 6 assumed you already had `$CONVERSATION_ID`. A token with
+`conversations:read` can list the Workspace's Conversations — the same list the
+dashboard inbox shows, oldest first. Every dashboard token has that scope:
+`conversations:reply` and `conversations:write` both imply it.
+
+```sh
+curl -sS "$SUPPORTSEAL_URL/api/v1/conversations?status=OPEN&limit=2" \
+  -H "Authorization: Bearer $SUPPORTSEAL_TOKEN"
+```
+
+`200 OK` returns one page of Conversations and the cursor for the next:
+
+```json
+{
+  "items": [
+    {
+      "id": "e0a4b6c8-1d2f-4a35-9c7e-8b1d3f5a7c92",
+      "ticket": "SS-12",
+      "productId": "7b2d9f41-3c58-4e0a-b6d1-9a4e2c8f5017",
+      "contactId": "a91c3e5f-7d02-4b68-8f14-2e6a0c9d3b75",
+      "status": "OPEN",
+      "channel": "EMAIL",
+      "subject": "Login issue",
+      "lastMessageAt": "2026-11-02T09:41:00.000Z",
+      "tags": ["billing"],
+      "createdAt": "2026-11-01T08:12:00.000Z",
+      "updatedAt": "2026-11-02T09:41:00.000Z"
+    },
+    {
+      "id": "c3d94e60-8e5a-4f2b-9d31-0f7a5b1c6e84",
+      "ticket": "SS-13",
+      "productId": "7b2d9f41-3c58-4e0a-b6d1-9a4e2c8f5017",
+      "contactId": "b62d8f4a-1c9e-4a73-8d52-9f3b7a1e5c06",
+      "status": "PENDING",
+      "channel": "CHAT",
+      "subject": null,
+      "lastMessageAt": "2026-11-02T10:03:00.000Z",
+      "tags": [],
+      "createdAt": "2026-11-01T11:45:00.000Z",
+      "updatedAt": "2026-11-02T10:03:00.000Z"
+    }
+  ],
+  "nextCursor": "eyJpZCI6ImMzZDk0ZTYwLThlNWEtNGYyYi05ZDMxLTBmN2E1YjFjNmU4NCIsImNyZWF0ZWRBdCI6IjIwMjYtMTEtMDFUMTE6NDU6MDAuMDAwWiJ9.dVRkw4y6LpHsFqN2zE8OxzJmTuWc9bAgK1hR5Yo0fDg"
+}
+```
+
+Each item is the same Conversation shape as the `PATCH` response in step 6.
+Filters combine freely and match the dashboard's inbox filters:
+
+| Parameter | Narrows to | Notes |
+| --- | --- | --- |
+| `status` | `OPEN`, `PENDING` or `CLOSED` | Omit it for every status. |
+| `productId` | One Product's Conversations | An id that is unknown **or from another Workspace** answers `404 not_found`, never a quiet empty list. |
+| `contactId` | One Contact's Conversations | Same rule: an unknown or foreign id answers `404`. |
+| `tag` | Conversations carrying a tag | The name is trimmed and lower-cased like a tag write, so `Billing` and `billing` match the same tag. A tag no Conversation carries yields an empty `items` array. |
+| `q` | The inbox search | Subject, ticket reference (`SS-12`, `#12`, `12`), the contact's name or email, and any message body — within this Workspace only. |
+| `updatedAfter` | Conversations updated strictly after it | An ISO 8601 timestamp, for polling. |
+
+An unknown query parameter is a `400 invalid_request` that names it
+(`details[].field`), so a misspelling (`statues`) cannot silently widen a list.
+
+A page carries at most `limit` Conversations — default 25, maximum 100, and a
+larger value is a `400 invalid_request`, not a silent cap. There is no total
+count. While `nextCursor` is a string, another page exists; pass it back as
+`cursor`, with the same filters, to continue:
+
+```sh
+curl -sS "$SUPPORTSEAL_URL/api/v1/conversations?status=OPEN&limit=2&cursor=$NEXT_CURSOR" \
+  -H "Authorization: Bearer $SUPPORTSEAL_TOKEN"
+```
+
+The cursor is opaque and signed. It works only for this Workspace, this
+endpoint and the same filters (you may change `limit` between pages); one
+reused with different filters — or minted by another Workspace, or tampered
+with or truncated — answers `400 invalid_cursor`, and so does garbage. An
+empty `cursor` counts as no cursor, so forwarding an unset variable on the
+first page is safe. Start again from the first page instead of editing a
+cursor.
+
 ## Errors
 
 Every failure from the API has one JSON shape. Branch on `code`, never on
@@ -363,8 +444,9 @@ Every failure from the API has one JSON shape. Branch on `code`, never on
 | Status | `code` | Meaning | Fix |
 | --- | --- | --- | --- |
 | 400 | `invalid_request` | Body is not JSON, is over 64 KiB, has an unknown field, a domain list longer than 100 entries, a bad value, the same domain in `addDomains` and `removeDomains`, or (`PATCH`) changes nothing. `details[].field` names the field when one is at fault (not for invalid JSON or an oversized body). | Fix the named field and resend. |
+| 400 | `invalid_cursor` | The `cursor` is not one this Workspace minted for this endpoint and filter set: garbage, tampered or truncated, from another Workspace, or reused with different filters. | Send back the previous response's `nextCursor` unchanged, with the same filters (step 7); otherwise start again from the first page. |
 | 401 | `unauthorized` | Token missing, malformed, unknown, revoked or expired (all look identical), or a write came without a token. Carries `WWW-Authenticate: Bearer` (except for a cookie read that is not signed in). | Send `Authorization: Bearer $SUPPORTSEAL_TOKEN`; if it was revoked or expired, create a new token (step 1). |
-| 403 | `insufficient_scope` | The token lacks the scope the call needs (`products:write` for Products, `conversations:reply` for replies, `conversations:write` for notes, status and tags). Tokens created in the dashboard carry all three, so seeing this means a token created before the conversation scopes existed, or a modified deployment. | Create a fresh token in **Settings → API tokens** and use that. |
+| 403 | `insufficient_scope` | The token lacks the scope the call needs (`products:write` for Products, `conversations:read` for listing Conversations, `conversations:reply` for replies, `conversations:write` for notes, status and tags). Tokens created in the dashboard carry the Product and both conversation write scopes, and both reply and write imply `conversations:read`, so seeing this means a token created before the conversation scopes existed, or a modified deployment. | Create a fresh token in **Settings → API tokens** and use that. |
 | 403 | `forbidden` | A signed-in session that is not a Workspace admin (reads with a cookie only). | Use an admin account, or a token. |
 | 402 | `service_paused` | `POST …/messages` with `kind: "reply"` while a Free-plan Workspace has used its monthly allowance. Nothing was stored. Notes keep working. | Show the `message` to your user; the Workspace must upgrade or wait for the next period. |
 | 404 | `not_found` | The id does not exist or belongs to another Workspace (indistinguishable). | Check the id and that the token belongs to the right Workspace. |
@@ -425,7 +507,9 @@ human has created the token.
 - **Flow:** `POST /api/products` (body `{"name": …}`), then
   `PATCH /api/products/{id}` with `{"addDomains": […], "includeSiblings": true}`,
   then `GET /api/products/{id}` to read `widgetKey` (and `formKey` for a contact
-  form), then put the widget key in the snippet (step 5).
+  form), then put the widget key in the snippet (step 5). To work the inbox:
+  `GET /api/v1/conversations` (step 7) to find a Conversation, then
+  `POST /api/v1/conversations/{id}/messages` (step 6) to reply.
 - **Success:** `POST` returns `201`, `PATCH` and `GET` return `200`, the body's
   `domains` array contains every hostname you sent, and
   `GET $SUPPORTSEAL_URL/api/widget/config?key=<widgetKey>&host=<hostname>` returns
@@ -438,8 +522,9 @@ human has created the token.
   `insufficient_scope` and `forbidden`; do not retry them. Retry `rate_limited`
   after `Retry-After` and `internal_error` with backoff. On a timed-out `POST`,
   list Products before posting again.
-- **Scope:** the token can create and edit Products in its own Workspace and
-  nothing else. It cannot read conversations, customers or other tokens.
+- **Scope:** the token acts in its own Workspace only: it can create and edit
+  Products and list, reply to, note and retag Conversations (steps 6-7). It
+  cannot read contacts or other tokens, or anything in another Workspace.
 
 ## Self-hosted notes
 

@@ -6,7 +6,8 @@ import { z } from "zod";
 
 import { API_ERROR_STATUS } from "@/lib/api-errors";
 import { API_SCOPES, type ApiScope } from "@/lib/api-scopes";
-import { conversationPatchBody, messageBody, serializeConversation, serializeMessage } from "@/lib/conversation-api";
+import { DEFAULT_LIST_LIMIT, MAX_CURSOR_LENGTH, MAX_LIST_LIMIT } from "@/lib/api/query";
+import { conversationPatchBody, MAX_SEARCH_LENGTH, MAX_TAG_NAME_LENGTH, messageBody, serializeConversation, serializeMessage } from "@/lib/conversation-api";
 import { createBody, MAX_BODY_BYTES, MAX_DOMAINS_PER_LIST, parseCreateBody, parsePatchBody, patchBody, serializeProduct } from "@/lib/product-api";
 import { MAX_API_PRODUCTS_PER_WORKSPACE, type ProductWithDomains } from "@/lib/products";
 import { WIDGET_RATE_LIMITS } from "@/lib/widget-rate-limit";
@@ -124,6 +125,7 @@ describe("openapi.json success contract", () => {
       "PATCH /api/products/{id}": ["200"],
       "POST /api/products/{id}/widget-key/rotate": ["200"],
       "GET /api/v1/whoami": ["200"],
+      "GET /api/v1/conversations": ["200"],
       "PATCH /api/v1/conversations/{conversationId}": ["200"],
       "POST /api/v1/conversations/{conversationId}/messages": ["201"],
     });
@@ -140,6 +142,7 @@ describe("openapi.json status codes per operation", () => {
     "PATCH /api/products/{id}": ["200", "400", "401", "403", "404", "409", "429", "500"],
     "POST /api/products/{id}/widget-key/rotate": ["200", "401", "403", "404", "409", "429", "500"],
     "GET /api/v1/whoami": ["200", "401", "429", "500"],
+    "GET /api/v1/conversations": ["200", "400", "401", "403", "404", "429", "500"],
     "PATCH /api/v1/conversations/{conversationId}": ["200", "400", "401", "403", "404", "409", "429", "500"],
     "POST /api/v1/conversations/{conversationId}/messages": ["201", "400", "401", "402", "403", "404", "409", "429", "500"],
   };
@@ -169,6 +172,28 @@ describe("numbers quoted in the docs", () => {
     { name: "domains per list", re: /(\d+) (?:domains per list|domains\b|entries)/gu, actual: MAX_DOMAINS_PER_LIST, source: "MAX_DOMAINS_PER_LIST" },
     { name: "Products per Workspace through the API", re: /(\d+) Products\b/gu, actual: MAX_API_PRODUCTS_PER_WORKSPACE, source: "MAX_API_PRODUCTS_PER_WORKSPACE" },
     { name: "body size limit in KiB", re: /(\d+) KiB/gu, actual: MAX_BODY_BYTES / 1024, source: "MAX_BODY_BYTES" },
+    { name: "list page default", re: /default[": ]+(\d+)/gu, actual: DEFAULT_LIST_LIMIT, source: "DEFAULT_LIST_LIMIT" },
+    { name: "list page maximum", re: /maximum[": ]+(\d+)/gu, actual: MAX_LIST_LIMIT, source: "MAX_LIST_LIMIT" },
+    // The maxLength bounds live only in the spec's parameter schemas, so each regex
+    // pins the parameter it names (JSON.stringify key order) rather than the number.
+    {
+      name: "cursor maximum length",
+      re: /"name":"cursor","in":"query","description":"[^"]*","schema":\{"type":"string","maxLength":(\d+)\}/gu,
+      actual: MAX_CURSOR_LENGTH,
+      source: "MAX_CURSOR_LENGTH",
+    },
+    {
+      name: "search maximum length",
+      re: /"name":"q","in":"query","description":"[^"]*","schema":\{"type":"string","maxLength":(\d+)\}/gu,
+      actual: MAX_SEARCH_LENGTH,
+      source: "MAX_SEARCH_LENGTH",
+    },
+    {
+      name: "tag name maximum length",
+      re: /"name":"tag","in":"query","description":"[^"]*","schema":\{"type":"string","minLength":\d+,"maxLength":(\d+)\}/gu,
+      actual: MAX_TAG_NAME_LENGTH,
+      source: "MAX_TAG_NAME_LENGTH",
+    },
   ];
 
   it.each(facts)("$name matches $source everywhere it is quoted", ({ re, actual, source, name }) => {
@@ -293,6 +318,9 @@ describe("conversation schemas vs the real serializers and zod bodies", () => {
       productId: "p",
       contactId: "k",
       status: "OPEN",
+      channel: "CHAT",
+      subject: null,
+      lastMessageAt: new Date(0),
       tags: [],
       createdAt: new Date(0),
       updatedAt: new Date(0),
@@ -306,7 +334,18 @@ describe("conversation schemas vs the real serializers and zod bodies", () => {
 /** Every request/response example in the spec and the quickstart, tagged with what it must satisfy. */
 type Example = {
   where: string;
-  kind: "create" | "patch" | "messageCreate" | "conversationPatch" | "product" | "list" | "whoami" | "message" | "conversation" | "error";
+  kind:
+    | "create"
+    | "patch"
+    | "messageCreate"
+    | "conversationPatch"
+    | "product"
+    | "list"
+    | "whoami"
+    | "message"
+    | "conversation"
+    | "conversationList"
+    | "error";
   value: unknown;
 };
 
@@ -369,8 +408,24 @@ function quickstartExamples(): Example[] {
   return out;
 }
 
-const bodyKind = (value: object): Example["kind"] =>
-  "products" in value ? "list" : "workspace" in value ? "whoami" : "delivery" in value ? "message" : "ticket" in value ? "conversation" : "product";
+/** Which paged list an envelope is, by its first item; list examples are never empty. */
+const listKind = (item: object): Example["kind"] => ("ticket" in item ? "conversationList" : "product");
+
+const bodyKind = (value: object): Example["kind"] => {
+  const items = (value as { items?: unknown }).items;
+  if (Array.isArray(items) && items.length > 0 && typeof items[0] === "object" && items[0] !== null) {
+    return listKind(items[0]);
+  }
+  return "products" in value
+    ? "list"
+    : "workspace" in value
+      ? "whoami"
+      : "delivery" in value
+        ? "message"
+        : "ticket" in value
+          ? "conversation"
+          : "product";
+};
 
 const json = (value: unknown, method: string) =>
   new Request("http://localhost/api/products", { method, body: JSON.stringify(value), headers: { "content-type": "application/json" } });
@@ -412,10 +467,17 @@ const conversationShape = z.strictObject({
   productId: z.uuid(),
   contactId: z.uuid(),
   status: z.enum(["OPEN", "PENDING", "CLOSED"]),
+  channel: z.enum(["CHAT", "EMAIL"]),
+  subject: z.string().nullable(),
+  lastMessageAt: z.iso.datetime(),
   tags: z.array(z.string()),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
+/** A paged list envelope; `T` is the item shape each page carries. */
+const listOf = <T extends z.ZodType>(item: T) =>
+  z.strictObject({ items: z.array(item).min(1), nextCursor: z.string().min(1).nullable() });
+const conversationListShape = listOf(conversationShape);
 const errorShape = z.strictObject({
   error: z.strictObject({
     code: z.enum(Object.keys(API_ERROR_STATUS) as [keyof typeof API_ERROR_STATUS]),
@@ -448,6 +510,7 @@ describe.each([
         const list = z.strictObject({ products: z.array(productShape) }).safeParse(value);
         expect(list.error?.message, hint).toBeUndefined();
       } else if (kind === "whoami") expect(whoamiShape.safeParse(value).error?.message, hint).toBeUndefined();
+      else if (kind === "conversationList") expect(conversationListShape.safeParse(value).error?.message, hint).toBeUndefined();
       else expect(errorShape.safeParse(value).error?.message, hint).toBeUndefined();
     }
   });

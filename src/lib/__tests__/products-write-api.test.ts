@@ -127,6 +127,7 @@ describe("error envelope", () => {
   it("gives every code its documented status and the same body shape", async () => {
     expect(API_ERROR_STATUS).toEqual({
       invalid_request: 400,
+      invalid_cursor: 400,
       unauthorized: 401,
       forbidden: 403,
       insufficient_scope: 403,

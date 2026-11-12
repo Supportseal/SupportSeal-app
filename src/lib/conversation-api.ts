@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT } from "@/lib/api/query";
 import { formatTicketRef } from "@/lib/ticket";
 
 /** Largest body, in characters, of one reply or note; the dashboard composer's limit. */
@@ -7,6 +8,7 @@ export const MAX_MESSAGE_BODY = 20_000;
 export const MAX_MESSAGE_ATTACHMENTS = 10;
 export const MAX_TAGS_PER_PATCH = 20;
 export const MAX_TAG_NAME_LENGTH = 40;
+export const MAX_SEARCH_LENGTH = 200;
 
 export const messageBody = z.strictObject({
   kind: z.enum(["reply", "note"]),
@@ -79,6 +81,9 @@ type ConversationRow = {
   productId: string;
   contactId: string;
   status: "OPEN" | "PENDING" | "CLOSED";
+  channel: "CHAT" | "EMAIL";
+  subject: string | null;
+  lastMessageAt: Date;
   tags: { tag: { name: string } }[];
   createdAt: Date;
   updatedAt: Date;
@@ -91,8 +96,34 @@ export function serializeConversation(conversation: ConversationRow) {
     productId: conversation.productId,
     contactId: conversation.contactId,
     status: conversation.status,
+    channel: conversation.channel,
+    subject: conversation.subject,
+    lastMessageAt: conversation.lastMessageAt.toISOString(),
     tags: conversation.tags.map((t) => t.tag.name).sort(),
     createdAt: conversation.createdAt.toISOString(),
     updatedAt: conversation.updatedAt.toISOString(),
   };
 }
+
+/**
+ * `GET /api/v1/conversations` query: the inbox list's filters (status,
+ * Product, tag, Contact, search, updated-after; FR-API-08) plus the shared
+ * `limit`/`cursor` pair. Strict, like every body: an unknown parameter is a
+ * 400 naming it.
+ */
+export const conversationListQuery = z.strictObject({
+  limit: z.coerce.number().int().min(1).max(MAX_LIST_LIMIT).default(DEFAULT_LIST_LIMIT),
+  // An empty cursor is no cursor: a client forwarding an unset variable on the
+  // first page must not error. The length bound moved to the route, so an
+  // oversized cursor answers invalid_cursor like every other wrong cursor.
+  cursor: z.string().optional().transform((value) => (value ? value : undefined)),
+  status: z.enum(["OPEN", "PENDING", "CLOSED"]).optional(),
+  productId: z.uuid().optional(),
+  contactId: z.uuid().optional(),
+  tag: z.string().trim().min(1).max(MAX_TAG_NAME_LENGTH).optional(),
+  q: z.string().max(MAX_SEARCH_LENGTH).optional(),
+  // RFC 3339 `date-time`, as the spec publishes it (format: date-time): both
+  // `Z` and a numeric offset (`+01:00`) name an instant; `new Date()` parses
+  // either, and identical strings hash identically into the cursor binding.
+  updatedAfter: z.iso.datetime({ offset: true }).optional(),
+});
