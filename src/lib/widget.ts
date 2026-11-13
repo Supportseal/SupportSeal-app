@@ -3,6 +3,7 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypt
 import { Prisma } from "@/generated/prisma/client";
 
 import { verifyWidgetTestToken } from "@/lib/onboarding";
+import { CONTACT_EMAIL_REGEX } from "@/lib/contact-email";
 
 import { notifyConversationEvent, realtimeDbPollEnabled } from "@/lib/events";
 import { markVisitorPolled } from "@/lib/visitor-presence";
@@ -100,7 +101,7 @@ export function normalizeContactEmail(raw: string): string | null {
   // 254 = RFC 5321 path limit, matching normalizeSupportEmail; keeps an
   // unbounded address out of contacts.email and its unique btree index.
   if (email.length > 254) return null;
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email) ? email : null;
+  return CONTACT_EMAIL_REGEX.test(email) ? email : null;
 }
 
 const FORM_MESSAGE_MAX = 5000;

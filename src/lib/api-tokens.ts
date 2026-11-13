@@ -25,6 +25,7 @@ export const API_TOKEN_SCOPES = [
   "products:write",
   "conversations:reply",
   "conversations:write",
+  "contacts:read",
 ] as const satisfies readonly ApiScope[];
 
 /** `lastUsedAt` is refreshed at most this often per token (write amplification). */
