@@ -489,53 +489,6 @@
         "x-status": "blocked"
       }
     },
-    "/api/v1/tags": {
-      "get": {
-        "operationId": "listTags",
-        "tags": [
-          "Conversations"
-        ],
-        "summary": "List the Workspace's tags",
-        "x-required-scope": "conversations:read",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Limit"
-          },
-          {
-            "$ref": "#/components/parameters/Cursor"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "headers": {
-              "Cache-Control": {
-                "$ref": "#/components/headers/CacheControl"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TagList"
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/InvalidRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/InsufficientScope"
-          },
-          "429": {
-            "$ref": "#/components/responses/RateLimited"
-          }
-        }
-      }
-    },
     "/api/v1/contacts/{contactId}": {
       "delete": {
         "operationId": "deleteContact",
@@ -1715,46 +1668,6 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Product"
-            }
-          },
-          "nextCursor": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Opaque, signed, bound to Workspace, route and filters. Null on the last page."
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "items",
-          "nextCursor"
-        ]
-      },
-      "Tag": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "name": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "id",
-          "name"
-        ]
-      },
-      "TagList": {
-        "type": "object",
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Tag"
             }
           },
           "nextCursor": {

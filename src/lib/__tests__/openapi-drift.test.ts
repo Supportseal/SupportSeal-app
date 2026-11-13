@@ -10,6 +10,7 @@ import { DEFAULT_LIST_LIMIT, MAX_CURSOR_LENGTH, MAX_LIST_LIMIT } from "@/lib/api
 import { conversationPatchBody, MAX_SEARCH_LENGTH, MAX_TAG_NAME_LENGTH, messageBody, serializeConversation, serializeMessage } from "@/lib/conversation-api";
 import { CONTACT_EMAIL_REGEX } from "@/lib/contact-email";
 import { serializeContact } from "@/lib/contact-api";
+import { serializeTag } from "@/lib/tag-api";
 import { createBody, MAX_BODY_BYTES, MAX_DOMAINS_PER_LIST, parseCreateBody, parsePatchBody, patchBody, serializeProduct } from "@/lib/product-api";
 import { MAX_API_PRODUCTS_PER_WORKSPACE, type ProductWithDomains } from "@/lib/products";
 import { WIDGET_RATE_LIMITS } from "@/lib/widget-rate-limit";
@@ -134,6 +135,7 @@ describe("openapi.json success contract", () => {
       "POST /api/v1/conversations/{conversationId}/messages": ["201"],
       "GET /api/v1/contacts": ["200"],
       "GET /api/v1/contacts/{contactId}": ["200"],
+      "GET /api/v1/tags": ["200"],
     });
   });
 });
@@ -157,6 +159,9 @@ describe("openapi.json status codes per operation", () => {
     // read takes no query (no 400) and answers unknown ids with the uniform 404.
     "GET /api/v1/contacts": ["200", "400", "401", "403", "429", "500"],
     "GET /api/v1/contacts/{contactId}": ["200", "401", "403", "404", "429", "500"],
+    // Same class as the Contacts list: query validation (400), no path id
+    // (no 404). Tags take no filters beyond the shared page controls.
+    "GET /api/v1/tags": ["200", "400", "401", "403", "429", "500"],
   };
 
   it("documents exactly the statuses each operation can return", () => {
@@ -392,6 +397,32 @@ describe("contact schemas vs the real serializer", () => {
   });
 });
 
+describe("tag schemas vs the real serializer", () => {
+  it("Tag has exactly the fields serializeTag returns", () => {
+    const tag = serializeTag({ id: "c", name: "billing" });
+    const doc = spec.components.schemas.Tag;
+    expect(Object.keys(doc.properties).sort(), `Tag fields differ from serializeTag in src/lib/tag-api.ts. ${SPEC_FIX}`).toEqual(Object.keys(tag).sort());
+    expect([...doc.required].sort(), `Tag.required differs from serializeTag. ${SPEC_FIX}`).toEqual(Object.keys(tag).sort());
+  });
+
+  // The same literal truth-table idiom as Contact: the example checks
+  // validate payloads against the zod shape, not the published JSON schema,
+  // so this table is what pins the spec side. name is a plain string —
+  // stored names are the Workspace's own normalized form (trimmed,
+  // lower-cased, at most MAX_TAG_NAME_LENGTH), not a slug or an enum.
+  it("pins Tag's published types and constraints", () => {
+    expect(spec.components.schemas.Tag, `Tag constraints drifted from serializeTag in src/lib/tag-api.ts. ${SPEC_FIX}`).toEqual({
+      type: "object",
+      additionalProperties: false,
+      required: ["id", "name"],
+      properties: {
+        id: { type: "string", format: "uuid" },
+        name: { type: "string", description: expect.any(String) },
+      },
+    });
+  });
+});
+
 /** Every request/response example in the spec and the quickstart, tagged with what it must satisfy. */
 type Example = {
   where: string;
@@ -409,6 +440,7 @@ type Example = {
     | "messageList"
     | "contact"
     | "contactList"
+    | "tagList"
     | "emptyList"
     | "error";
   value: unknown;
@@ -475,7 +507,18 @@ function quickstartExamples(): Example[] {
 
 /** Which paged list a non-empty envelope is, by its first item; empty ones check the envelope only (emptyList). */
 const listKind = (item: object): Example["kind"] =>
-  "kind" in item ? "messageList" : "ticket" in item ? "conversationList" : "email" in item ? "contactList" : "product";
+  "kind" in item
+    ? "messageList"
+    : "ticket" in item
+      ? "conversationList"
+      : "email" in item
+        ? "contactList"
+        : // The Contact check comes first, so a remaining `name` marks a Tag
+          // item: { id, name } and nothing else. (Products list under a
+          // `products` key, never in an items envelope.)
+          "name" in item
+          ? "tagList"
+          : "product";
 
 const bodyKind = (value: object): Example["kind"] => {
   const items = (value as { items?: unknown }).items;
@@ -569,6 +612,13 @@ const contactShape = z.strictObject({
   createdAt: z.iso.datetime(),
 });
 const contactListShape = listOf(contactShape);
+const tagShape = z.strictObject({
+  id: z.uuid(),
+  // Stored names are normalizeTagName's output: trimmed, lower-cased, 1..40
+  // (internal spaces survive; only the ends are trimmed).
+  name: z.string().min(1).max(MAX_TAG_NAME_LENGTH).regex(/^[^A-Z]*$/u, { message: "stored tag names are lower-cased" }),
+});
+const tagListShape = listOf(tagShape);
 /** An empty page: a valid list response with no item whose shape could be checked. */
 const emptyListShape = z.strictObject({ items: z.array(z.unknown()).length(0), nextCursor: z.string().min(1).nullable() });
 const errorShape = z.strictObject({
@@ -607,6 +657,7 @@ describe.each([
       else if (kind === "messageList") expect(messageListShape.safeParse(value).error?.message, hint).toBeUndefined();
       else if (kind === "contact") expect(contactShape.safeParse(value).error?.message, hint).toBeUndefined();
       else if (kind === "contactList") expect(contactListShape.safeParse(value).error?.message, hint).toBeUndefined();
+      else if (kind === "tagList") expect(tagListShape.safeParse(value).error?.message, hint).toBeUndefined();
       else if (kind === "emptyList") expect(emptyListShape.safeParse(value).error?.message, hint).toBeUndefined();
       else expect(errorShape.safeParse(value).error?.message, hint).toBeUndefined();
     }
