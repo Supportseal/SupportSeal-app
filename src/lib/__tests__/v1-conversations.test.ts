@@ -1011,7 +1011,7 @@ describe("GET /api/v1/conversations/{id}/messages", () => {
 });
 
 describe("dashboard-created token scopes", () => {
-  it("carry the two conversation write scopes next to products:write (AA7 interim default)", () => {
-    expect([...API_TOKEN_SCOPES]).toEqual(["products:write", "conversations:reply", "conversations:write"]);
+  it("carry the two conversation write scopes and contacts:read next to products:write (AA7 interim default)", () => {
+    expect([...API_TOKEN_SCOPES]).toEqual(["products:write", "conversations:reply", "conversations:write", "contacts:read"]);
   });
 });

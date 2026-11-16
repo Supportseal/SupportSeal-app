@@ -130,7 +130,7 @@ describe("API token storage", () => {
       tokenHash: hashApiToken(created.token),
       lastFour: created.token.slice(-4),
       name: "CI",
-      scopes: ["products:write", "conversations:reply", "conversations:write"],
+      scopes: ["products:write", "conversations:reply", "conversations:write", "contacts:read"],
       createdById: userId,
     });
 

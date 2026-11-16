@@ -504,6 +504,100 @@ Workspace, the endpoint and the Conversation id, so replaying it against
 another Conversation answers `400 invalid_cursor`, like every other wrong
 cursor. `limit` defaults to 25 here too; there is no total count.
 
+The `tag` filter above and a `PATCH`'s `addTags` and `removeTags` both match
+exact stored names, and the tags endpoint lists them (`conversations:read`
+again):
+
+```sh
+curl -sS "$SUPPORTSEAL_URL/api/v1/tags" \
+  -H "Authorization: Bearer $SUPPORTSEAL_TOKEN"
+```
+
+`200 OK` returns the Workspace's tag names, alphabetical:
+
+```json
+{
+  "items": [
+    { "id": "3f8b1c6a-9d24-4e7f-8a15-2c6d0b4e9f31", "name": "billing" },
+    { "id": "d47c9e2f-6b18-4a03-8f52-9d1e7a5c3b08", "name": "vip" }
+  ],
+  "nextCursor": null
+}
+```
+
+A tag is created on first use — the `PATCH` in step 6 created `billing` —
+and stays in this list even after no Conversation carries it any more;
+removing a tag from every Conversation does not delete it. Names are
+trimmed and lower-cased on write (`Billing` and `billing` are the same tag),
+unique within the Workspace and at most 40 characters. This list is the
+vocabulary: a name that is not in it yet simply gets created by the next
+`addTags`, and the `tag` filter with a name nothing carries answers an empty
+page (the `urgent` example above). `limit` and `cursor` work here too, with
+no other parameters to combine them with.
+
+## 8. Look up the contact
+
+Every Conversation carries the `contactId` of the person it belongs to. The
+contact endpoints read that person (the `contacts:read` scope, which every
+dashboard token carries):
+
+```sh
+curl -sS "$SUPPORTSEAL_URL/api/v1/contacts?email=Dana@Example.TEST" \
+  -H "Authorization: Bearer $SUPPORTSEAL_TOKEN"
+```
+
+```json
+{
+  "items": [
+    {
+      "id": "a91c3e5f-7d02-4b68-8f14-2e6a0c9d3b75",
+      "name": "Dana Fisher",
+      "email": "dana@example.test",
+      "createdAt": "2026-10-28T09:41:00.000Z"
+    }
+  ],
+  "nextCursor": null
+}
+```
+
+The `email` filter is an exact match, not a search: addresses are stored
+lower-cased, so any case spelling finds the same Contact (the curl above used
+mixed case). The filter accepts the same address shapes the Workspace itself
+accepts — a customer can submit `a@b..com` in the chat widget or the contact
+form, store it, and search for it — and a stored value has no strict mailbox
+shape, so treat `email` in responses as an opaque string. A value that is not
+an address shape the Workspace accepts is a `400 invalid_request`. There is no
+length limit on top of the shape, because inbound email stores parsed senders
+as-is: a sender longer than the widget's 254-character bound is a stored,
+searchable Contact like any other, and a well-shaped address nobody carries
+answers an empty `items` array. Anonymous chat visitors have `email: null`,
+and the filter never matches them; they appear in the unfiltered list like
+anyone else.
+
+With the id (set `CONTACT_ID` to the Contact's id), read the Contact on its
+own, in exactly the list item's shape:
+
+```sh
+curl -sS "$SUPPORTSEAL_URL/api/v1/contacts/$CONTACT_ID" \
+  -H "Authorization: Bearer $SUPPORTSEAL_TOKEN"
+```
+
+```json
+{
+  "id": "a91c3e5f-7d02-4b68-8f14-2e6a0c9d3b75",
+  "name": "Dana Fisher",
+  "email": "dana@example.test",
+  "createdAt": "2026-10-28T09:41:00.000Z"
+}
+```
+
+An unknown `contactId` and one from another Workspace answer the same `404
+not_found`. The list paginates with the same `limit`/`cursor` contract as
+every other list, oldest first; a cursor is signed over the Workspace, this
+endpoint and the email filter, so reusing it with a different filter is a
+`400 invalid_cursor`. To see the person's Conversations, filter the inbox
+list by `contactId` (step 7).
+
 ## Errors
 
 Every failure from the API has one JSON shape. Branch on `code`, never on
@@ -524,7 +618,7 @@ Every failure from the API has one JSON shape. Branch on `code`, never on
 | 400 | `invalid_request` | Body is not JSON, is over 64 KiB, has an unknown field, a domain list longer than 100 entries, a bad value, the same domain in `addDomains` and `removeDomains`, or (`PATCH`) changes nothing. `details[].field` names the field when one is at fault (not for invalid JSON or an oversized body). | Fix the named field and resend. |
 | 400 | `invalid_cursor` | The `cursor` is not one this Workspace minted for this endpoint and filter set: garbage, tampered or truncated, from another Workspace, or reused with different filters. | Send back the previous response's `nextCursor` unchanged, with the same filters (step 7); otherwise start again from the first page. |
 | 401 | `unauthorized` | Token missing, malformed, unknown, revoked or expired (all look identical), or a write came without a token. Carries `WWW-Authenticate: Bearer` (except for a cookie read that is not signed in). | Send `Authorization: Bearer $SUPPORTSEAL_TOKEN`; if it was revoked or expired, create a new token (step 1). |
-| 403 | `insufficient_scope` | The token lacks the scope the call needs (`products:write` for Products, `conversations:read` for reading Conversations and their Messages, `conversations:reply` for replies, `conversations:write` for notes, status and tags). Tokens created in the dashboard carry the Product and both conversation write scopes, and both reply and write imply `conversations:read`, so seeing this means a token created before the conversation scopes existed, or a modified deployment. | Create a fresh token in **Settings → API tokens** and use that. |
+| 403 | `insufficient_scope` | The token lacks the scope the call needs (`products:write` for Products, `conversations:read` for reading Conversations, their Messages and the Workspace's tags, `conversations:reply` for replies, `conversations:write` for notes, status and tags, `contacts:read` for Contacts). Tokens created in the dashboard carry the Product, both conversation write scopes and `contacts:read`, and both reply and write imply `conversations:read`, so seeing this means a token created before those scopes existed, or a modified deployment. | Create a fresh token in **Settings → API tokens** and use that. |
 | 403 | `forbidden` | A signed-in session that is not a Workspace admin (reads with a cookie only). | Use an admin account, or a token. |
 | 402 | `service_paused` | `POST …/messages` with `kind: "reply"` while a Free-plan Workspace has used its monthly allowance. Nothing was stored. Notes keep working. | Show the `message` to your user; the Workspace must upgrade or wait for the next period. |
 | 404 | `not_found` | The id does not exist or belongs to another Workspace (indistinguishable). | Check the id and that the token belongs to the right Workspace. |
@@ -602,8 +696,14 @@ human has created the token.
   after `Retry-After` and `internal_error` with backoff. On a timed-out `POST`,
   list Products before posting again.
 - **Scope:** the token acts in its own Workspace only: it can create and edit
-  Products and list, read, reply to, note and retag Conversations (steps 6-7). It
-  cannot read contacts or other tokens, or anything in another Workspace.
+  Products, list, read, reply to, note and retag Conversations (steps 6-7) and
+  read Contacts (step 8). It cannot read or create other tokens, or anything
+  in another Workspace. A token keeps exactly the scopes it was created with:
+  one minted before a scope was added never gains it, so those calls answer
+  `403 insufficient_scope`. Check the token's `scopes` with
+  `GET /api/v1/whoami` first; if a scope you need is missing, a human has to
+  create a fresh token in **Settings → API tokens** (the API cannot create
+  tokens, and revoking the old one is optional — both keep working).
 
 ## Self-hosted notes
 
