@@ -5,6 +5,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { Prisma } from "@/generated/prisma/client";
 import {
+  isNotInScope,
+  isUniqueViolation,
   NotInScopeError,
   ScopeViolationError,
   scopedDb,
@@ -102,6 +104,31 @@ describe("TENANT_MODELS registry", () => {
       }
     }
     expect(checked).toBeGreaterThan(20);
+  });
+});
+
+describe("Prisma error classification", () => {
+  // The Next.js server bundle can load the generated runtime twice, so a
+  // thrown error need not be an instance of the class this module imported.
+  const foreignCopy = (code: string) =>
+    Object.assign(new Error("from another runtime copy"), { name: "PrismaClientKnownRequestError", code });
+
+  it("recognises a missing row and a unique violation from either runtime copy", () => {
+    const local = (code: string) =>
+      new Prisma.PrismaClientKnownRequestError("x", { code, clientVersion: Prisma.prismaVersion.client });
+    expect(isNotInScope(local("P2025"))).toBe(true);
+    expect(isNotInScope(foreignCopy("P2025"))).toBe(true);
+    expect(isNotInScope(new NotInScopeError("Contact"))).toBe(true);
+    expect(isUniqueViolation(local("P2002"))).toBe(true);
+    expect(isUniqueViolation(foreignCopy("P2002"))).toBe(true);
+  });
+
+  it("leaves every other error alone", () => {
+    expect(isNotInScope(foreignCopy("P2002"))).toBe(false);
+    expect(isUniqueViolation(foreignCopy("P2025"))).toBe(false);
+    expect(isNotInScope(Object.assign(new Error("x"), { code: "P2025" }))).toBe(false);
+    expect(isNotInScope(null)).toBe(false);
+    expect(isNotInScope("P2025")).toBe(false);
   });
 });
 
