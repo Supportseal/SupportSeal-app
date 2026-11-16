@@ -1284,6 +1284,9 @@ ${WIDGET_SOUND_JS}
     hasSession = false;
     minting = null;
     devQueue = [];
+    // The retired visitor's pending PUTs must not hold up the next visitor's
+    // first send (ensureSession waits on devChain); their callbacks are fenced.
+    devChain = Promise.resolve();
     streamRetry.reset();
     stopPolling();
     if (activeSource) { activeSource.close(); activeSource = null; }

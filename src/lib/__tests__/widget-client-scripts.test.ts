@@ -256,6 +256,7 @@ describe("served widget scripts (issue #57)", () => {
     expect(script).toContain("if (awayGeneration !== sessionGeneration) return;");
     expect(script).toContain("if (resetPending && !previewMode) { hint.textContent");
     expect(script).toContain("if (resetPending) return;");
+    expect(script).toMatch(/devQueue = \[\];\s*\/\/[^\n]*\n\s*\/\/[^\n]*\n\s*devChain = Promise\.resolve\(\);/);
     expect(script).toMatch(/if \(activeSource !== source\) return;\s*armWatchdog\(\);/);
     expect(script).toMatch(/state\.conversationId = null;\s*state\.ticketRef = null;\s*lastCount = 0;/);
     expect(script).toMatch(/fileInput\.value = '';\s*\/\/[^\n]*\s*if \(resetPending && !previewMode\) return;/);
