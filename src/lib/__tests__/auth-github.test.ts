@@ -135,6 +135,31 @@ describe("GitHub sign-in", () => {
     expect(again.location).toBe("/inbox");
   });
 
+  it("announces the GitHub sign-up on Pushover", async () => {
+    vi.stubEnv("PUSHOVER_API_TOKEN", "app-token");
+    vi.stubEnv("PUSHOVER_USER_KEY", "user-key");
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
+      String(input) === "https://api.pushover.net/1/messages.json"
+        ? Promise.resolve(new Response("{}"))
+        : fakeGitHub(input, init),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      await githubRoundTrip({ requestSignUp: true });
+      await vi.waitFor(() =>
+        expect(fetchMock).toHaveBeenCalledWith("https://api.pushover.net/1/messages.json", expect.anything()),
+      );
+      const [, init] = fetchMock.mock.calls.find(([url]) => String(url).includes("pushover"))!;
+      const message = new URLSearchParams(String(init!.body)).get("message");
+      expect(message).toContain("Signed up with: GitHub");
+      expect(message).toContain("Email: o***@example.com");
+    } finally {
+      // Later tests fall through to the real fetch: never leave Pushover on.
+      vi.stubEnv("PUSHOVER_API_TOKEN", "");
+      vi.stubEnv("PUSHOVER_USER_KEY", "");
+    }
+  });
+
   it("never creates an account from the sign-in button", async () => {
     const { location } = await githubRoundTrip({});
     expect(location).toBe("/login?error=signup_disabled");

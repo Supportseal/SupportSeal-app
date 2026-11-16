@@ -91,6 +91,26 @@ export async function POST(request: NextRequest) {
     });
   }
 
+  // Deferred boot (docs/database-load.md): the panel asks with
+  // `x-ss-defer-session: 1` on page load, when the visitor may never open
+  // the chat. Without a session to resume it gets the Product's config and
+  // no session at all; the row is minted by a later POST without the header
+  // the first time the visitor actually needs one (send, email, upload,
+  // identify/context).
+  if (request.headers.get("x-ss-defer-session") === "1") {
+    const availability = await getAvailabilityForProduct(product.workspaceId);
+    return NextResponse.json({
+      name: product.name,
+      color: product.primaryColor,
+      ...(product.supportEmail ? { supportEmail: product.supportEmail } : {}),
+      session: null,
+      availability,
+      ...(product.diagnosticsEnabledAt ? { diagnostics: true } : {}),
+      ...((await isServicePaused(product.workspaceId)) ? { paused: true } : {}),
+      thread: { conversationId: null, ticketRef: null, messages: [], status: "OPEN" },
+    });
+  }
+
   // Mint cap (issue #81): the per-IP mint bucket is charged only now that
   // resume has failed and a new ChatVisitor row is actually about to be
   // created — the resumed branch above is never counted. Unknown tokens

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { prisma } from "@/lib/prisma";
+import { invalidateInboxAttention } from "@/lib/inbox-attention-cache";
 import { UNREAD_FETCH_LIMIT, UNREAD_MARK_BATCH, MAX_MARK_IDS } from "@/lib/unread-shared";
 
 /**
@@ -84,16 +85,22 @@ export async function markCustomerMessagesRead(input: {
   });
 
   let marked = 0;
-  for (let offset = 0; offset < readable.length; offset += UNREAD_MARK_BATCH) {
-    const batch = readable.slice(offset, offset + UNREAD_MARK_BATCH);
-    const result = await prisma.messageReadReceipt.createMany({
-      data: batch.map((message) => ({
-        membershipId: input.membershipId,
-        messageId: message.id,
-      })),
-      skipDuplicates: true,
-    });
-    marked += result.count;
+  try {
+    for (let offset = 0; offset < readable.length; offset += UNREAD_MARK_BATCH) {
+      const batch = readable.slice(offset, offset + UNREAD_MARK_BATCH);
+      const result = await prisma.messageReadReceipt.createMany({
+        data: batch.map((message) => ({
+          membershipId: input.membershipId,
+          messageId: message.id,
+        })),
+        skipDuplicates: true,
+      });
+      marked += result.count;
+    }
+  } finally {
+    // Cached unread counts (inbox-attention-cache.ts) must see the new
+    // receipts, including batches committed before a later batch failed.
+    if (marked > 0) invalidateInboxAttention(input.workspaceId);
   }
   return { ok: true, marked };
 }

@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 
 import { prisma } from "@/lib/prisma";
+import { invalidateProductLookups } from "@/lib/product-lookup-cache";
 import { generateInboundLocalPart } from "@/lib/email/inbound";
 import { inboundDomain } from "@/lib/email/outbound";
 import { isOwnAddress } from "@/lib/email/loop-guard";
@@ -369,6 +370,7 @@ export async function ensureProductInboundEmail(input: {
     where: { id: product.id, workspaceId: input.ctx.workspace.id, inboundEmail: null },
     data: { inboundEmail: allocated.inboundEmail, inboundEmailVerified: new Date() },
   });
+  invalidateProductLookups();
 
   const after = await getProductForWorkspace(input.ctx.workspace.id, product.id);
   if (!after?.inboundEmail) return { ok: false, error: "Could not allocate the inbound address." };
@@ -404,6 +406,7 @@ export async function rotateProductFormKey(input: {
     where: { id: product.id, workspaceId: input.ctx.workspace.id, archivedAt: null },
     data: { formPublicKey },
   });
+  invalidateProductLookups();
   if (updated.count === 0) return { ok: false, error: "Product not found or archived." };
   return { ok: true, formPublicKey };
 }
@@ -438,6 +441,7 @@ export async function rotateProductWidgetKey(input: {
     where: { id: product.id, workspaceId: input.ctx.workspace.id, archivedAt: null },
     data: { widgetPublicKey },
   });
+  invalidateProductLookups();
   if (updated.count === 0) return fail("conflict", "Product not found or archived.");
 
   const after = await getProductForWorkspace(input.ctx.workspace.id, product.id);
@@ -476,6 +480,7 @@ export async function rotateProductIdentitySecret(input: {
     where: { id: product.id, workspaceId: input.ctx.workspace.id, archivedAt: null },
     data: { identitySecret },
   });
+  invalidateProductLookups();
   if (updated.count === 0) return { ok: false, error: "Product not found or archived." };
   return { ok: true, identitySecret };
 }
@@ -578,7 +583,10 @@ export async function patchProduct(input: {
       }),
     );
   }
-  if (writes.length > 0) await prisma.$transaction(writes);
+  if (writes.length > 0) {
+    await prisma.$transaction(writes);
+    invalidateProductLookups();
+  }
 
   const after = await getProductForWorkspace(workspaceId, product.id);
   if (!after) return fail("not_found", "Product not found.");
@@ -611,6 +619,7 @@ export async function addProductDomain(input: {
     data: (sibling ? [domain, sibling] : [domain]).map((d) => ({ productId: product.id, domain: d })),
     skipDuplicates: true,
   });
+  invalidateProductLookups();
   if (created.count === 0) {
     return { ok: false, error: "That domain is already configured for this Product." };
   }
@@ -631,6 +640,7 @@ export async function removeProductDomain(input: {
   const removed = await prisma.productDomain.deleteMany({
     where: { id: input.domainId, productId: input.productId, product: { workspaceId: input.ctx.workspace.id } },
   });
+  invalidateProductLookups();
   if (removed.count === 0) return { ok: false, error: "Domain not found." };
   return { ok: true };
 }
@@ -651,6 +661,7 @@ export async function archiveProduct(input: {
     where: { id: input.productId, workspaceId: input.ctx.workspace.id },
     data: { archivedAt: input.archived ? new Date() : null },
   });
+  invalidateProductLookups();
   if (updated.count === 0) return { ok: false, error: "Product not found." };
   return { ok: true };
 }
@@ -681,6 +692,7 @@ export async function setProductSupportEmail(input: {
     where: { id: input.productId, workspaceId: input.ctx.workspace.id },
     data: { supportEmail: parsed.email },
   });
+  invalidateProductLookups();
   return { ok: true, supportEmail: parsed.email };
 }
 
@@ -706,6 +718,7 @@ export async function setProductEscalation(input: {
     where: { id: input.productId, workspaceId: input.ctx.workspace.id },
     data: { escalationEnabled: input.enabled, escalationAfterMinutes: input.afterMinutes },
   });
+  invalidateProductLookups();
   if (updated.count === 0) return { ok: false, error: "Product not found." };
   return { ok: true };
 }
@@ -744,6 +757,7 @@ export async function setProductDiagnostics(input: {
       ? { diagnosticsEnabledAt: new Date(), diagnosticsEnabledById: input.ctx.user.id }
       : { diagnosticsEnabledAt: null, diagnosticsEnabledById: null },
   });
+  invalidateProductLookups();
   if (updated.count === 0) return { ok: false, error: "Product not found." };
   return { ok: true };
 }

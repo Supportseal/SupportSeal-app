@@ -112,6 +112,13 @@ test.describe.serial("browser diagnostics", () => {
     await customerContext?.close();
   });
 
+  // The tests share one visitor; wait out the messages route's 800 ms
+  // per-visitor send spacing after the previous test's message, or a fast
+  // boot sends too early and the panel shows "sending too quickly".
+  test.beforeEach(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  });
+
   test("DX-01: off by default — no collector request, no diagnostics payload", async () => {
     const { page, collectorRequests } = await openDiagPage(fixtures.beta.product.key, false);
     const posts = captureMessagePosts(page);

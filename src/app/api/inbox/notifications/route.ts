@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 
 import { prisma } from "@/lib/prisma";
+import { cachedInboxAttention, inboxAttentionCacheActive } from "@/lib/inbox-attention-cache";
 import { getPrimaryMembership } from "@/lib/workspace";
 import { getSessionUser } from "@/lib/session";
 
@@ -29,13 +30,19 @@ export async function GET(request: NextRequest) {
   const headers = { "Cache-Control": "private, no-store" };
   const scope = { kind: "CUSTOMER" as const, conversation: { workspaceId } };
 
-  const afterRaw = request.nextUrl.searchParams.get("after");
-  if (afterRaw === null) {
-    const latest = await prisma.message.findFirst({
+  // The newest customer message, cached until the Workspace's next write
+  // (inbox-attention-cache.ts): most polls find nothing newer and need no
+  // further query.
+  const latestCustomerMessage = () => cachedInboxAttention(workspaceId, "latest-customer-message", () =>
+    prisma.message.findFirst({
       where: scope,
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       select: { id: true, createdAt: true },
-    });
+    }));
+
+  const afterRaw = request.nextUrl.searchParams.get("after");
+  if (afterRaw === null) {
+    const latest = await latestCustomerMessage();
     return Response.json({ ...identity, baseline: latest ?? { id: "", createdAt: new Date(0) } }, { headers });
   }
 
@@ -46,6 +53,18 @@ export async function GET(request: NextRequest) {
 
   const afterId = request.nextUrl.searchParams.get("afterId") ?? "";
   if (afterId.length > 64) return Response.json({ error: "invalid afterId" }, { status: 400 });
+  // Nothing newer than the cursor exists: answer from the cache without the
+  // range query. Equal timestamps with another id still query, so id
+  // ordering stays the database's. Without the cache (several app
+  // processes) the range query alone stays cheapest.
+  if (inboxAttentionCacheActive()) {
+    const latest = await latestCustomerMessage();
+    const latestTime = latest?.createdAt.getTime();
+    if (latestTime === undefined || latestTime < after.getTime() ||
+        (latestTime === after.getTime() && latest?.id === afterId)) {
+      return Response.json({ ...identity, messages: [], hasMore: false }, { headers });
+    }
+  }
   const rows = await prisma.message.findMany({
     where: { ...scope, OR: [
       { createdAt: { gt: after } },

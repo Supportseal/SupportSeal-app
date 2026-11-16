@@ -12,6 +12,18 @@ import { sendSystemEmail } from "@/lib/email/outbound";
 import { EMAIL_NOT_VERIFIED, REGISTRATION_CLOSED, socialCredentials } from "@/lib/social-auth";
 import { isHostedMode } from "@/lib/hosting";
 import { resolvePrisma } from "@/lib/prisma";
+import { notifyOwnerAccountCreated, type SignupMethod } from "@/lib/pushover";
+
+/** Which sign-up created the account; null for accounts made outside a sign-up route. */
+export function signupMethod(
+  context: { path?: string; params?: Record<string, string | undefined> } | null | undefined,
+): SignupMethod | null {
+  const path = context?.path ?? "";
+  if (path === "/sign-up/email") return "email";
+  if (!path.startsWith("/callback/")) return null;
+  const provider = context?.params?.id ?? path.slice("/callback/".length);
+  return provider === "github" || provider === "google" ? provider : null;
+}
 
 function safeHost(url: string): string | undefined {
   try {
@@ -143,6 +155,10 @@ function createAuth() {
         create: {
           before: async (user, context) => {
             if (context?.path?.startsWith("/callback/")) await beforeOAuthUserCreate(user);
+          },
+          after: async (user, context) => {
+            const method = signupMethod(context);
+            if (method) notifyOwnerAccountCreated({ email: user.email, method });
           },
         },
       },

@@ -106,7 +106,10 @@ ${await panelFunction("resetSession")}; resetSession`, scope);
     await flush();
     expect(storage.data.has("ss_reset_pk_test")).toBe(false);
     expect(scope.removeToken).toHaveBeenCalledOnce();
-    expect(apiFetch).toHaveBeenLastCalledWith("/api/widget/session", { method: "POST" });
+    expect(apiFetch).toHaveBeenLastCalledWith("/api/widget/session", {
+      method: "POST",
+      headers: { "x-ss-defer-session": "1" },
+    });
     expect(boot.pending()).toBe(false);
     expect(scope.parent.postMessage).toHaveBeenCalledExactlyOnceWith({ type: "ss:reset-ack" }, "*");
   });
