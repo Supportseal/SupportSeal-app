@@ -27,8 +27,10 @@ test.describe.serial("stale PENDING conversation auto-closes", () => {
     await closedTab.click();
     const list = agentPage.getByRole("list", { name: "Conversations" });
     const row = list.getByRole("link").filter({ hasText: conversation.subject }).first();
+    // The row itself carries no status label outside search since the card
+    // redesign (#42): being listed under the Closed tab is the evidence, and
+    // the Reopen button below confirms it on the Conversation.
     await expect(row).toBeVisible();
-    await expect(row).toContainText(/closed/iu);
     await expect(row).toContainText(conversation.ticketRef);
     await row.click();
 
