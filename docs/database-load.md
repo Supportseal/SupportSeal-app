@@ -109,5 +109,26 @@ Widget Product lookups (about 5 a minute, every one a sequential scan of a
 host cron or timer runs the purge script. The app does not log requests, so
 per-path counts would need the proxy's access log.
 
-The comparison after the caches deploy is recorded in a follow-up update to
-this section.
+**After PR #109** (deployed 07:52 UTC, same single container throughout).
+Before = the 22.7 minutes from the baseline to the deploy on the old image;
+after = the following 61.5 minutes on the new image. Both scaled to an hour:
+
+| Table | Before / h | After / h | Change |
+| --- | ---: | ---: | ---: |
+| products (scans) | 645 | 162 | −75% |
+| product_domains (scans) | 559 | 74 | −87% |
+| workspaces (scans) | 349 | 303 | not cached yet |
+| chat_visitors (inserts) | 77 | 65 | unchanged by design |
+| chat_visitors (updates) | 93 | 45 | −52% |
+
+Widget traffic was the same in both hours (from the proxy access log: about
+120 each of `GET /api/widget/config`, `GET /widget` and `POST
+/api/widget/session`, and about 60 `GET /api/widget/messages` per hour), so
+the drop comes from the cache, not from fewer requests. The remaining
+Product scans are cache refills after each 30 s expiry plus dashboard pages.
+`conversations` and `messages` rose in the after hour only because someone
+used the dashboard then (38 inbox page views, none in the hour before).
+`workspaces` is now the busiest table: the availability and pause reads on
+widget boot are the next candidate (see Remaining options). Fresh visitor
+rows (about 70 an hour, one per widget boot without a saved session) are the
+other.
