@@ -414,7 +414,16 @@ ${WIDGET_SOUND_JS}
               setTimeout(function () { hint.remove(); }, 3000);
             }
           })
-          .catch(settled);
+          .catch(function () {
+            settled();
+            // e.g. the session could not be created (rate limit, network).
+            if (uploadGeneration !== sessionGeneration) return;
+            var hint = document.createElement('p');
+            hint.className = 'sysline';
+            hint.textContent = 'Upload failed.';
+            thread.appendChild(hint);
+            setTimeout(function () { hint.remove(); }, 3000);
+          });
       });
     });
   }
