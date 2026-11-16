@@ -142,6 +142,10 @@ test.describe("widget security", () => {
   test("developer context is rendered as untrusted data (FR-CTX-02)", async () => {
     const page = await customerContext.newPage();
     const frame = await openWidget(page, betaKey, { status: "Online" });
+    // Same visitor as the previous test, which just sent a message: wait out
+    // the messages route's 800 ms per-visitor send spacing, or this send is
+    // refused as too quick whenever the boot is fast.
+    await page.waitForTimeout(1_000);
     await frame.locator("#input").fill("Context injection probe");
     await frame.locator("#send").click();
     await expect(frame.locator("#thread")).toContainText("Context injection probe");
