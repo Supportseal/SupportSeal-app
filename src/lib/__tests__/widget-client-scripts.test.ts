@@ -250,6 +250,9 @@ describe("served widget scripts (issue #57)", () => {
     expect(script).toContain("if (sendGeneration !== sessionGeneration) return Promise.reject('superseded');");
     expect(script).toContain("if (uploadGeneration !== sessionGeneration) return;");
     expect(script).toContain("if (emailGeneration !== sessionGeneration) return {};");
+    // ...and checked again before the request, since ensureSession() can wait.
+    expect(script).toMatch(/if \(uploadGeneration !== sessionGeneration\) return Promise\.reject\('superseded'\);\s*return apiFetch\('\/api\/widget\/attachments'/);
+    expect(script).toMatch(/if \(emailGeneration !== sessionGeneration\) return null;\s*return apiFetch\('\/api\/widget\/messages', \{\s*method: 'PUT'/);
     expect(script).toContain("if (awayGeneration !== sessionGeneration) return;");
     expect(script).toContain("if (resetPending && !previewMode) { hint.textContent");
     expect(script).toContain("if (resetPending) return;");

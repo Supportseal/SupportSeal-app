@@ -395,7 +395,11 @@ ${WIDGET_SOUND_JS}
           renderChips();
         }
         ensureSession()
-          .then(function () { return apiFetch('/api/widget/attachments', { method: 'POST', body: body }); })
+          .then(function () {
+            // reset() while the session was pending: never upload as the next visitor.
+            if (uploadGeneration !== sessionGeneration) return Promise.reject('superseded');
+            return apiFetch('/api/widget/attachments', { method: 'POST', body: body });
+          })
           .then(function (r) { return r.json(); })
           .then(function (data) {
             settled();
@@ -831,12 +835,14 @@ ${WIDGET_SOUND_JS}
     }
     var emailGeneration = sessionGeneration;
     return ensureSession().then(function () {
+      // reset() while the session was pending: never send this email as the next visitor.
+      if (emailGeneration !== sessionGeneration) return null;
       return apiFetch('/api/widget/messages', {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ email: email })
       });
-    }).then(function (r) { return r.json(); }).then(function (data) {
+    }).then(function (r) { return r ? r.json() : {}; }).then(function (data) {
       // The previous visitor's email must not land on the fresh session's UI.
       if (emailGeneration !== sessionGeneration) return {};
       if (data.email) {
