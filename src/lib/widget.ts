@@ -861,10 +861,18 @@ export function widgetRequestOriginOk(
   }
 }
 
+/**
+ * Workspace Live/Away for the widget's config and session boot. Cached
+ * briefly in memory like the Product lookups (product-lookup-cache.ts):
+ * `setAvailability` in workspace.ts, the only writer, clears the cache.
+ */
 export async function getAvailabilityForProduct(workspaceId: string): Promise<"LIVE" | "AWAY"> {
-  const workspace = await prisma.workspace.findUnique({
-    where: { id: workspaceId },
-    select: { availability: true },
+  const cached = await cachedProductLookup(`availability:${workspaceId}`, async () => {
+    const workspace = await prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { availability: true },
+    });
+    return workspace?.availability ?? null;
   });
-  return workspace?.availability ?? "LIVE";
+  return cached ?? "LIVE";
 }

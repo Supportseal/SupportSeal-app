@@ -394,7 +394,12 @@ ${WIDGET_SOUND_JS}
           uploading.splice(at, 1);
           renderChips();
         }
-        apiFetch('/api/widget/attachments', { method: 'POST', body: body })
+        ensureSession()
+          .then(function () {
+            // reset() while the session was pending: never upload as the next visitor.
+            if (uploadGeneration !== sessionGeneration) return Promise.reject('superseded');
+            return apiFetch('/api/widget/attachments', { method: 'POST', body: body });
+          })
           .then(function (r) { return r.json(); })
           .then(function (data) {
             settled();
@@ -409,7 +414,16 @@ ${WIDGET_SOUND_JS}
               setTimeout(function () { hint.remove(); }, 3000);
             }
           })
-          .catch(settled);
+          .catch(function () {
+            settled();
+            // e.g. the session could not be created (rate limit, network).
+            if (uploadGeneration !== sessionGeneration) return;
+            var hint = document.createElement('p');
+            hint.className = 'sysline';
+            hint.textContent = 'Upload failed.';
+            thread.appendChild(hint);
+            setTimeout(function () { hint.remove(); }, 3000);
+          });
       });
     });
   }
@@ -829,11 +843,15 @@ ${WIDGET_SOUND_JS}
       });
     }
     var emailGeneration = sessionGeneration;
-    return apiFetch('/api/widget/messages', {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: email })
-    }).then(function (r) { return r.json(); }).then(function (data) {
+    return ensureSession().then(function () {
+      // reset() while the session was pending: never send this email as the next visitor.
+      if (emailGeneration !== sessionGeneration) return null;
+      return apiFetch('/api/widget/messages', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: email })
+      });
+    }).then(function (r) { return r ? r.json() : {}; }).then(function (data) {
       // The previous visitor's email must not land on the fresh session's UI.
       if (emailGeneration !== sessionGeneration) return {};
       if (data.email) {
@@ -849,6 +867,14 @@ ${WIDGET_SOUND_JS}
 
   function flushDevQueue() {
     booted = true;
+    // No session yet: the queue waits for ensureSession(), which an
+    // identify() queued before boot finished starts right away.
+    if (!hasSession) {
+      for (var i = 0; i < devQueue.length; i++) {
+        if (devQueue[i][0] === 'identify') { ensureSession().catch(function () {}); break; }
+      }
+      return;
+    }
     while (devQueue.length) {
       var item = devQueue.shift();
       pushDeveloperData(item[0], item[1]);
@@ -859,6 +885,35 @@ ${WIDGET_SOUND_JS}
     // Only a newly issued token is stored; session echo for an existing
     // visitor carries no token and must not clobber the stored one.
     if (data && data.token) saveToken(data.token);
+  }
+
+  // Deferred sessions (docs/database-load.md): boot asks for the Product's
+  // config without creating a visitor, because most page views never open
+  // the chat. The first action that needs a session (send, email, upload)
+  // mints it here, once; identify()/context() calls wait in devQueue and
+  // are written right after, before that first action proceeds.
+  var hasSession = false;
+  var minting = null;
+  function ensureSession() {
+    if (previewMode || hasSession) return devChain;
+    if (minting) return minting;
+    var generation = sessionGeneration;
+    var attempt = apiFetch('/api/widget/session', { method: 'POST' })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (data) {
+        if (generation !== sessionGeneration) return Promise.reject('superseded');
+        persistToken(data);
+        probeCookieTransport();
+        hasSession = true;
+        if (minting === attempt) minting = null;
+        flushDevQueue();
+        return devChain;
+      }, function (error) {
+        if (minting === attempt) minting = null;
+        return Promise.reject(error);
+      });
+    minting = attempt;
+    return attempt;
   }
 
   // Boot with capped automatic retries (issue #57); when they run out the
@@ -898,11 +953,12 @@ ${WIDGET_SOUND_JS}
     ready.then(function () {
       // A reset() that arrived mid-flight owns the next boot.
       if (generation !== sessionGeneration) return;
-      return apiFetch('/api/widget/session', { method: 'POST' })
+      return apiFetch('/api/widget/session', { method: 'POST', headers: { 'x-ss-defer-session': '1' } })
         .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
         .then(function (data) {
           if (generation !== sessionGeneration) return;
           bootRetry.success();
+          hasSession = !!data.session;
           hideBanner();
           persistToken(data);
           probeCookieTransport();
@@ -1027,6 +1083,9 @@ ${WIDGET_SOUND_JS}
     }
     var sendGeneration = sessionGeneration;
     requestDiagnostics().then(function (diagnostics) {
+      // The first message is what creates the visitor's session (deferred boot).
+      return ensureSession().then(function () { return diagnostics; });
+    }).then(function (diagnostics) {
       // reset() while diagnostics were pending: never post this body as the fresh visitor.
       if (sendGeneration !== sessionGeneration) return Promise.reject('superseded');
       var payload = { body: body, pageUrl: pageUrl(), attachmentIds: attachmentIds };
@@ -1127,12 +1186,16 @@ ${WIDGET_SOUND_JS}
       input.dataset.awayMessage = '';
       return requestDiagnostics().then(function (diagnostics) {
         if (awayGeneration !== sessionGeneration) return null;
-        var payload = { body: message, pageUrl: pageUrl() };
-        if (diagnostics) payload.diagnostics = diagnostics;
-        return apiFetch('/api/widget/messages', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(payload)
+        // The away message is a first chat action too: mint the session now.
+        return ensureSession().then(function () {
+          if (awayGeneration !== sessionGeneration) return null;
+          var payload = { body: message, pageUrl: pageUrl() };
+          if (diagnostics) payload.diagnostics = diagnostics;
+          return apiFetch('/api/widget/messages', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
         });
       }).then(function (r) { return r && r.json(); }).then(function (data) {
         if (!data || awayGeneration !== sessionGeneration) return;
@@ -1149,6 +1212,10 @@ ${WIDGET_SOUND_JS}
         else restoreDiagnostics();
         if (!streamActive && !previewMode) startStream();
       });
+    }).catch(function () {
+      // Session could not be created (rate limit, network): let them retry.
+      if (awayGeneration !== sessionGeneration) return;
+      document.getElementById('awaySend').disabled = false;
     });
   });
 
@@ -1181,8 +1248,14 @@ ${WIDGET_SOUND_JS}
   function pushDeveloperData(kind, payload) {
     // Calls can arrive before the session exists; queue until boot resolves
     // so nothing is dropped (FR-CTX-01).
-    if (!booted) {
+    // Without a session yet (deferred boot) context waits for the first
+    // action that creates one; the newest 50 are kept. identify() is such an
+    // action: a signed-in user of the host page keeps one session (its
+    // cookie lasts a year), so it costs one row per person, not per page view.
+    if (!booted || !hasSession) {
       devQueue.push([kind, payload]);
+      if (devQueue.length > 50) devQueue.shift();
+      if (booted && kind === 'identify') ensureSession().catch(function () {});
       return;
     }
     var body = {};
@@ -1217,7 +1290,12 @@ ${WIDGET_SOUND_JS}
     resetPending = true;
     flagReset();
     booted = false;
+    hasSession = false;
+    minting = null;
     devQueue = [];
+    // The retired visitor's pending PUTs must not hold up the next visitor's
+    // first send (ensureSession waits on devChain); their callbacks are fenced.
+    devChain = Promise.resolve();
     streamRetry.reset();
     stopPolling();
     if (activeSource) { activeSource.close(); activeSource = null; }

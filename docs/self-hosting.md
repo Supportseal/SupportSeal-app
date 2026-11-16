@@ -317,9 +317,11 @@ your own address as the server default). It needs no Stripe, hosted API or exter
 
 ## Maintenance: purge stale anonymous chat visitors
 
-Every widget session boot creates a chat-visitor row; rows that never
-started a conversation and were never identified would otherwise accumulate
-forever (the visitor cookie lasts a year). Run this manual script when
+A widget visitor gets a chat-visitor row on their first chat action (a
+message, email, upload or `identify` call; older releases created one on
+every widget boot). Rows that never started a conversation and were never
+identified would otherwise accumulate forever (the visitor cookie lasts a
+year). Run this manual script when
 cleanup is needed (issue #82); it has no scheduler or guaranteed physical
 purge deadline. Export `DATABASE_URL` in the shell for Postgres; the script
 does not load `.env` automatically.

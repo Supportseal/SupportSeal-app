@@ -283,3 +283,47 @@ describe("DELETE /api/widget/session host sign-out reset (issue #151)", () => {
     expect(await resolveVisitorSession(product, token)).not.toBeNull();
   });
 });
+
+describe("POST /api/widget/session deferred boot", () => {
+  function deferredRequest(input: { ip: string; token?: string }) {
+    const request = sessionRequest(input);
+    request.headers.set("x-ss-defer-session", "1");
+    return request;
+  }
+
+  it("answers a page view without a session with config only: no row, no token, no cookie", async () => {
+    const response = await POST(deferredRequest({ ip: "7.7.7.1" }));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toMatchObject({ name: "PM Toolkit", session: null, availability: "LIVE" });
+    expect(body.thread).toMatchObject({ conversationId: null, messages: [] });
+    expect(body.token).toBeUndefined();
+    expect(response.headers.get("set-cookie")).toBeNull();
+    expect(await db.prisma.chatVisitor.count()).toBe(0);
+
+    // Unknown credentials degrade the same way instead of minting.
+    const stale = await POST(deferredRequest({ ip: "7.7.7.1", token: "never-issued" }));
+    expect((await stale.json()).session).toBeNull();
+    expect(await db.prisma.chatVisitor.count()).toBe(0);
+  });
+
+  it("still resumes an existing session, and the first real use mints exactly one row", async () => {
+    const minted = await POST(sessionRequest({ ip: "7.7.7.2" }));
+    const { token } = await minted.json();
+    expect(await db.prisma.chatVisitor.count()).toBe(1);
+
+    const resumed = await POST(deferredRequest({ ip: "7.7.7.2", token }));
+    const body = await resumed.json();
+    expect(body.session).toEqual({ email: null, name: null });
+    expect(body.token).toBeUndefined();
+    expect(await db.prisma.chatVisitor.count()).toBe(1);
+  });
+
+  it("does not spend the per-IP mint budget", async () => {
+    const ip = "7.7.7.3";
+    for (let i = 0; i < WIDGET_RATE_LIMITS.sessionMint + 2; i++) {
+      expect((await POST(deferredRequest({ ip }))).status).toBe(200);
+    }
+    expect((await POST(sessionRequest({ ip }))).status).toBe(200);
+  });
+});

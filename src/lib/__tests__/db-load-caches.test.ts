@@ -11,8 +11,8 @@ import { setProductLookupCacheEnabled } from "@/lib/product-lookup-cache";
 import { addProductDomain, archiveProduct, rotateProductWidgetKey } from "@/lib/products";
 import { allocateTicketNumber } from "@/lib/ticket";
 import { markCustomerMessagesRead } from "@/lib/unread";
-import { loadFormProduct, loadWidgetProduct } from "@/lib/widget";
-import type { WorkspaceContext } from "@/lib/workspace";
+import { getAvailabilityForProduct, loadFormProduct, loadWidgetProduct } from "@/lib/widget";
+import { setAvailability, type WorkspaceContext } from "@/lib/workspace";
 import { GET as notificationsFeed } from "@/app/api/inbox/notifications/route";
 import { GET as unreadCounts } from "@/app/api/inbox/unread/route";
 
@@ -93,6 +93,20 @@ describe("product lookup cache", () => {
     expect((await loadWidgetProduct("pk_cache_later"))?.name).toBe("Cached");
   });
 
+  it("caches Workspace availability until setAvailability changes it", async () => {
+    setProductLookupCacheEnabled(true);
+    const { ctx } = await seedProduct("cache-availability@example.com", "pk_cache_availability");
+    const workspaceId = ctx.workspace.id;
+    expect(await getAvailabilityForProduct(workspaceId)).toBe("LIVE");
+    // A write that bypasses setAvailability stays unseen: the read was cached.
+    await db.prisma.workspace.update({ where: { id: workspaceId }, data: { availability: "AWAY" } });
+    expect(await getAvailabilityForProduct(workspaceId)).toBe("LIVE");
+    expect((await setAvailability({ workspaceId, actorRole: "ADMIN", availability: "AWAY" })).ok).toBe(true);
+    expect(await getAvailabilityForProduct(workspaceId)).toBe("AWAY");
+    expect((await setAvailability({ workspaceId, actorRole: "ADMIN", availability: "LIVE" })).ok).toBe(true);
+    expect(await getAvailabilityForProduct(workspaceId)).toBe("LIVE");
+  });
+
   // The cache is only invalidated by products.ts; a Product or domain write
   // anywhere else in the app would be served stale for up to the TTL.
   it("every Product and ProductDomain write lives in products.ts", () => {
@@ -114,6 +128,27 @@ describe("product lookup cache", () => {
     };
     walk(root);
     expect(offenders).toEqual([join("lib", "products.ts")]);
+  });
+
+  // Availability is cached the same way; setAvailability is its only writer.
+  it("every Workspace availability write lives in workspace.ts", () => {
+    const root = join(process.cwd(), "src");
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const path = join(dir, name);
+        if (statSync(path).isDirectory()) {
+          if (name !== "__tests__" && name !== "generated" && name !== "test") walk(path);
+        } else if (/\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name)) {
+          const source = readFileSync(path, "utf8");
+          if (/\.workspace\.(update|updateMany|upsert)\b/.test(source) && /\bavailability\s*:/.test(source)) {
+            offenders.push(relative(root, path));
+          }
+        }
+      }
+    };
+    walk(root);
+    expect(offenders).toEqual([join("lib", "workspace.ts")]);
   });
 });
 

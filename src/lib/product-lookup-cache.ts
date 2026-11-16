@@ -5,9 +5,13 @@
  * `product_domains` again, although both change only when an Admin edits the
  * Product (docs/database-load.md).
  *
+ * The Workspace's Live/Away availability, read on every widget boot, is
+ * cached here too (`availability:<workspaceId>`).
+ *
  * Freshness: every Product and ProductDomain write lives in
- * `src/lib/products.ts` (guarded by product-lookup-cache.test.ts) and clears
- * this cache in-process, so a single app process sees edits, key rotations
+ * `src/lib/products.ts`, and the only availability write is `setAvailability`
+ * in `src/lib/workspace.ts` (both guarded by db-load-caches.test.ts); they
+ * clear this cache in-process, so a single app process sees edits, key rotations
  * and archiving at once. Another app process sees them within
  * `PRODUCT_LOOKUP_TTL_MS`. Only hits are cached: an unknown key always asks
  * the database, so a just-created Product works immediately everywhere.
