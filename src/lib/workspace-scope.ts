@@ -97,17 +97,28 @@ export class NotInScopeError extends Error {
   }
 }
 
+/**
+ * The Prisma error code (`P2025`, `P2002`, ...) of a known request error.
+ * Matched by name, not `instanceof`: the Next.js server bundle can load the
+ * generated client's runtime twice, so the thrown error's class need not be
+ * the `Prisma.PrismaClientKnownRequestError` this module imported (seen in
+ * `next dev`: a missing row answered 500 instead of the uniform 404).
+ */
+function prismaKnownErrorCode(error: unknown): string | undefined {
+  if (error instanceof Prisma.PrismaClientKnownRequestError) return error.code;
+  if (typeof error !== "object" || error === null) return undefined;
+  const { name, code } = error as { name?: unknown; code?: unknown };
+  return name === "PrismaClientKnownRequestError" && typeof code === "string" ? code : undefined;
+}
+
 /** True for any error a scoped query raises because a row is missing or foreign. */
 export function isNotInScope(error: unknown): boolean {
-  return (
-    error instanceof NotInScopeError ||
-    (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025")
-  );
+  return error instanceof NotInScopeError || prismaKnownErrorCode(error) === "P2025";
 }
 
 /** True when a write hit a unique constraint, so a caller can race to insert and then read the winner. */
 export function isUniqueViolation(error: unknown): boolean {
-  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
+  return prismaKnownErrorCode(error) === "P2002";
 }
 
 /** Each model's relation fields and the model each leads to. */
