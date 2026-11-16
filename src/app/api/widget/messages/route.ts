@@ -11,7 +11,6 @@ import {
   sessionOriginMatches,
   widgetRequestOriginOk,
   setVisitorEmail,
-  touchVisitor,
   visitorTokenFromRequest,
   visitorListMessages,
   visitorSendMessage,
@@ -169,6 +168,5 @@ export async function PUT(request: NextRequest) {
 
   const result = await setVisitorEmail({ visitor, email: payload.email });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
-  await touchVisitor(visitor.visitorId);
   return NextResponse.json({ email: result.email });
 }

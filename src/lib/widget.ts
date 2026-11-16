@@ -12,6 +12,7 @@ import {
   type VisitorIdentity,
 } from "@/lib/dev-context";
 import { prisma } from "@/lib/prisma";
+import { cachedProductLookup } from "@/lib/product-lookup-cache";
 import { isServicePaused, SERVICE_PAUSED_CODE } from "@/lib/service-pause";
 import { notifyAllowanceInBackground } from "@/lib/usage-notifications";
 import { allocateTicketNumber, formatTicketRef } from "@/lib/ticket";
@@ -46,22 +47,29 @@ export function isWidgetKeyShape(widgetKey: string): boolean {
 /** Loads the active (non-archived) Product for a public widget key, with its allowed domains; null when none matches. */
 export async function loadWidgetProduct(widgetKey: string): Promise<WidgetProduct | null> {
   if (!isWidgetKeyShape(widgetKey)) return null;
+  // Cached briefly in memory (product-lookup-cache.ts): every widget request
+  // starts here, and Product writes clear the cache.
+  return cachedProductLookup(`widget:${widgetKey}`, () => queryWidgetProduct(widgetKey));
+}
+
+async function queryWidgetProduct(widgetKey: string): Promise<WidgetProduct | null> {
   const product = await prisma.product.findFirst({
     where: { widgetPublicKey: widgetKey, archivedAt: null },
     include: { domains: { select: { domain: true } } },
   });
   if (!product) return null;
-  return {
+  // Frozen: cached objects are shared between requests.
+  return Object.freeze({
     id: product.id,
     name: product.name,
     primaryColor: product.primaryColor,
     widgetPublicKey: product.widgetPublicKey,
     workspaceId: product.workspaceId,
-    domains: product.domains.map((d) => d.domain),
+    domains: Object.freeze(product.domains.map((d) => d.domain)) as string[],
     diagnosticsEnabledAt: product.diagnosticsEnabledAt,
     supportEmail: product.supportEmail,
     identitySecret: product.identitySecret,
-  };
+  });
 }
 
 export type FormProduct = {
@@ -74,11 +82,13 @@ export type FormProduct = {
 
 export async function loadFormProduct(formKey: string): Promise<FormProduct | null> {
   if (!formKey.startsWith("fk_")) return null;
-  const product = await prisma.product.findFirst({
-    where: { formPublicKey: formKey, archivedAt: null },
-    select: { id: true, workspaceId: true, supportEmail: true, inboundEmail: true },
+  return cachedProductLookup(`form:${formKey}`, async () => {
+    const product = await prisma.product.findFirst({
+      where: { formPublicKey: formKey, archivedAt: null },
+      select: { id: true, workspaceId: true, supportEmail: true, inboundEmail: true },
+    });
+    return product && Object.freeze({ ...product, formPublicKey: formKey });
   });
-  return product && { ...product, formPublicKey: formKey };
 }
 
 /**
@@ -462,9 +472,10 @@ export async function setVisitorEmail(input: {
       })
     : null;
   await prisma.$transaction(async (tx) => {
+    // lastSeenAt rides along: one visitor write per email capture.
     await tx.chatVisitor.update({
       where: { id: input.visitor.visitorId },
-      data: { email },
+      data: { email, lastSeenAt: new Date() },
     });
     if (!conversation) return;
     // Email-takeover guard: a widget visitor claiming an email that already
@@ -607,7 +618,8 @@ export async function visitorSendMessage(input: {
 
   if (input.pageUrl) {
     // Merge the recorded page URL into the stored context without clobbering
-    // developer-supplied identify()/context() data.
+    // developer-supplied identify()/context() data. lastSeenAt rides along,
+    // so a message costs one visitor write, not two.
     const visitorRow = await prisma.chatVisitor.findUnique({
       where: { id: input.visitor.visitorId },
       select: { devContext: true },
@@ -618,11 +630,12 @@ export async function visitorSendMessage(input: {
         devContext: mergeDevContext(visitorRow?.devContext, {
           pageUrl: input.pageUrl.slice(0, 300),
         }) as Prisma.InputJsonValue,
+        lastSeenAt: new Date(),
       },
     });
+  } else {
+    await touchVisitor(input.visitor.visitorId);
   }
-
-  await touchVisitor(input.visitor.visitorId);
   return {
     ok: true,
     conversationId,
@@ -848,10 +861,18 @@ export function widgetRequestOriginOk(
   }
 }
 
+/**
+ * Workspace Live/Away for the widget's config and session boot. Cached
+ * briefly in memory like the Product lookups (product-lookup-cache.ts):
+ * `setAvailability` in workspace.ts, the only writer, clears the cache.
+ */
 export async function getAvailabilityForProduct(workspaceId: string): Promise<"LIVE" | "AWAY"> {
-  const workspace = await prisma.workspace.findUnique({
-    where: { id: workspaceId },
-    select: { availability: true },
+  const cached = await cachedProductLookup(`availability:${workspaceId}`, async () => {
+    const workspace = await prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { availability: true },
+    });
+    return workspace?.availability ?? null;
   });
-  return workspace?.availability ?? "LIVE";
+  return cached ?? "LIVE";
 }

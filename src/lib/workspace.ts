@@ -5,6 +5,8 @@ import { redirect } from "next/navigation";
 import { PLANS, planForWorkspace, type WorkspacePlanValue } from "@/config/pricing";
 import { isHostedMode } from "@/lib/hosting";
 import { prisma } from "@/lib/prisma";
+import { invalidateProductLookups } from "@/lib/product-lookup-cache";
+import { isPushoverConfigured, notifyOwnerWorkspaceCreated } from "@/lib/pushover";
 import { getSessionUser, type SessionUser } from "@/lib/session";
 
 export type MembershipRole = "ADMIN" | "AGENT";
@@ -105,7 +107,28 @@ export async function createWorkspace(input: {
     return created;
   });
 
+  await announceWorkspace(input.userId, workspace);
   return { ok: true, workspaceId: workspace.id };
+}
+
+async function announceWorkspace(
+  userId: string,
+  workspace: { name: string; plan: WorkspacePlanValue },
+): Promise<void> {
+  if (!isPushoverConfigured()) return;
+  // The Workspace is already committed: a failed lookup here must not turn
+  // that success into an error (a retry would then hit "already belongs").
+  const owner = await prisma.user
+    .findUnique({ where: { id: userId }, select: { email: true } })
+    .catch((error: unknown) => {
+      console.error("[pushover] owner lookup for the new Workspace failed:", error);
+      return null;
+    });
+  notifyOwnerWorkspaceCreated({
+    workspaceName: workspace.name,
+    ownerEmail: owner?.email ?? "unknown",
+    planName: planForWorkspace(workspace.plan).name,
+  });
 }
 
 /** Resolve the caller's Workspace context or redirect into onboarding. */
@@ -336,5 +359,7 @@ export async function setAvailability(input: {
     where: { id: input.workspaceId },
     data: { availability: input.availability },
   });
+  // The widget caches availability (getAvailabilityForProduct).
+  invalidateProductLookups();
   return { ok: true };
 }
