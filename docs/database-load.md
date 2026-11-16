@@ -18,7 +18,7 @@ Traffic on the hosted tier is small (243 conversations by mid-November
 | Dashboard tab: message sound (`/api/inbox/notifications`) | every 20 s per tab unless muted | `sessions`, `users`, `memberships`, `messages`, `conversations` |
 | Dashboard tab: desktop notifications (same feed) | every 30 s per tab, only with notifications on | same |
 | Widget on any page (marketing site, dashboard sign-in and settings) | each request: panel, session boot, config, stream connect, messages | `products`, `product_domains`, `chat_visitors`, `workspaces` |
-| Widget session boot without a saved session | once per page load in a browser without a usable visitor cookie | inserts one `chat_visitors` row |
+| First chat action by a new visitor (message, email, upload, identify) | once per browser that actually uses the chat | inserts one `chat_visitors` row |
 | Realtime streams with `REALTIME_DB_POLL` on | every 2 s per open widget, 10 s per open inbox | `messages`, `conversations` |
 
 The hosted compose file sets `REALTIME_DB_POLL=off` (one app process), so the
@@ -48,19 +48,25 @@ last row only applies to multi-process deployments.
   now in the same write as the page URL or email instead of a second
   `UPDATE`.
 
+- **Workspace availability is cached with the Product lookups.** Every
+  widget boot reads the Workspace's Live/Away availability; it is cached
+  under `availability:<workspaceId>` in the same cache, and `setAvailability`
+  (the only writer, `src/lib/workspace.ts`) clears it. A test fails if an
+  availability write appears anywhere else. The pause check already had its
+  own short "not paused" cache (`src/lib/service-pause.ts`).
+- **Visitor rows are created on first use.** The panel boots with
+  `x-ss-defer-session: 1`: a browser with a valid visitor session resumes it
+  as before, but a browser without one gets the widget's config and an empty
+  thread and no `chat_visitors` row. The row is created by the panel's first
+  chat action: sending a message, saving an email, uploading a file, or an
+  `identify` call from the host page (a signed-in user keeps one session, so
+  that is one row per person). Context data alone waits in the panel's queue
+  until a session exists. Browsers that
+  never use the chat no longer insert a row or spend the per-IP session mint
+  budget.
+
 ## Remaining options (not done)
 
-- **Workspace lookups per widget request.** Session boot and config read the
-  Workspace's availability and pause state (`workspaces` was the third
-  busiest table on hosted). They could be cached like Product lookups, but
-  Workspace writes are spread over more modules, so it needs its own
-  invalidation pass.
-- **Lazy visitor sessions.** The panel boots a session, and so inserts a
-  `chat_visitors` row, on every page load for a browser without a visitor
-  cookie, even if the chat is never opened. Creating the row on first use
-  (message, email, upload, identify) would cut both the inserts and the
-  table size by roughly the ratio of page views to chats. Larger change to
-  the panel; needs its own PR.
 - **Session cookie cache.** Every dashboard poll still checks the session
   in `sessions` and `users`. better-auth's `session.cookieCache` would skip
   that for a short `maxAge`, at the cost of a sign-out on another device
@@ -129,6 +135,7 @@ Product scans are cache refills after each 30 s expiry plus dashboard pages.
 `conversations` and `messages` rose in the after hour only because someone
 used the dashboard then (38 inbox page views, none in the hour before).
 `workspaces` is now the busiest table: the availability and pause reads on
-widget boot are the next candidate (see Remaining options). Fresh visitor
-rows (about 70 an hour, one per widget boot without a saved session) are the
-other.
+widget boot were the next candidate. Fresh visitor rows (about 70 an hour,
+one per widget boot without a saved session) were the other. Both are
+addressed by the follow-up PR (availability cache, visitor rows on first
+use); see What keeps it small.

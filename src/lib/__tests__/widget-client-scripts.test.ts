@@ -233,11 +233,15 @@ describe("served widget scripts (issue #57)", () => {
     expect(script).toContain("if (data.type === 'ss:reset') resetSession();");
     // Boot sends the DELETE first while a reset is pending, and only then clears the token.
     expect(script).toMatch(/resetPending\s*\? apiFetch\('\/api\/widget\/session', \{ method: 'DELETE', keepalive: true \}\)/);
-    expect(script.indexOf("method: 'DELETE'")).toBeLessThan(script.indexOf("{ method: 'POST' }"));
+    expect(script.indexOf("method: 'DELETE'")).toBeLessThan(script.indexOf("'x-ss-defer-session': '1'"));
     expect(script).toMatch(/resetPending = false; clearResetFlag\(\); removeToken\(\)/);
     // Stale boot / developer-data / send results are fenced by the generation counter.
     expect(script).toMatch(
-      /if \(generation !== sessionGeneration\) return;\s*return apiFetch\('\/api\/widget\/session', \{ method: 'POST' \}\)/,
+      /if \(generation !== sessionGeneration\) return;\s*return apiFetch\('\/api\/widget\/session', \{ method: 'POST', headers: \{ 'x-ss-defer-session': '1' \} \}\)/,
+    );
+    // The first chat action mints the session; a reset in between discards it.
+    expect(script).toMatch(
+      /function ensureSession\(\) \{[^]*?if \(generation !== sessionGeneration\) return Promise\.reject\('superseded'\);/,
     );
     expect(script).toContain("if (generation !== sessionGeneration) return null;");
     expect(script).toContain("if (sendGeneration !== sessionGeneration) return;");
