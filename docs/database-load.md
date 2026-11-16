@@ -41,13 +41,20 @@ last row only applies to multi-process deployments.
   tabs update exactly when they did before, but an idle poll costs only the
   session check. Active only with `REALTIME_DB_POLL=off`: with several
   processes another process's writes never reach this one's event bus.
-- **Visitor writes are throttled and merged.** `lastSeenAt` is refreshed at
-  most every 10 minutes (30 s with `REALTIME_DB_POLL` on); sending a message
-  or capturing an email updates it in the same write as the page URL or email
-  instead of a second `UPDATE`.
+- **Visitor writes are throttled and merged.** Resolving a visitor session
+  (which every widget request does) refreshes `lastSeenAt` at most every 10
+  minutes (30 s with `REALTIME_DB_POLL` on). The exceptions are visitor
+  actions: each message send and each email capture still sets `lastSeenAt`,
+  now in the same write as the page URL or email instead of a second
+  `UPDATE`.
 
 ## Remaining options (not done)
 
+- **Workspace lookups per widget request.** Session boot and config read the
+  Workspace's availability and pause state (`workspaces` was the third
+  busiest table on hosted). They could be cached like Product lookups, but
+  Workspace writes are spread over more modules, so it needs its own
+  invalidation pass.
 - **Lazy visitor sessions.** The panel boots a session, and so inserts a
   `chat_visitors` row, on every page load for a browser without a visitor
   cookie, even if the chat is never opened. Creating the row on first use
@@ -81,4 +88,26 @@ ORDER BY scans DESC;
 
 ## Hosted measurements
 
-<!-- filled in from the snapshots below -->
+**Baseline, 2026-11-16 07:30 UTC** (before the caches). Postgres 18 on the
+Coolify server, counters since the move from Neon at 02:45 UTC (about 4 h 45
+min; inserts include the restore). One app container, one server process,
+`REALTIME_DB_POLL=off`. Tables with more than 50 scans:
+
+| Table | Seq scans | Index scans | Inserts | Updates | Deletes | Live rows |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| products | 1,440 | 0 | 21 | 0 | 0 | 21 |
+| product_domains | 1,227 | 0 | 43 | 0 | 0 | 43 |
+| workspaces | 815 | 0 | 3 | 1 | 0 | 3 |
+| chat_visitors | 11 | 764 | 26,689 | 242 | 0 | 26,689 |
+| conversations | 20 | 232 | 244 | 5 | 0 | 244 |
+| messages | 8 | 203 | 652 | 0 | 0 | 652 |
+| widget_host_signals | 7 | 112 | 235 | 34 | 0 | 235 |
+
+Widget Product lookups (about 5 a minute, every one a sequential scan of a
+21-row table) dominate. Dashboard polling was light in this window.
+`chat_visitors` has never been purged on hosted: no Coolify scheduled task,
+host cron or timer runs the purge script. The app does not log requests, so
+per-path counts would need the proxy's access log.
+
+The comparison after the caches deploy is recorded in a follow-up update to
+this section.
