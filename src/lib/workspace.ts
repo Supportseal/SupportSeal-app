@@ -115,7 +115,14 @@ async function announceWorkspace(
   workspace: { name: string; plan: WorkspacePlanValue },
 ): Promise<void> {
   if (!isPushoverConfigured()) return;
-  const owner = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
+  // The Workspace is already committed: a failed lookup here must not turn
+  // that success into an error (a retry would then hit "already belongs").
+  const owner = await prisma.user
+    .findUnique({ where: { id: userId }, select: { email: true } })
+    .catch((error: unknown) => {
+      console.error("[pushover] owner lookup for the new Workspace failed:", error);
+      return null;
+    });
   notifyOwnerWorkspaceCreated({
     workspaceName: workspace.name,
     ownerEmail: owner?.email ?? "unknown",
