@@ -1,6 +1,7 @@
 import "server-only";
 
 import { prisma } from "@/lib/prisma";
+import { invalidateInboxAttention } from "@/lib/inbox-attention-cache";
 import { UNREAD_FETCH_LIMIT, UNREAD_MARK_BATCH, MAX_MARK_IDS } from "@/lib/unread-shared";
 
 /**
@@ -95,5 +96,7 @@ export async function markCustomerMessagesRead(input: {
     });
     marked += result.count;
   }
+  // Cached unread counts (inbox-attention-cache.ts) must see the new receipts.
+  if (marked > 0) invalidateInboxAttention(input.workspaceId);
   return { ok: true, marked };
 }
