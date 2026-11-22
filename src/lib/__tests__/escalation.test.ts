@@ -25,6 +25,8 @@ const transport = {
 const T0 = new Date("2026-10-07T10:00:00Z");
 const minutesAfter = (m: number) => new Date(T0.getTime() + m * 60_000);
 
+const NO_AGENT_ALERTS = { emailOnNewConversation: false, emailOnCustomerReply: false };
+
 let workspaceId: string;
 let productId: string;
 let contactId: string;
@@ -37,10 +39,11 @@ async function seed() {
     data: {
       name: "Acme",
       memberships: {
+        // New-message alerts (agent-alerts.ts) off: these tests count escalation emails only.
         create: [
-          { userId: founder.id, role: "ADMIN" },
-          { userId: second.id, role: "ADMIN" },
-          { userId: agent.id, role: "AGENT" },
+          { userId: founder.id, role: "ADMIN", ...NO_AGENT_ALERTS },
+          { userId: second.id, role: "ADMIN", ...NO_AGENT_ALERTS },
+          { userId: agent.id, role: "AGENT", ...NO_AGENT_ALERTS },
         ],
       },
     },
