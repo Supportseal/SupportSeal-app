@@ -1,5 +1,5 @@
 import type { TablerIcon } from "@tabler/icons-react";
-import { IconBook, IconInbox, IconMessage2, IconSettings, IconRocket } from "@tabler/icons-react";
+import { IconAddressBook, IconBook, IconInbox, IconMessage2, IconSettings, IconRocket } from "@tabler/icons-react";
 
 export type MenuItem = {
   id: string;
@@ -24,6 +24,7 @@ export function menuSections(
       id: "support",
       items: [
         { id: "inbox", label: "Inbox", href: "/inbox", icon: IconInbox },
+        { id: "contacts", label: "Contacts", href: "/contacts", icon: IconAddressBook },
         { id: "saved-replies", label: "Saved replies", href: "/saved-replies", icon: IconMessage2 },
       ],
     },
@@ -50,6 +51,7 @@ export function menuSections(
 
 export const searchablePages = [
   { label: "Inbox", href: "/inbox" },
+  { label: "Contacts", href: "/contacts" },
   { label: "Saved replies", href: "/saved-replies" },
   { label: "Products", href: "/settings/products" },
   { label: "Team", href: "/settings/team" },
