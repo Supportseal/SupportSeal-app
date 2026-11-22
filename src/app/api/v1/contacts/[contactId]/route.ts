@@ -25,16 +25,20 @@ export const GET = v1Route<{ contactId: string }>(
  * Block or unblock a sender (spam control, the dashboard's "Block sender").
  * A blocked Contact's new email, form and widget messages are dropped
  * silently; existing Conversations stay. Setting the current value again is
- * a no-op that answers 200.
+ * a no-op that answers 200. Unblocking a Contact with no Conversation left
+ * deletes it (FR-SEC-02); the answer is then its last state.
  */
 export const PATCH = v1Route<{ contactId: string }>(
   { operationId: "updateContact", scope: "contacts:write", idempotent: true },
   async ({ request, scope, db, params, auditResource }) => {
     const parsed = await parseBody(request, contactPatchBody);
     if (!parsed.ok) return parsed.response;
-    const contact = await db.contact.findUniqueOrThrow({ where: { id: params.contactId }, select: { id: true } });
+    const contact = await db.contact.findUniqueOrThrow({ where: { id: params.contactId }, select: contactSelect });
     auditResource("contact", contact.id);
-    await setContactBlocked({ workspaceId: scope.workspaceId, contactId: contact.id, blocked: parsed.body.blocked });
+    const result = await setContactBlocked({ workspaceId: scope.workspaceId, contactId: contact.id, blocked: parsed.body.blocked });
+    if (result.ok && result.deleted) {
+      return Response.json(serializeContact({ ...contact, blockedAt: null }), { headers: PRIVATE_NO_STORE });
+    }
     const updated = await db.contact.findUniqueOrThrow({ where: { id: contact.id }, select: contactSelect });
     return Response.json(serializeContact(updated), { headers: PRIVATE_NO_STORE });
   },

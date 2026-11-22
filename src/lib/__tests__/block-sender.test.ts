@@ -109,6 +109,10 @@ describe("blocked email senders", () => {
 
     expect(await db.prisma.contact.findUnique({ where: { id: first.contactId } })).not.toBeNull();
     expect((await processInboundEmail({ email: mail("persistent@spam.test") })).outcome).toBe("ignored");
+
+    // Unblocking afterwards removes the now Conversation-less Contact (FR-SEC-02).
+    expect(await setContactBlocked({ workspaceId, contactId: first.contactId, blocked: false })).toEqual({ ok: true, deleted: true });
+    expect(await db.prisma.contact.findUnique({ where: { id: first.contactId } })).toBeNull();
   });
 
   it("never blocks a Contact of another Workspace, and a block never crosses Workspaces", async () => {

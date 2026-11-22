@@ -1472,7 +1472,7 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "description": "Blocks (`true`) or unblocks (`false`) the sender, like the dashboard's Block sender. From then on, new email from the Contact's address, contact form posts with it and widget messages from the visitors in its Conversations are dropped silently: no bounce, no error, nothing in the inbox. Existing Conversations are not changed. Setting the current value again answers 200 and changes nothing. `Idempotency-Key` is optional.",
+        "description": "Blocks (`true`) or unblocks (`false`) the sender, like the dashboard's Block sender. From then on, new email from the Contact's address, contact form posts with it and widget messages from the visitors in its Conversations are dropped silently: no bounce, no error, nothing in the inbox. Existing Conversations are not changed. Setting the current value again answers 200 and changes nothing. Unblocking a Contact that has no Conversation left deletes it, so no personal data is kept without a reason; the answer is then its last state, and later reads answer 404. `Idempotency-Key` is optional.",
         "security": [
           {
             "bearerAuth": []

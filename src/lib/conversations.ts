@@ -797,7 +797,7 @@ export async function setContactBlocked(input: {
   workspaceId: string;
   contactId: string;
   blocked: boolean;
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+}): Promise<{ ok: true; deleted?: true } | { ok: false; error: string }> {
   const contact = await prisma.contact.findFirst({
     where: { id: input.contactId, workspaceId: input.workspaceId },
     select: { id: true, blockedAt: true },
@@ -822,6 +822,14 @@ export async function setContactBlocked(input: {
       data: { blockedAt, blockedContactId: input.blocked ? contact.id : null },
     }),
   ]);
+  if (!input.blocked) {
+    // The block was all that kept a Contact whose Conversations were
+    // deleted meanwhile; without it, the usual cleanup applies (FR-SEC-02).
+    const removed = await prisma.contact.deleteMany({
+      where: { id: contact.id, workspaceId: input.workspaceId, blockedAt: null, conversations: { none: {} } },
+    });
+    if (removed.count > 0) return { ok: true, deleted: true };
+  }
   return { ok: true };
 }
 
