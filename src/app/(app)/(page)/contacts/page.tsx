@@ -5,6 +5,7 @@ import { IconBan } from "@tabler/icons-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
+import { visitorLabel } from "@/lib/contact-label";
 import { listContactsPage, MAX_CONTACT_SEARCH_LENGTH } from "@/lib/contacts";
 import { requireWorkspace } from "@/lib/workspace";
 
@@ -129,7 +130,13 @@ export default async function ContactsPage({
                       href={`/contacts/${contact.id}`}
                       className="after:absolute after:inset-0 [overflow-wrap:anywhere]"
                     >
-                      {contact.name ?? <span className="font-normal text-muted">No name</span>}
+                      {contact.name ??
+                        (contact.email ? (
+                          <span className="font-normal text-muted">No name</span>
+                        ) : (
+                          // Only blocked anonymous visitors get here; the label tells them apart.
+                          <span className="font-normal text-muted">{visitorLabel(contact)}</span>
+                        ))}
                     </Link>
                     {contact.blocked ? (
                       <Badge color="danger" className="ms-2 align-middle text-xs" data-testid="contact-blocked-badge">
