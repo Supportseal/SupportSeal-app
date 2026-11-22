@@ -17,6 +17,7 @@ import {
 import { setGreetingAction, type GreetingFormState } from "../actions";
 
 const initialState: GreetingFormState = {};
+const UNSAVED_PROMPT = "You have an unsaved greeting. Leave without saving it?";
 
 /**
  * Widget greeting (docs/design/branding.md "Product settings"): a plain-text
@@ -54,9 +55,28 @@ export function GreetingCard({
   const dirty = normalizeGreeting(draft) !== (saved ?? "");
   useEffect(() => {
     if (!dirty) return;
+    // Hard unloads (refresh, tab close, external links).
     const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    // Soft navigations (settings tabs, sidebar, All Products) never unload
+    // the document, so catch their link clicks before Next's router does.
+    const guardLinks = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const link = (event.target as Element | null)?.closest?.("a[href]");
+      if (!(link instanceof HTMLAnchorElement) || (link.target && link.target !== "_self") || link.hasAttribute("download")) return;
+      const next = new URL(link.href, window.location.href);
+      if (next.origin !== window.location.origin) return;
+      if (next.pathname === window.location.pathname && next.search === window.location.search) return;
+      if (!window.confirm(UNSAVED_PROMPT)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
     window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
+    document.addEventListener("click", guardLinks, true);
+    return () => {
+      window.removeEventListener("beforeunload", warn);
+      document.removeEventListener("click", guardLinks, true);
+    };
   }, [dirty]);
 
   const normalized = normalizeGreeting(draft);
@@ -64,7 +84,8 @@ export function GreetingCard({
   const lines = normalized === "" ? 0 : normalized.split("\n").length;
   const check = parseGreeting(draft);
   const clientError = check.ok ? null : check.error;
-  const error = clientError ?? (dirty ? null : (state.error ?? null));
+  // A save error belongs to its own submission; typing again dismisses it.
+  const error = clientError ?? (dismissed !== state ? (state.error ?? null) : null);
 
   return (
     <Card>

@@ -59,9 +59,21 @@ test.describe.serial("widget greeting", () => {
     await expect(panel.locator("#greeting")).toHaveText(greeting);
     await expect(panel.locator("#greeting b, #greeting script")).toHaveCount(0);
 
+    // Leaving through an in-app link asks first; staying keeps the draft.
+    const dialog = agentPage.waitForEvent("dialog");
+    void agentPage.getByRole("navigation", { name: "Product settings" }).getByRole("link", { name: "General" }).click();
+    const prompt = await dialog;
+    expect(prompt.message()).toContain("unsaved greeting");
+    await prompt.dismiss();
+    await expect(agentPage).toHaveURL(/tab=widget/u);
+    await expect(field).toHaveValue(greeting);
+
     await save.click();
     await expect(agentPage.getByText("Greeting saved.")).toBeVisible();
-    await agentPage.reload();
+    // Saved: navigating away no longer asks.
+    await agentPage.getByRole("navigation", { name: "Product settings" }).getByRole("link", { name: "General" }).click();
+    await expect(agentPage).not.toHaveURL(/tab=widget/u);
+    await agentPage.goto(`/settings/products/${productId}?tab=widget`);
     await expect(agentPage.getByLabel("Greeting text")).toHaveValue(greeting);
   });
 
