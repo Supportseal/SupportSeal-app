@@ -21,6 +21,11 @@ export const contactListQuery = z.strictObject({
   email: z.string().regex(CONTACT_EMAIL_REGEX).optional(),
   /** Part of a name or email, case-insensitive: the dashboard's contacts search. */
   q: z.string().max(MAX_CONTACT_SEARCH_LENGTH).optional(),
+  /** `true`: only blocked Contacts; `false`: only unblocked ones (the dashboard's Blocked filter). */
+  blocked: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((value) => (value === undefined ? undefined : value === "true")),
 });
 
 /** What a Contact read through the API carries: the Contact panel's fields, nothing more. */

@@ -8,6 +8,8 @@ import { visitorLabel } from "@/lib/contact-label";
 import { CONTACT_CONVERSATIONS_SHOWN, getContactHistory } from "@/lib/contacts";
 import { requireWorkspace } from "@/lib/workspace";
 
+import { ContactBlockControls } from "./block-controls";
+
 export const metadata = { title: "Contact" };
 
 export default async function ContactPage({ params }: { params: Promise<{ id: string }> }) {
@@ -17,6 +19,15 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
   const history = await getContactHistory({ workspaceId: ctx.workspace.id, contactId: id });
   if (!history) notFound();
   const { contact, conversations, total } = history;
+  const blocked = contact.blockedAt !== null;
+  const blockControls = (
+    <ContactBlockControls
+      contactId={contact.id}
+      label={visitorLabel(contact)}
+      blocked={blocked}
+      hasConversations={total > 0}
+    />
+  );
 
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6">
@@ -24,16 +35,20 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
         <IconArrowLeft className="size-4" />
         Contacts
       </Link>
-      <header>
-        <h1 className="text-2xl font-semibold text-heading [overflow-wrap:anywhere]">{visitorLabel(contact)}</h1>
-        <p className="mt-1 text-body [overflow-wrap:anywhere]">
-          {contact.email ?? <span className="text-muted">No email address</span>}
-        </p>
-        <p className="mt-1 text-sm text-muted">
-          First contact {format(contact.createdAt, "d MMM yyyy")} · {total}{" "}
-          {total === 1 ? "conversation" : "conversations"}
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold text-heading [overflow-wrap:anywhere]">{visitorLabel(contact)}</h1>
+          <p className="mt-1 text-body [overflow-wrap:anywhere]">
+            {contact.email ?? <span className="text-muted">No email address</span>}
+          </p>
+          <p className="mt-1 text-sm text-muted">
+            First contact {format(contact.createdAt, "d MMM yyyy")} · {total}{" "}
+            {total === 1 ? "conversation" : "conversations"}
+          </p>
+        </div>
+        {blocked ? null : blockControls}
       </header>
+      {blocked ? blockControls : null}
 
       <section className="space-y-2">
         <h2 className="text-[0.6875rem] font-medium uppercase tracking-[0.08em] text-muted">Conversations</h2>

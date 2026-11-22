@@ -146,3 +146,33 @@ describe("listContactsPage", () => {
     expect(second.hasMore).toBe(false);
   });
 });
+
+describe("blocked contacts", () => {
+  it("marks blocked rows, lists a blocked anonymous visitor, and filters to blocked only", async () => {
+    const spammer = (
+      await db.prisma.contact.create({
+        data: { workspaceId: alpha.workspaceId, email: "spam@example.test", blockedAt: new Date() },
+      })
+    ).id;
+    // Anonymous, so normally hidden; blocked, so it must stay findable to lift the block.
+    const anonymous = (await db.prisma.contact.create({ data: { workspaceId: alpha.workspaceId, blockedAt: new Date() } })).id;
+    await db.prisma.contact.create({ data: { workspaceId: beta.workspaceId, email: "beta-spam@example.test", blockedAt: new Date() } });
+
+    const all = await listContactsPage({ workspaceId: alpha.workspaceId });
+    expect(all.items.find((item) => item.id === spammer)?.blocked).toBe(true);
+    expect(all.items.find((item) => item.id === anonymous)?.blocked).toBe(true);
+    expect(all.items.find((item) => item.id === dana)?.blocked).toBe(false);
+
+    const blocked = await listContactsPage({ workspaceId: alpha.workspaceId, blocked: true });
+    expect(blocked.items.map((item) => item.id).sort()).toEqual([spammer, anonymous].sort());
+    expect((await listContactsPage({ workspaceId: alpha.workspaceId, blocked: true, q: "spam@" })).items.map((i) => i.id)).toEqual([
+      spammer,
+    ]);
+    expect((await listContactsPage({ workspaceId: beta.workspaceId, blocked: true })).items.map((i) => i.email)).toEqual([
+      "beta-spam@example.test",
+    ]);
+
+    expect((await getContactHistory({ workspaceId: alpha.workspaceId, contactId: spammer }))?.contact.blockedAt).not.toBeNull();
+    expect((await getContactHistory({ workspaceId: alpha.workspaceId, contactId: dana }))?.contact.blockedAt).toBeNull();
+  });
+});
