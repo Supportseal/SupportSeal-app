@@ -32,37 +32,38 @@ export function ContactBlockControls({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
+  /** Shared by the click and its Undo: either may unblock a contact away. */
+  function settle(result: { error?: string; deleted?: boolean }, next: boolean) {
+    if (result.error) {
+      toast.error(result.error);
+      return;
+    }
+    if (result.deleted) {
+      toast(`${label} is unblocked`, {
+        id: "contact-blocked",
+        description: "They had no conversations left, so the contact was removed.",
+      });
+      router.push("/contacts");
+      return;
+    }
+    toast(next ? `${label} is blocked` : `${label} is unblocked`, {
+      id: "contact-blocked",
+      description: next ? "New messages from this sender are dropped without telling them." : undefined,
+      action: {
+        label: "Undo",
+        onClick: () => {
+          void setContactBlockedAction({ contactId, blocked: !next })
+            .catch(() => CONNECTION_ERROR)
+            .then((undone) => settle(undone, !next));
+        },
+      },
+    });
+    router.refresh();
+  }
+
   function setBlocked(next: boolean) {
     startTransition(async () => {
-      const result = await setContactBlockedAction({ contactId, blocked: next }).catch(() => CONNECTION_ERROR);
-      if (result.error) {
-        toast.error(result.error);
-        return;
-      }
-      if (result.deleted) {
-        toast(`${label} is unblocked`, {
-          id: "contact-blocked",
-          description: "They had no conversations left, so the contact was removed.",
-        });
-        router.push("/contacts");
-        return;
-      }
-      toast(next ? `${label} is blocked` : `${label} is unblocked`, {
-        id: "contact-blocked",
-        description: next ? "New messages from this sender are dropped without telling them." : undefined,
-        action: {
-          label: "Undo",
-          onClick: () => {
-            void setContactBlockedAction({ contactId, blocked: !next })
-              .catch(() => CONNECTION_ERROR)
-              .then((undone) => {
-                if (undone.error) toast.error(undone.error);
-                router.refresh();
-              });
-          },
-        },
-      });
-      router.refresh();
+      settle(await setContactBlockedAction({ contactId, blocked: next }).catch(() => CONNECTION_ERROR), next);
     });
   }
 
