@@ -526,7 +526,8 @@ export async function updateConversation(input: {
  * transaction and their files right after it. Email ledger rows keep only
  * their provider ids, so a retried inbound webhook still deduplicates instead
  * of recreating the thread, but no address or subject survives. A Contact
- * left with no Conversation is deleted too, so no personal data is orphaned.
+ * left with no Conversation is deleted too, so no personal data is orphaned,
+ * unless it is blocked: then its email is what keeps the block in force.
  * The ticket number is never handed out again (FR-INBOX-06).
  */
 export async function deleteConversation(input: {
@@ -557,7 +558,8 @@ export async function deleteConversation(input: {
     });
     if (removed.count === 0) return null;
     await tx.contact.deleteMany({
-      where: { id: conversation.contactId, workspaceId: input.workspaceId, conversations: { none: {} } },
+      // A blocked Contact stays, or deleting the spam would lift the block.
+      where: { id: conversation.contactId, workspaceId: input.workspaceId, blockedAt: null, conversations: { none: {} } },
     });
     return attachments.map((a) => a.storageKey);
   });
@@ -783,6 +785,77 @@ export async function untagConversation(input: {
 }
 
 // --- Contacts ----------------------------------------------------------------
+
+/**
+ * Block or unblock a sender (spam control). Blocking marks the Contact and
+ * every widget visitor that wrote in one of its Conversations; from then on
+ * their email, form and widget messages are dropped silently (no bounce, no
+ * error), see `isEmailBlocked` and `isVisitorBlocked`. Idempotent: blocking
+ * twice keeps the first time.
+ */
+export async function setContactBlocked(input: {
+  workspaceId: string;
+  contactId: string;
+  blocked: boolean;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const contact = await prisma.contact.findFirst({
+    where: { id: input.contactId, workspaceId: input.workspaceId },
+    select: { id: true, blockedAt: true },
+  });
+  if (!contact) return { ok: false, error: "Contact not found." };
+  const blockedAt = input.blocked ? (contact.blockedAt ?? new Date()) : null;
+  await prisma.$transaction([
+    prisma.contact.updateMany({
+      where: { id: contact.id, workspaceId: input.workspaceId },
+      data: { blockedAt },
+    }),
+    prisma.chatVisitor.updateMany({
+      where: {
+        product: { workspaceId: input.workspaceId },
+        conversation: { contactId: contact.id, workspaceId: input.workspaceId },
+      },
+      data: { blockedAt },
+    }),
+  ]);
+  return { ok: true };
+}
+
+/** True when a blocked Contact of this Workspace has one of these addresses. */
+export async function isEmailBlocked(workspaceId: string, emails: Array<string | null | undefined>): Promise<boolean> {
+  const list = [...new Set(emails.map((e) => e?.trim().toLowerCase()).filter((e): e is string => Boolean(e)))];
+  if (list.length === 0) return false;
+  const hit = await prisma.contact.findFirst({
+    where: { workspaceId, email: { in: list }, blockedAt: { not: null } },
+    select: { id: true },
+  });
+  return hit !== null;
+}
+
+/**
+ * A widget visitor is blocked when its own row is (this survives deleting
+ * the Conversation), when its Conversation's Contact is, or when the email
+ * it gave belongs to a blocked Contact.
+ */
+export async function isVisitorBlocked(input: {
+  workspaceId: string;
+  visitorId: string;
+  email: string | null;
+  conversationId: string | null;
+}): Promise<boolean> {
+  const visitor = await prisma.chatVisitor.findFirst({
+    where: { id: input.visitorId, product: { workspaceId: input.workspaceId } },
+    select: { blockedAt: true },
+  });
+  if (visitor?.blockedAt) return true;
+  if (input.conversationId) {
+    const conversation = await prisma.conversation.findFirst({
+      where: { id: input.conversationId, workspaceId: input.workspaceId },
+      select: { contact: { select: { blockedAt: true } } },
+    });
+    if (conversation?.contact.blockedAt) return true;
+  }
+  return isEmailBlocked(input.workspaceId, [input.email]);
+}
 
 export async function listContacts(workspaceId: string) {
   return prisma.contact.findMany({

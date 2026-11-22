@@ -2,7 +2,7 @@ import { signCursor, verifyCursor, type CursorBinding } from "@/lib/api/cursor";
 import { PRIVATE_NO_STORE } from "@/lib/api-errors";
 import { invalidCursor, MAX_CURSOR_LENGTH, parseQuery } from "@/lib/api/query";
 import { v1Route } from "@/lib/api/v1-route";
-import { contactListQuery, serializeContact } from "@/lib/contact-api";
+import { contactListQuery, contactSelect, serializeContact } from "@/lib/contact-api";
 
 export const dynamic = "force-dynamic";
 
@@ -50,7 +50,7 @@ export const GET = v1Route(
       },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       take: limit + 1,
-      select: { id: true, name: true, email: true, createdAt: true },
+      select: contactSelect,
     });
 
     const hasMore = rows.length > limit;

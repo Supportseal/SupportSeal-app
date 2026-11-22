@@ -6,6 +6,7 @@ import { format, isSameDay } from "date-fns";
 import {
   IconArrowLeft,
   IconChevronDown,
+  IconBan,
   IconDots,
   IconLink,
   IconTrash,
@@ -68,7 +69,14 @@ import {
 import { connectInboxStream } from "@/lib/inbox-stream-client";
 import { broadcastNotifyKick } from "@/lib/notifications/client";
 import { visitorLabel } from "../list-pane";
-import { addTagAction, deleteConversationAction, removeTagAction, sendMessageAction, setStatusAction } from "../actions";
+import {
+  addTagAction,
+  deleteConversationAction,
+  removeTagAction,
+  sendMessageAction,
+  setSenderBlockedAction,
+  setStatusAction,
+} from "../actions";
 
 type Message = {
   id: string;
@@ -88,7 +96,8 @@ export type ConversationViewData = {
   channel: "CHAT" | "EMAIL";
   subject: string | null;
   createdAt: string;
-  contact: { id: string; name: string | null; email: string | null };
+  /** blocked: new messages from this sender are dropped silently (spam control). */
+  contact: { id: string; name: string | null; email: string | null; blocked?: boolean };
   /** Email the chat visitor entered; may differ from the contact's (takeover guard). */
   visitorEmail: string | null;
   product: { id: string; name: string; primaryColor: string };
@@ -403,6 +412,38 @@ export function ConversationView({
     }
   }
 
+  function setBlocked(blocked: boolean) {
+    startTransition(async () => {
+      const result = await setSenderBlockedAction({
+        conversationId: conversation.id,
+        contactId: conversation.contact.id,
+        blocked,
+      }).catch(() => ({ error: "Couldn't update the sender. Check your connection and try again." }));
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast(blocked ? `${contactLabel} is blocked` : `${contactLabel} is unblocked`, {
+        id: "sender-blocked",
+        description: blocked ? "New messages from this sender are dropped without telling them." : undefined,
+        action: {
+          label: "Undo",
+          onClick: () => {
+            void setSenderBlockedAction({
+              conversationId: conversation.id,
+              contactId: conversation.contact.id,
+              blocked: !blocked,
+            }).then((undone) => {
+              if (undone.error) toast.error(undone.error);
+              router.refresh();
+            });
+          },
+        },
+      });
+      router.refresh();
+    });
+  }
+
   async function confirmDelete() {
     setDeleting(true);
     const result = await deleteConversationAction({ conversationId: conversation.id }).catch(() => ({
@@ -512,9 +553,11 @@ export function ConversationView({
               <span className="shrink-0 tabular-nums" data-testid="ticket-ref">
                 {formatTicketRef(conversation.ticketNumber)}
               </span>
+
               <span className="truncate sm:hidden">· {conversation.product.name}</span>
             </span>
           </div>
+
           <ProductChip
             name={conversation.product.name}
             color={conversation.product.primaryColor}
@@ -558,6 +601,10 @@ export function ConversationView({
                   <IconLink className="size-4" />
                   Copy conversation link
                 </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setBlocked(!conversation.contact.blocked)} disabled={pending}>
+                  <IconBan className="size-4" />
+                  {conversation.contact.blocked ? "Unblock sender" : "Block sender"}
+                </DropdownMenuItem>
                 {canDelete ? (
                   <DropdownMenuItem className="text-danger" onSelect={() => setDeleteOpen(true)}>
                     <IconTrash className="size-4" />
@@ -580,6 +627,18 @@ export function ConversationView({
           </div>
         </header>
 
+        {conversation.contact.blocked ? (
+          <div
+            className="flex items-center gap-2 border-b border-border bg-danger-label px-4 py-1.5 text-sm text-danger"
+            data-testid="sender-blocked"
+          >
+            <IconBan className="size-4 shrink-0" aria-hidden />
+            <span className="min-w-0 flex-1">Sender blocked. New messages from them are dropped without telling them.</span>
+            <Button variant="text" color="danger" size="sm" onClick={() => setBlocked(false)} disabled={pending}>
+              Unblock
+            </Button>
+          </div>
+        ) : null}
         {failedDeliveryCount > 0 ? (
           <p className="border-b border-border bg-danger-label px-4 py-2 text-sm text-danger">
             {failedDeliveryCount} email {failedDeliveryCount === 1 ? "reply" : "replies"} could not be

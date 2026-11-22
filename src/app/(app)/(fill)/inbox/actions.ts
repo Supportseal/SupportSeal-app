@@ -8,6 +8,7 @@ import { deliverAgentReplyIfRouted } from "@/lib/email/routing";
 import {
   addAgentMessage,
   deleteConversation,
+  setContactBlocked,
   setConversationStatus,
   tagConversation,
   untagConversation,
@@ -128,5 +129,25 @@ export async function deleteConversationAction(input: { conversationId: string }
   const result = await deleteConversation({ workspaceId: ctx.workspace.id, conversationId: input.conversationId });
   if (!result.ok) return { error: result.error };
   revalidatePath("/inbox");
+  return {};
+}
+
+/**
+ * Block or unblock the sender of a Conversation (spam control). Any member
+ * may: it is reversible, and stops nothing but the sender's new messages.
+ */
+export async function setSenderBlockedAction(input: {
+  conversationId: string;
+  contactId: string;
+  blocked: boolean;
+}): Promise<{ error?: string }> {
+  const ctx = await requireWorkspace(`/inbox/${input.conversationId}`);
+  const result = await setContactBlocked({
+    workspaceId: ctx.workspace.id,
+    contactId: input.contactId,
+    blocked: input.blocked === true,
+  });
+  if (!result.ok) return { error: result.error };
+  revalidatePath(`/inbox/${input.conversationId}`);
   return {};
 }

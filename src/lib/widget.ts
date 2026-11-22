@@ -20,6 +20,8 @@ import { allocateTicketNumber, formatTicketRef } from "@/lib/ticket";
 import {
   addCustomerMessage,
   createConversationWithFirstMessage,
+  isEmailBlocked,
+  isVisitorBlocked,
   getConversationDetail,
   upsertContact,
   type CustomerMessageDiagnosticsOutcome,
@@ -151,6 +153,17 @@ export async function createFormConversation(input: {
   }
   const name = input.name?.trim().slice(0, 120) || null;
   const subject = input.subject?.trim().slice(0, 200) || null;
+
+  // Blocked sender (spam control): looks accepted, stores nothing. The
+  // reference is the next unallocated number, so it reads like a real one
+  // without spending a number or pointing at anyone's Conversation.
+  if (await isEmailBlocked(input.product.workspaceId, [email])) {
+    const workspace = await prisma.workspace.findUnique({
+      where: { id: input.product.workspaceId },
+      select: { nextTicketNumber: true },
+    });
+    return { ok: true, ticketRef: formatTicketRef(workspace?.nextTicketNumber ?? 1) };
+  }
 
   const contact = await upsertContact({
     workspaceId: input.product.workspaceId,
@@ -530,12 +543,26 @@ export async function visitorSendMessage(input: {
   userAgent?: string;
 }): Promise<
   | { ok: true; conversationId: string; diagnostics?: CustomerMessageDiagnosticsOutcome }
-  | { ok: false; error: string; paused?: true }
+  | { ok: false; error: string; paused?: true; dropped?: true }
 > {
   const body = input.body.trim().slice(0, 5000);
   if (!body) return { ok: false, error: "Message is empty." };
   if (await isServicePaused(input.product.workspaceId)) {
     return { ok: false, error: SERVICE_PAUSED_CODE, paused: true };
+  }
+
+  // Blocked visitor (spam control): nothing is stored. The route answers
+  // like a success with the thread they already had, so nothing says
+  // "blocked" (`dropped` is never shown to the visitor).
+  if (
+    await isVisitorBlocked({
+      workspaceId: input.product.workspaceId,
+      visitorId: input.visitor.visitorId,
+      email: input.visitor.email,
+      conversationId: input.visitor.conversationId,
+    })
+  ) {
+    return { ok: false, error: "dropped", dropped: true };
   }
 
   // Diagnostics gate: the Product must have diagnostics enabled *now*.

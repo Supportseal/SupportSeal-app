@@ -268,6 +268,9 @@ model ChatVisitor {
   createdAt      DateTime  @default(now())
   lastSeenAt     DateTime  @default(now())
   devContext     Json?
+  /// Set when an agent blocked this visitor (spam control): their widget
+  /// messages are dropped silently. Survives the Conversation's deletion.
+  blockedAt      DateTime?
 
   product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
   conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
@@ -347,6 +350,10 @@ model Contact {
   workspaceId String
   email       String?
   name        String?
+  /// Set when an agent blocked this sender (spam control): new email, form
+  /// and widget messages from them are dropped silently. A blocked Contact
+  /// is kept when its last Conversation is deleted, so the block holds.
+  blockedAt   DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 

@@ -9,7 +9,7 @@ import { API_SCOPES, type ApiScope } from "@/lib/api-scopes";
 import { DEFAULT_LIST_LIMIT, MAX_CURSOR_LENGTH, MAX_LIST_LIMIT } from "@/lib/api/query";
 import { conversationPatchBody, MAX_SEARCH_LENGTH, MAX_TAG_NAME_LENGTH, messageBody, serializeConversation, serializeMessage } from "@/lib/conversation-api";
 import { CONTACT_EMAIL_REGEX } from "@/lib/contact-email";
-import { serializeContact } from "@/lib/contact-api";
+import { contactPatchBody, serializeContact } from "@/lib/contact-api";
 import { serializeTag } from "@/lib/tag-api";
 import { createBody, MAX_BODY_BYTES, MAX_DOMAINS_PER_LIST, parseCreateBody, parsePatchBody, patchBody, serializeProduct } from "@/lib/product-api";
 import { MAX_API_PRODUCTS_PER_WORKSPACE, type ProductWithDomains } from "@/lib/products";
@@ -136,6 +136,7 @@ describe("openapi.json success contract", () => {
       "POST /api/v1/conversations/{conversationId}/messages": ["201"],
       "GET /api/v1/contacts": ["200"],
       "GET /api/v1/contacts/{contactId}": ["200"],
+      "PATCH /api/v1/contacts/{contactId}": ["200"],
       "GET /api/v1/tags": ["200"],
     });
   });
@@ -161,6 +162,7 @@ describe("openapi.json status codes per operation", () => {
     // read takes no query (no 400) and answers unknown ids with the uniform 404.
     "GET /api/v1/contacts": ["200", "400", "401", "403", "429", "500"],
     "GET /api/v1/contacts/{contactId}": ["200", "401", "403", "404", "429", "500"],
+    "PATCH /api/v1/contacts/{contactId}": ["200", "400", "401", "403", "404", "409", "429", "500"],
     // Same class as the Contacts list: query validation (400), no path id
     // (no 404). Tags take no filters beyond the shared page controls.
     "GET /api/v1/tags": ["200", "400", "401", "403", "429", "500"],
@@ -352,7 +354,7 @@ describe("conversation schemas vs the real serializers and zod bodies", () => {
 
 describe("contact schemas vs the real serializer", () => {
   it("Contact has exactly the fields serializeContact returns", () => {
-    const contact = serializeContact({ id: "c", name: "Dana Fisher", email: "dana@example.test", createdAt: new Date(0) });
+    const contact = serializeContact({ id: "c", name: "Dana Fisher", email: "dana@example.test", blockedAt: null, createdAt: new Date(0) });
     const doc = spec.components.schemas.Contact;
     expect(Object.keys(doc.properties).sort(), `Contact fields differ from serializeContact in src/lib/contact-api.ts. ${SPEC_FIX}`).toEqual(Object.keys(contact).sort());
     expect([...doc.required].sort(), `Contact.required differs from serializeContact. ${SPEC_FIX}`).toEqual(Object.keys(contact).sort());
@@ -366,15 +368,23 @@ describe("contact schemas vs the real serializer", () => {
   // would reject real responses. The example checks validate payloads
   // against the zod shape, not the published JSON schema, so this table is
   // what pins the spec side.
+  it("ContactPatch has the fields of contactPatchBody", () => {
+    const real = z.toJSONSchema(contactPatchBody, { io: "input" }) as { properties: Record<string, unknown>; required?: string[] };
+    const doc = spec.components.schemas.ContactPatch;
+    expect(Object.keys(doc.properties).sort(), `ContactPatch fields differ from contactPatchBody in src/lib/contact-api.ts. ${SPEC_FIX}`).toEqual(Object.keys(real.properties).sort());
+    expect([...doc.required].sort(), `ContactPatch.required differs from contactPatchBody. ${SPEC_FIX}`).toEqual([...(real.required ?? [])].sort());
+  });
+
   it("pins Contact's published types, nullability and formats", () => {
     expect(spec.components.schemas.Contact, `Contact constraints drifted from serializeContact in src/lib/contact-api.ts. ${SPEC_FIX}`).toEqual({
       type: "object",
       additionalProperties: false,
-      required: ["id", "name", "email", "createdAt"],
+      required: ["id", "name", "email", "blocked", "createdAt"],
       properties: {
         id: { type: "string", format: "uuid" },
         name: { type: ["string", "null"], description: expect.any(String) },
         email: { type: ["string", "null"], description: expect.any(String) },
+        blocked: { type: "boolean", description: expect.any(String) },
         createdAt: { type: "string", format: "date-time" },
       },
     });
@@ -384,7 +394,7 @@ describe("contact schemas vs the real serializer", () => {
     // Regression (PR 104 review): the form accepts a@b..com, it is stored and
     // returned as-is, so the shape the guard validates against must not
     // demand a strictly-shaped mailbox.
-    const contact = serializeContact({ id: "a91c3e5f-7d02-4b68-8f14-2e6a0c9d3b75", name: null, email: "a@b..com", createdAt: new Date(0) });
+    const contact = serializeContact({ id: "a91c3e5f-7d02-4b68-8f14-2e6a0c9d3b75", name: null, email: "a@b..com", blockedAt: null, createdAt: new Date(0) });
     expect(contactShape.safeParse(contact).error?.message, "contactShape is stricter than the Workspace's own email acceptance (src/lib/contact-email.ts).").toBeUndefined();
   });
 
@@ -433,6 +443,7 @@ type Example = {
     | "patch"
     | "messageCreate"
     | "conversationPatch"
+    | "contactPatch"
     | "product"
     | "list"
     | "whoami"
@@ -449,7 +460,9 @@ type Example = {
 };
 
 const requestKind = (method: string, route: string): Example["kind"] =>
-  route.includes("/api/v1/conversations")
+  route.includes("/api/v1/contacts")
+    ? "contactPatch"
+    : route.includes("/api/v1/conversations")
     ? method === "POST"
       ? "messageCreate"
       : "conversationPatch"
@@ -611,6 +624,7 @@ const contactShape = z.strictObject({
   // Not z.email(): the Workspace's acceptance is permissive and inbound
   // senders are stored as parsed, so stored addresses need no strict shape.
   email: z.string().nullable(),
+  blocked: z.boolean(),
   createdAt: z.iso.datetime(),
 });
 const contactListShape = listOf(contactShape);
@@ -648,6 +662,7 @@ describe.each([
       else if (kind === "patch") expect((await parsePatchBody(json(value, "PATCH"))).ok, hint).toBe(true);
       else if (kind === "messageCreate") expect(messageBody.safeParse(value).error?.message, hint).toBeUndefined();
       else if (kind === "conversationPatch") expect(conversationPatchBody.safeParse(value).error?.message, hint).toBeUndefined();
+      else if (kind === "contactPatch") expect(contactPatchBody.safeParse(value).error?.message, hint).toBeUndefined();
       else if (kind === "message") expect(messageShape.safeParse(value).error?.message, hint).toBeUndefined();
       else if (kind === "conversation") expect(conversationShape.safeParse(value).error?.message, hint).toBeUndefined();
       else if (kind === "product") expect(productShape.safeParse(value).error?.message, hint).toBeUndefined();

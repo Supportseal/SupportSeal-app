@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { GET as listContacts } from "@/app/api/v1/contacts/route";
-import { GET as getContact } from "@/app/api/v1/contacts/[contactId]/route";
+import { GET as getContact, PATCH as updateContact } from "@/app/api/v1/contacts/[contactId]/route";
 import { GET as listConversations } from "@/app/api/v1/conversations/route";
 import { GET as listMessages, POST as createMessage } from "@/app/api/v1/conversations/[conversationId]/messages/route";
 import { DELETE as deleteConversation, GET as getConversation, PATCH as updateConversation } from "@/app/api/v1/conversations/[conversationId]/route";
@@ -97,6 +97,11 @@ const CROSS_TENANT: Record<string, CrossTenantCase> = {
         conversationParams(ids),
       ),
   },
+  updateContact: {
+    writer: true,
+    call: (token, ids) =>
+      updateContact(v1Request("PATCH", `/api/v1/contacts/${ids.Contact}`, { token, body: { blocked: true } }), contactParams(ids)),
+  },
   deleteConversation: {
     writer: true,
     call: (token, ids) =>
@@ -115,7 +120,7 @@ beforeAll(async () => {
   beta = await seedTenant(db.prisma, "beta");
   alphaToken = (await mintToken(db.prisma, alpha.workspaceId, ["conversations:read"], { name: `token ${alpha.canary}` })).token;
   betaToken = (await mintToken(db.prisma, beta.workspaceId, ["conversations:read", "contacts:read"])).token;
-  betaWriterToken = (await mintToken(db.prisma, beta.workspaceId, ["conversations:reply", "conversations:write", "conversations:delete"])).token;
+  betaWriterToken = (await mintToken(db.prisma, beta.workspaceId, ["conversations:reply", "conversations:write", "conversations:delete", "contacts:write"])).token;
 });
 
 afterAll(async () => {

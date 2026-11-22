@@ -48,6 +48,7 @@ export default async function ConversationPage({
           id: conversation.contact.id,
           name: conversation.contact.name,
           email: conversation.contact.email,
+          blocked: conversation.contact.blockedAt !== null,
         },
         visitorEmail: conversation.chatVisitors[0]?.email ?? null,
         product: {
