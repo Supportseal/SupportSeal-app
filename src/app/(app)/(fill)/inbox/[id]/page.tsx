@@ -94,6 +94,7 @@ export default async function ConversationPage({
           : []
       }
       failedDeliveryCount={failedDeliveries}
+      canDelete={ctx.role === "ADMIN"}
       repliesPaused={repliesPaused}
       devContext={{
         identifiedUserId: conversation.chatVisitors[0]?.externalUserId ?? null,

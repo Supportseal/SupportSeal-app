@@ -7,6 +7,9 @@ import { format, isSameDay } from "date-fns";
 import {
   IconArrowLeft,
   IconChevronDown,
+  IconDots,
+  IconLink,
+  IconTrash,
   IconLock,
   IconMail,
   IconMessage2,
@@ -19,6 +22,15 @@ import { cn } from "@/lib/cn";
 import { ProductChip } from "@/components/product-identity";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -59,7 +71,7 @@ import { broadcastNotifyKick } from "@/lib/notifications/client";
 import { visitorLabel } from "@/lib/contact-label";
 import type { ConversationHistoryItem } from "@/lib/contacts";
 import { ConversationHistoryList } from "@/components/conversation-history-list";
-import { addTagAction, removeTagAction, sendMessageAction, setStatusAction } from "../actions";
+import { addTagAction, deleteConversationAction, removeTagAction, sendMessageAction, setStatusAction } from "../actions";
 
 type Message = {
   id: string;
@@ -138,6 +150,7 @@ export function ConversationView({
   diagnostics,
   failedDeliveryCount = 0,
   repliesPaused = false,
+  canDelete = false,
 }: {
   conversation: ConversationViewData;
   availableTags: { id: string; name: string }[];
@@ -151,6 +164,8 @@ export function ConversationView({
   failedDeliveryCount?: number;
   /** Free plan cutoff (src/lib/service-pause.ts): replies refused, notes still work. */
   repliesPaused?: boolean;
+  /** Admins only (D6): shows "Delete conversation" in the header menu. */
+  canDelete?: boolean;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -178,6 +193,8 @@ export function ConversationView({
   // drop it so returning (Undo, Back) never replays the exit.
   if (leavingId !== null && leavingId !== conversation.id) setLeavingId(null);
   const leaving = leavingId === conversation.id;
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [openSnapshot, setOpenSnapshot] = useState<DiagSnapshotView | null>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const lastLength = conversation.messages.length;
@@ -382,6 +399,32 @@ export function ConversationView({
     startTransition(() => router.refresh());
   }
 
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/inbox/${conversation.id}`);
+      toast("Link copied");
+    } catch {
+      toast.error("Couldn't copy the link.");
+    }
+  }
+
+  async function confirmDelete() {
+    setDeleting(true);
+    const result = await deleteConversationAction({ conversationId: conversation.id }).catch(() => ({
+      error: "Couldn't delete the conversation. Check your connection and try again.",
+    }));
+    setDeleting(false);
+    if (result.error) {
+      toast.error(result.error);
+      return;
+    }
+    setDeleteOpen(false);
+    toast(`${formatTicketRef(conversation.ticketNumber)} deleted`);
+    const query = searchParams.size ? `?${searchParams.toString()}` : "";
+    router.push(`/inbox${query}`);
+    router.refresh();
+  }
+
   function changeStatus(status: "OPEN" | "PENDING" | "CLOSED") {
     const previous = conversation.status;
     // Closing moves on to the next conversation in the tab's order (#199)
@@ -509,6 +552,25 @@ export function ConversationView({
                 Reopen
               </Button>
             )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="text" color="secondary" size="sm" iconOnly aria-label="More actions">
+                  <IconDots className="size-5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => void copyLink()}>
+                  <IconLink className="size-4" />
+                  Copy conversation link
+                </DropdownMenuItem>
+                {canDelete ? (
+                  <DropdownMenuItem className="text-danger" onSelect={() => setDeleteOpen(true)}>
+                    <IconTrash className="size-4" />
+                    Delete conversation
+                  </DropdownMenuItem>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button
               variant="text"
               color="secondary"
@@ -847,6 +909,31 @@ export function ConversationView({
           if (!open) setOpenSnapshot(null);
         }}
       />
+
+      {canDelete ? (
+        <Dialog open={deleteOpen} onOpenChange={(open) => !deleting && setDeleteOpen(open)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete {formatTicketRef(conversation.ticketNumber)}?</DialogTitle>
+              <DialogDescription>
+                The conversation with {contactLabel}, its messages, notes and attachments are deleted
+                for everyone. This cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button type="button" variant="outline" color="secondary" disabled={deleting}>
+                  Cancel
+                </Button>
+              </DialogClose>
+              <Button type="button" color="danger" onClick={() => void confirmDelete()} disabled={deleting}>
+                {deleting ? <Spinner className="size-4" /> : null}
+                Delete conversation
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      ) : null}
 
       <SaveReplyModal
         key={saveReplySession}
