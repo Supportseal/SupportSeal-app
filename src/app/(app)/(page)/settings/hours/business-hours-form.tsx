@@ -30,13 +30,21 @@ function rowsFrom(hours: WeeklyHours | null): DayRow[] {
   );
 }
 
-function allTimeZones(): string[] {
+// The browser's zone list, read once and kept stable for useSyncExternalStore.
+// Node's and the browser's tzdata can differ, so the server renders an empty
+// list (only the selected zone and UTC) and the full list appears after
+// hydration; rendering it on the server could mismatch the client.
+let browserZones: string[] | null = null;
+function browserTimeZones(): string[] {
+  if (browserZones) return browserZones;
   try {
-    return Intl.supportedValuesOf("timeZone");
+    browserZones = Intl.supportedValuesOf("timeZone");
   } catch {
-    return ["UTC"];
+    browserZones = [];
   }
+  return browserZones;
 }
+const NO_ZONES: string[] = [];
 
 const noopSubscribe = () => () => undefined;
 function browserTimeZone(): string {
@@ -63,12 +71,12 @@ export function BusinessHoursForm({
   const browserZone = useSyncExternalStore(noopSubscribe, browserTimeZone, () => "UTC");
   const [chosenZone, setTimeZone] = useState<string | null>(initialTimeZone);
   const timeZone = chosenZone ?? browserZone;
+  const list = useSyncExternalStore(noopSubscribe, browserTimeZones, () => NO_ZONES);
   const zones = useMemo(() => {
     // Chrome leaves "UTC" out of supportedValuesOf; offer it always.
-    const list = allTimeZones();
     const withUtc = list.includes("UTC") ? list : [...list, "UTC"];
     return withUtc.includes(timeZone) ? withUtc : [timeZone, ...withUtc];
-  }, [timeZone]);
+  }, [list, timeZone]);
 
   const hours: WeeklyHours = rows.map((row) => {
     if (!row.on) return null;
