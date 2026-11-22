@@ -9,6 +9,8 @@ import { getAuth } from "@/lib/auth";
 import { MAX_BODY_BYTES, MAX_DOMAINS_PER_LIST } from "@/lib/product-api";
 import { getActiveProductByWidgetKey, MAX_API_PRODUCTS_PER_WORKSPACE, setProductSupportEmail } from "@/lib/products";
 import { WIDGET_RATE_LIMITS } from "@/lib/widget-rate-limit";
+import { NextRequest } from "next/server";
+import { GET as widgetConfig } from "@/app/api/widget/config/route";
 import { startTestDb, stopTestDb, type TestDb } from "@/test/integration-db";
 
 let db: TestDb;
@@ -49,6 +51,7 @@ type ProductJson = {
   archived: boolean;
   primaryColor: string;
   supportEmail: string | null;
+  greeting: string | null;
   domains: string[];
   widgetKey: string;
   formKey: string | null;
@@ -167,6 +170,7 @@ describe("POST /api/products", () => {
       archived: false,
       primaryColor: "#aabbcc",
       supportEmail: null,
+      greeting: null,
       domains: ["example.com", "*.example.org", "www.example.com"],
       widgetKey: expect.stringMatching(/^pk_[A-Za-z0-9_-]{32}$/u),
       formKey: expect.stringMatching(/^fk_[A-Za-z0-9_-]{32}$/u),
@@ -518,6 +522,39 @@ describe("PATCH /api/products/:id", () => {
     await patch(token, product.id, { supportEmail: "again@acme.example" });
     const blank = (await (await patch(token, product.id, { supportEmail: "" })).json()) as ProductJson;
     expect(blank.supportEmail).toBeNull();
+  });
+
+  it("sets, keeps and resets the widget greeting, which the public widget config then serves", async () => {
+    const { token } = await workspaceWithToken("Acme");
+    const product = await created(token);
+    expect(product.greeting).toBeNull();
+
+    const set = (await (await patch(token, product.id, { greeting: "  Hi there!\r\nAsk away.  " })).json()) as ProductJson;
+    expect(set).toEqual({ ...product, greeting: "Hi there!\nAsk away." });
+    const renamed = (await (await patch(token, product.id, { name: "Renamed" })).json()) as ProductJson;
+    expect(renamed.greeting).toBe("Hi there!\nAsk away.");
+
+    const config = await widgetConfig(new NextRequest(`http://localhost:3000/api/widget/config?key=${product.widgetKey}&host=http://localhost:3000`));
+    expect(config.status).toBe(200);
+    expect(((await config.json()) as { greeting: string | null }).greeting).toBe("Hi there!\nAsk away.");
+
+    for (const reset of [null, "   "]) {
+      await patch(token, product.id, { greeting: "Again" });
+      const cleared = (await (await patch(token, product.id, { greeting: reset })).json()) as ProductJson;
+      expect(cleared.greeting).toBeNull();
+    }
+  });
+
+  it("refuses an over-limit or control-character greeting with a field detail and changes nothing", async () => {
+    const { token } = await workspaceWithToken("Acme");
+    const product = await created(token);
+    await patch(token, product.id, { greeting: "Saved" });
+    for (const greeting of ["a".repeat(241), "1\n2\n3\n4", "tab\there"]) {
+      const error = await expectError(await patch(token, product.id, { name: "Changed", greeting }), 400, "invalid_request");
+      expect(error.details?.[0].field, greeting).toBe("greeting");
+    }
+    await expectError(await patch(token, product.id, { greeting: 7 }), 400, "invalid_request");
+    expect(await (await get(token, product.id)).json()).toEqual({ ...product, greeting: "Saved" });
   });
 
   it("applies the dashboard's rules to supportEmail, including the Product's own generated address", async () => {

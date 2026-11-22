@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-const PROTECTED_PREFIXES = ["/inbox", "/settings", "/onboarding", "/saved-replies"];
+const PROTECTED_PREFIXES = ["/inbox", "/contacts", "/settings", "/onboarding", "/saved-replies"];
 const SESSION_COOKIES = ["better-auth.session_token", "__Secure-better-auth.session_token"];
 
 export default function proxy(request: NextRequest) {

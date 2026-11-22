@@ -6,6 +6,7 @@ import { sweepGraceRemindersLazily } from "@/lib/grace-reminders";
 import { attachSnapshotInTransaction, purgeExpiredForProduct } from "@/lib/diagnostics/store";
 import type { NormalizedSnapshot } from "@/lib/diagnostics/snapshot";
 import type { Prisma } from "@/generated/prisma/client";
+import { armAgentAlertTimer, sweepAgentAlertsLazily } from "@/lib/agent-alerts";
 import { armEscalationTimer, sweepEscalationsLazily } from "@/lib/escalation";
 import { MAX_TAG_NAME_LENGTH } from "@/lib/conversation-api";
 import { prisma } from "@/lib/prisma";
@@ -208,7 +209,9 @@ export async function createConversationWithFirstMessage(input: {
       ),
     );
   }
+  armAgentAlertTimer(outcome.conversation.id);
   sweepEscalationsLazily();
+  sweepAgentAlertsLazily();
   sweepAutoCloseLazily();
   sweepGraceRemindersLazily();
   return {
@@ -329,7 +332,9 @@ export async function addCustomerMessage(input: {
       new Date(conversation.createdAt.getTime() + conversation.product.escalationAfterMinutes * 60_000),
     );
   }
+  armAgentAlertTimer(conversation.id);
   sweepEscalationsLazily();
+  sweepAgentAlertsLazily();
   sweepAutoCloseLazily();
   sweepGraceRemindersLazily();
   if (diagnostics?.status === "attached") {
