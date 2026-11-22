@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
 import { format, isSameDay } from "date-fns";
@@ -67,7 +68,9 @@ import {
 } from "@/lib/inbox-advance";
 import { connectInboxStream } from "@/lib/inbox-stream-client";
 import { broadcastNotifyKick } from "@/lib/notifications/client";
-import { visitorLabel } from "../list-pane";
+import { visitorLabel } from "@/lib/contact-label";
+import type { ConversationHistoryItem } from "@/lib/contacts";
+import { ConversationHistoryList } from "@/components/conversation-history-list";
 import { addTagAction, deleteConversationAction, removeTagAction, sendMessageAction, setStatusAction } from "../actions";
 
 type Message = {
@@ -95,6 +98,8 @@ export type ConversationViewData = {
   productArchived: boolean;
   tags: { id: string; name: string }[];
   messages: Message[];
+  /** The contact's other conversations in this Product (FR-INBOX-03), newest first. */
+  earlier: { items: ConversationHistoryItem[]; total: number };
 };
 
 export type DevContextProp = {
@@ -1106,7 +1111,35 @@ function ContextPanel({
             ) : null}
           </p>
         ) : null}
+        <Link
+          href={`/contacts/${conversation.contact.id}`}
+          className="mt-1.5 inline-block text-xs text-primary hover:underline"
+        >
+          View contact
+        </Link>
       </section>
+
+      {conversation.earlier.total > 0 ? (
+        <section aria-labelledby="earlier-conversations">
+          <h3
+            id="earlier-conversations"
+            className="text-[0.6875rem] font-medium uppercase tracking-[0.08em] text-muted"
+          >
+            Earlier conversations ({conversation.earlier.total})
+          </h3>
+          <div className="mt-1.5">
+            <ConversationHistoryList items={conversation.earlier.items} showProduct={false} compact />
+          </div>
+          {conversation.earlier.total > conversation.earlier.items.length ? (
+            <Link
+              href={`/contacts/${conversation.contact.id}`}
+              className="mt-1 inline-block text-xs text-primary hover:underline"
+            >
+              See all on the contact page
+            </Link>
+          ) : null}
+        </section>
+      ) : null}
 
       <ContextSection
         productName={conversation.product.name}

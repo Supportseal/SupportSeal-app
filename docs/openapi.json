@@ -1239,6 +1239,15 @@
               "type": "string",
               "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"
             }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Only Contacts whose name or email contains this text, case-insensitive (the dashboard's contacts search). Combines with `email`.",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
           }
         ],
         "responses": {

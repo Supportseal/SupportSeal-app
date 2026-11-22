@@ -122,6 +122,32 @@ describe("GET /api/v1/contacts", () => {
     expect(await page.json()).toEqual({ items: [], nextCursor: null });
   });
 
+  it("searches part of a name or email, case-insensitive, within this Workspace only", async () => {
+    const byName = await (await list(alphaReader, "?q=READER%205")).json();
+    expect(byName.items.map((item: { email: string | null }) => item.email)).toEqual(["reader-5@example.test"]);
+    const byEmail = await (await list(alphaReader, "?q=reader-7%40")).json();
+    expect(byEmail.items.map((item: { email: string | null }) => item.email)).toEqual(["reader-7@example.test"]);
+    // Beta's seeded customer address never answers Alpha's search.
+    const foreign = await (await list(alphaReader, "?q=customer-beta")).json();
+    expect(foreign).toEqual({ items: [], nextCursor: null });
+    // A whitespace-only term is no filter.
+    const blank = await (await list(alphaReader, "?q=%20%20&limit=100")).json();
+    expect(blank.items.length).toBe((await alphaRows()).length);
+  });
+
+  it("pages a search with a cursor bound to the term", async () => {
+    const first = await (await list(alphaReader, "?q=reader&limit=4")).json();
+    expect(first.items).toHaveLength(4);
+    expect(first.nextCursor).not.toBeNull();
+    const next = await list(alphaReader, `?q=reader&limit=4&cursor=${encodeURIComponent(first.nextCursor)}`);
+    expect(next.status).toBe(200);
+    // Case is not part of the filter, so the cursor still verifies.
+    const recased = await list(alphaReader, `?q=READER&limit=4&cursor=${encodeURIComponent(first.nextCursor)}`);
+    expect(recased.status).toBe(200);
+    const other = await list(alphaReader, `?q=readers&limit=4&cursor=${encodeURIComponent(first.nextCursor)}`);
+    expect(other.status).toBe(400);
+  });
+
   it("finds a stored sender longer than the widget's 254-character bound", async () => {
     // Regression (PR 104 review): inbound mail stores parsed senders as-is,
     // unbounded, while the widget/form entry points cap input at 254
