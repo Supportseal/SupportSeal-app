@@ -13,9 +13,10 @@ const ROUTE = "/api/v1/contacts";
  * The Workspace's Contacts (FR-API-09), oldest first: the people behind the
  * Conversations. `email` narrows to the Contact that address identifies —
  * at most one, because emails are unique per Workspace. `q` matches part of
- * a name or email, like the dashboard's contacts search. Every list shares
- * the limit/cursor contract, and the cursor is bound to this Workspace, this
- * route and the email and q filters.
+ * a name or email, like the dashboard's contacts search. `blocked` narrows
+ * to blocked (or unblocked) Contacts, like the dashboard's Blocked filter.
+ * Every list shares the limit/cursor contract, and the cursor is bound to
+ * this Workspace, this route and the email, q and blocked filters.
  */
 export const GET = v1Route(
   { operationId: "listContacts", scope: "contacts:read" },
@@ -32,7 +33,8 @@ export const GET = v1Route(
     // Lower-cased for the same reason as email: the search is case-insensitive,
     // so `Reader` and `reader` are one filter and share a cursor.
     const q = parsed.query.q?.trim().toLowerCase() || undefined;
-    const binding: CursorBinding = { workspaceId: scope.workspaceId, route: ROUTE, filters: { email, q } };
+    const { blocked } = parsed.query;
+    const binding: CursorBinding = { workspaceId: scope.workspaceId, route: ROUTE, filters: { email, q, blocked } };
 
     let position: { id: string; createdAt: Date } | null = null;
     if (cursor !== undefined) {
@@ -47,6 +49,7 @@ export const GET = v1Route(
     const rows = await db.contact.findMany({
       where: {
         ...(email !== undefined ? { email } : {}),
+        ...(blocked !== undefined ? { blockedAt: blocked ? { not: null } : null } : {}),
         // Under AND: the cursor clause below is an OR of its own.
         ...(q !== undefined ? { AND: [contactSearchWhere(q)] } : {}),
         // The cursor carries only the sort keys (createdAt, id) of a row the
