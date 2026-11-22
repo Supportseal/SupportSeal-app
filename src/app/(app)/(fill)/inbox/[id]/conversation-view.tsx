@@ -1048,7 +1048,7 @@ function ContextPanel({
               href={`/contacts/${conversation.contact.id}`}
               className="mt-1 inline-block text-xs text-primary hover:underline"
             >
-              See all {conversation.earlier.total}
+              See all on the contact page
             </Link>
           ) : null}
         </section>

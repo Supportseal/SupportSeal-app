@@ -141,6 +141,9 @@ describe("GET /api/v1/contacts", () => {
     expect(first.nextCursor).not.toBeNull();
     const next = await list(alphaReader, `?q=reader&limit=4&cursor=${encodeURIComponent(first.nextCursor)}`);
     expect(next.status).toBe(200);
+    // Case is not part of the filter, so the cursor still verifies.
+    const recased = await list(alphaReader, `?q=READER&limit=4&cursor=${encodeURIComponent(first.nextCursor)}`);
+    expect(recased.status).toBe(200);
     const other = await list(alphaReader, `?q=readers&limit=4&cursor=${encodeURIComponent(first.nextCursor)}`);
     expect(other.status).toBe(400);
   });

@@ -15,7 +15,7 @@ const ROUTE = "/api/v1/contacts";
  * at most one, because emails are unique per Workspace. `q` matches part of
  * a name or email, like the dashboard's contacts search. Every list shares
  * the limit/cursor contract, and the cursor is bound to this Workspace, this
- * route and the email filter.
+ * route and the email and q filters.
  */
 export const GET = v1Route(
   { operationId: "listContacts", scope: "contacts:read" },
@@ -29,7 +29,9 @@ export const GET = v1Route(
     // lower-case, and the filter must agree. The bound value is the
     // lower-cased one, so pages may switch case freely between requests.
     const email = parsed.query.email?.toLowerCase();
-    const q = parsed.query.q?.trim() || undefined;
+    // Lower-cased for the same reason as email: the search is case-insensitive,
+    // so `Reader` and `reader` are one filter and share a cursor.
+    const q = parsed.query.q?.trim().toLowerCase() || undefined;
     const binding: CursorBinding = { workspaceId: scope.workspaceId, route: ROUTE, filters: { email, q } };
 
     let position: { id: string; createdAt: Date } | null = null;
