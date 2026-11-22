@@ -148,6 +148,36 @@ describe("GET /api/v1/contacts", () => {
     expect(other.status).toBe(400);
   });
 
+  it("filters by blocked, with a cursor bound to the filter", async () => {
+    const [first, second] = [await byEmail("reader-3@example.test"), await byEmail("reader-6@example.test")];
+    await db.prisma.contact.updateMany({ where: { id: { in: [first.id, second.id] } }, data: { blockedAt: new Date() } });
+    try {
+      const blocked = await (await list(alphaReader, "?blocked=true")).json();
+      expect(blocked.items.map((item: { id: string }) => item.id)).toEqual([first.id, second.id]);
+      expect(blocked.items.every((item: { blocked: boolean }) => item.blocked)).toBe(true);
+      const unblocked = await (await list(alphaReader, "?blocked=false&limit=100")).json();
+      expect(unblocked.items.map((item: { id: string }) => item.id)).not.toContain(first.id);
+      expect(unblocked.items.every((item: { blocked: boolean }) => !item.blocked)).toBe(true);
+      // Beta's token never sees Alpha's blocked Contacts.
+      expect((await (await list(betaReader, "?blocked=true")).json()).items).toEqual([]);
+
+      const paged = await (await list(alphaReader, "?blocked=true&limit=1")).json();
+      expect(paged.nextCursor).not.toBeNull();
+      const cursor = encodeURIComponent(paged.nextCursor);
+      const next = await (await list(alphaReader, `?blocked=true&limit=1&cursor=${cursor}`)).json();
+      expect(next.items.map((item: { id: string }) => item.id)).toEqual([second.id]);
+      expect((await list(alphaReader, `?limit=1&cursor=${cursor}`)).status).toBe(400);
+
+      for (const bad of ["?blocked=yes", "?blocked=1", "?blocked="]) {
+        const refused = await list(alphaReader, bad);
+        expect(refused.status, bad).toBe(400);
+        expect((await refused.json()).error.details).toEqual([{ field: "blocked", message: expect.any(String) }]);
+      }
+    } finally {
+      await db.prisma.contact.updateMany({ where: { id: { in: [first.id, second.id] } }, data: { blockedAt: null } });
+    }
+  });
+
   it("finds a stored sender longer than the widget's 254-character bound", async () => {
     // Regression (PR 104 review): inbound mail stores parsed senders as-is,
     // unbounded, while the widget/form entry points cap input at 254

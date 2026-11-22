@@ -1248,6 +1248,18 @@
               "type": "string",
               "maxLength": 200
             }
+          },
+          {
+            "name": "blocked",
+            "in": "query",
+            "description": "`true`: only blocked Contacts (their new messages are dropped silently); `false`: only Contacts that are not blocked. Omitted: both. Combines with `email` and `q`. Any other value is a 400 invalid_request.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
           }
         ],
         "responses": {

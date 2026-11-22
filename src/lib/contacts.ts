@@ -111,7 +111,7 @@ export async function listEarlierConversations(input: {
 export async function getContactHistory(input: { workspaceId: string; contactId: string }) {
   const contact = await prisma.contact.findFirst({
     where: { id: input.contactId, workspaceId: input.workspaceId },
-    select: { id: true, name: true, email: true, createdAt: true },
+    select: { id: true, name: true, email: true, createdAt: true, blockedAt: true },
   });
   if (!contact) return null;
   const where: Prisma.ConversationWhereInput = { workspaceId: input.workspaceId, contactId: contact.id };
@@ -132,6 +132,8 @@ export type ContactListItem = {
   name: string | null;
   email: string | null;
   createdAt: string;
+  /** New messages from a blocked contact are dropped silently (spam control). */
+  blocked: boolean;
   conversationCount: number;
   lastMessageAt: string | null;
 };
@@ -139,19 +141,23 @@ export type ContactListItem = {
 /**
  * One page of the contacts page, newest contact first. Anonymous chat
  * visitors (no name, no email) are left out: every unidentified chat creates
- * one, and a list of "Anonymous visitor" rows helps nobody. The API still
- * lists them.
+ * one, and a list of "Anonymous visitor" rows helps nobody. A blocked one is
+ * listed anyway, or its block could never be found and lifted. The API still
+ * lists them all. `blocked: true` narrows the page to blocked contacts.
  */
 export async function listContactsPage(input: {
   workspaceId: string;
   q?: string;
   page?: number;
+  blocked?: boolean;
 }): Promise<{ items: ContactListItem[]; page: number; hasMore: boolean }> {
   const page = Math.max(1, Math.floor(input.page ?? 1));
   const rows = await prisma.contact.findMany({
     where: {
       workspaceId: input.workspaceId,
-      OR: [{ email: { not: null } }, { name: { not: null } }],
+      ...(input.blocked
+        ? { blockedAt: { not: null } }
+        : { OR: [{ email: { not: null } }, { name: { not: null } }, { blockedAt: { not: null } }] }),
       ...(input.q?.trim() ? { AND: [contactSearchWhere(input.q)] } : {}),
     },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -162,6 +168,7 @@ export async function listContactsPage(input: {
       name: true,
       email: true,
       createdAt: true,
+      blockedAt: true,
       _count: { select: { conversations: true } },
       conversations: { orderBy: { lastMessageAt: "desc" }, take: 1, select: { lastMessageAt: true } },
     },
@@ -175,6 +182,7 @@ export async function listContactsPage(input: {
       name: row.name,
       email: row.email,
       createdAt: row.createdAt.toISOString(),
+      blocked: row.blockedAt !== null,
       conversationCount: row._count.conversations,
       lastMessageAt: row.conversations[0]?.lastMessageAt.toISOString() ?? null,
     })),
