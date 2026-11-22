@@ -64,8 +64,10 @@ export function BusinessHoursForm({
   const [chosenZone, setTimeZone] = useState<string | null>(initialTimeZone);
   const timeZone = chosenZone ?? browserZone;
   const zones = useMemo(() => {
+    // Chrome leaves "UTC" out of supportedValuesOf; offer it always.
     const list = allTimeZones();
-    return list.includes(timeZone) ? list : [timeZone, ...list];
+    const withUtc = list.includes("UTC") ? list : [...list, "UTC"];
+    return withUtc.includes(timeZone) ? withUtc : [timeZone, ...withUtc];
   }, [timeZone]);
 
   const hours: WeeklyHours = rows.map((row) => {
@@ -89,6 +91,7 @@ export function BusinessHoursForm({
           id="bh-enabled"
           checked={enabled}
           onCheckedChange={setEnabled}
+          disabled={pending}
           aria-describedby="bh-enabled-hint"
         />
         <Label htmlFor="bh-enabled" className="mb-0">
@@ -99,7 +102,7 @@ export function BusinessHoursForm({
         When this is off, you never count as available on Auto.
       </p>
 
-      <fieldset disabled={!enabled} className={cn("space-y-4", !enabled && "opacity-60")}>
+      <fieldset disabled={!enabled || pending} className={cn("space-y-4", !enabled && "opacity-60")}>
         <div className="max-w-sm">
           <Label htmlFor="bh-timezone">Time zone</Label>
           <select
