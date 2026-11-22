@@ -1,6 +1,10 @@
 # Product branding — V2 design
 
-Status: design for a later build; no implementation in this change.
+Status: the custom greeting is built (2026-11-22: Widget tab setting,
+`greeting` on the widget config/session and the Workspace API's Product).
+Logo and launcher corner are still a design for a later build. The greeting
+shipped without `brandingRevision`: like the other Product settings it saves
+last-write-wins until the logo work adds the shared revision (BR-10).
 Based on `main` at `0048aa8` (2026-10-01), [PRD](../PRD.md#later-and-outside-scope) and
 [FR-PROD-02](../FRD.md). Choices labelled **Default** are working defaults
 the maintainer can override, not recorded approvals. Open questions are indexed in

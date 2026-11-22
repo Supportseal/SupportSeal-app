@@ -227,6 +227,9 @@ model Product {
   /// `escalationAfterMinutes`.
   escalationEnabled      Boolean   @default(true)
   escalationAfterMinutes Int       @default(20)
+  /// Custom widget greeting (docs/design/branding.md, BQ4): plain text shown
+  /// in a fresh widget thread; null keeps the built-in greeting.
+  greeting             String?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 

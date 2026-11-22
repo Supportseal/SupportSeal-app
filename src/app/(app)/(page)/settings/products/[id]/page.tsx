@@ -169,6 +169,7 @@ export default async function ProductPage({
               name: product.name,
               primaryColor: product.primaryColor,
               widgetPublicKey: product.widgetPublicKey,
+              greeting: product.greeting,
               archived: product.archivedAt !== null,
               isAdmin: ctx.role === "ADMIN",
             }}
