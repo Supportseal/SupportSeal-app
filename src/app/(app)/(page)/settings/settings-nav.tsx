@@ -9,6 +9,7 @@ import { cn } from "@/lib/cn";
 const BASE_TABS = [
   { href: "/settings/team", label: "Team" },
   { href: "/settings/products", label: "Products" },
+  { href: "/settings/notifications", label: "Notifications" },
 ] as const;
 
 export function SettingsNav({ hosted = false, isAdmin = false }: { hosted?: boolean; isAdmin?: boolean }) {

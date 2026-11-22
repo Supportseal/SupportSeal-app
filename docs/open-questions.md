@@ -530,3 +530,17 @@ idempotent. Working defaults the maintainer can override:
 | RQ2 | Does an open dispute suspend? | **Default:** yes — an unresolved dispute on the newest successful charge drops the plan to Free (same grace window; the cardholder's bank has pulled the funds back, so entitlement continues only on the Free allowance). Dispute statuses `won` and `warning_closed` do not suspend; every other status does, including unrecognized ones (fail closed, protects revenue). Suspending a fraud *inquiry* (`warning_needs_response`/`warning_under_review`) is deliberate: it is the earliest fraud signal, and the maintainer may choose to treat inquiries as non-suspending by adding them to the non-suspending set in `paymentRevokesEntitlement` (`src/lib/billing.ts`). |
 | RQ3 | What about a won or lost dispute? | **Default:** a won dispute holds nothing against the plan: `charge.dispute.closed` re-syncs and restores whatever the subscription entitles. A lost dispute keeps Free until a later successful payment (or any sync trigger) re-derives the plan — recovery is automatic through `charge.succeeded`. |
 | RQ4 | Which events are triggers? | **Default:** `charge.refunded`, `charge.dispute.created`, `charge.dispute.updated`, `charge.dispute.closed` (the issue's list, plus `updated` because a won dispute can be reopened) and `charge.succeeded`, so a renewal after a lost dispute or refund restores the plan without waiting for a billing-page visit. Dispute events carry a charge id instead of a customer, so the route resolves the sync key through one charge read (`GET /v1/charges/:id`); a charge that no longer exists is acked, any other read failure fails the delivery so Stripe retries. Status transitions inside "open" (e.g. `needs_response` → `under_review`) change nothing and need no trigger of their own. |
+
+## Agent new-message email alerts (2026-11-22)
+
+Raised by the maintainer on 2026-11-22 ("alerts when the dashboard isn't
+open", email only, no Slack or Discord). Covers FR-ALERT-01 and
+[design/agent-alerts.md](design/agent-alerts.md).
+
+| # | Question | Position |
+| --- | --- | --- |
+| AA1 | When does an email go out? | **Maintainer-overridable default:** 2 minutes after the customer Message, only if it is still unanswered and unread by that member and the member has no dashboard tab open. A shorter or zero delay sends emails about chats a teammate answers within a minute. |
+| AA2 | Who gets it? | **Default:** every Workspace member (Admins and Agents) who has the alert on; there is no assignment yet. When assignment ships (AP-Q2), an assigned Conversation may narrow this to the assignee. |
+| AA3 | On by default? | **Default:** both alerts on for every member, including existing ones; each member turns them off for themselves. Existing customer Messages are marked as already alerted by the migration. |
+| AA4 | API counterpart (parity rule, ADR-0005)? | **Exemption:** the preferences belong to a signed-in person; Workspace API tokens act for no member, so there is nothing for a token to change. |
+| AA5 | Several app processes? | **Known limit:** "dashboard open" is tracked in the process that serves the member's inbox stream, so with several processes a member connected elsewhere may get an email they did not need. Never a missed one. Hosted runs one process. |
