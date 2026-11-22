@@ -524,7 +524,7 @@ every Product.
 | # | Question | Position |
 | --- | --- | --- |
 | BH1 | Whose hours count? | **Maintainer-decided (2026-11-22):** each member sets their own weekly hours in their own time zone (Settings → Business hours). A Product's widget is Live while at least one member is inside their hours. |
-| BH2 | How does the manual switch coexist? | **Maintainer-overridable default:** the Workspace setting gains a third value, Auto. Live and Away stay manual and win until an Admin changes them; only Auto follows business hours. Existing Workspaces stay on their manual value. Admins only, as D1a. |
+| BH2 | How does the manual switch coexist? | **Maintainer-decided (2026-11-22):** the Workspace setting gains a third value, Auto. Live and Away stay manual and win until an Admin changes them; only Auto follows business hours. Existing Workspaces stay on their manual value. Admins only, as D1a. |
 | BH3 | Members without hours | **Default:** they never count, so Auto with nobody's hours set shows Away. The settings page and the header say what Auto resolves to now. |
 | BH4 | Schedule shape | **Default:** one interval per weekday, minutes after midnight; end before start runs past midnight into the next day, equal start and end is the whole day. No holidays or exceptions (use manual Away). |
 | BH5 | When does an open widget notice a change? | **Default:** like a manual switch today, at the next widget boot (page load); no push to already-open panels. A message sent after hours to a panel that still shows Live is a normal chat and is covered by the unanswered-request escalation email. |
