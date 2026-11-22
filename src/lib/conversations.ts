@@ -809,12 +809,17 @@ export async function setContactBlocked(input: {
       where: { id: contact.id, workspaceId: input.workspaceId },
       data: { blockedAt },
     }),
+    // By Conversation, and by the recorded Contact for visitors whose
+    // Conversation was deleted after the block (conversationId is null).
     prisma.chatVisitor.updateMany({
       where: {
         product: { workspaceId: input.workspaceId },
-        conversation: { contactId: contact.id, workspaceId: input.workspaceId },
+        OR: [
+          { conversation: { contactId: contact.id, workspaceId: input.workspaceId } },
+          { blockedContactId: contact.id },
+        ],
       },
-      data: { blockedAt },
+      data: { blockedAt, blockedContactId: input.blocked ? contact.id : null },
     }),
   ]);
   return { ok: true };

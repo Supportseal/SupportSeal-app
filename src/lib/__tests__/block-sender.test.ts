@@ -158,6 +158,14 @@ describe("blocked widget visitors", () => {
     session.conversationId = null;
     expect(await visitorSendMessage({ product, visitor: session, body: "Spam again" })).toMatchObject({ dropped: true });
     expect(await db.prisma.conversation.count()).toBe(0);
+
+    // Unblocking after the delete still reaches the orphaned visitor row.
+    await setContactBlocked({ workspaceId, contactId: conversation.contactId, blocked: false });
+    expect(await db.prisma.chatVisitor.findUniqueOrThrow({ where: { id: session.visitorId } })).toMatchObject({
+      blockedAt: null,
+      blockedContactId: null,
+    });
+    expect((await visitorSendMessage({ product, visitor: session, body: "Real question" })).ok).toBe(true);
   });
 
   it("drops a visitor who gives a blocked email address", async () => {
