@@ -1,5 +1,6 @@
 import { notifyConversationEvent } from "@/lib/events";
 import { linkAttachmentToMessage } from "@/lib/attachments";
+import { getAttachmentStorage } from "@/lib/attachment-storage";
 import { sweepAutoCloseLazily } from "@/lib/autoclose";
 import { sweepGraceRemindersLazily } from "@/lib/grace-reminders";
 import { attachSnapshotInTransaction, purgeExpiredForProduct } from "@/lib/diagnostics/store";
@@ -515,6 +516,65 @@ export async function updateConversation(input: {
       kind: "status",
     });
   }
+  return { ok: true };
+}
+
+/**
+ * Delete a Conversation for good (FR-SEC-02, D6: Admins and
+ * `conversations:delete` tokens; callers check the role). Messages, tags,
+ * read receipts and diagnostics cascade; attachment rows go in the same
+ * transaction and their files right after it. Email ledger rows keep only
+ * their provider ids, so a retried inbound webhook still deduplicates instead
+ * of recreating the thread, but no address or subject survives. A Contact
+ * left with no Conversation is deleted too, so no personal data is orphaned.
+ * The ticket number is never handed out again (FR-INBOX-06).
+ */
+export async function deleteConversation(input: {
+  workspaceId: string;
+  conversationId: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const conversation = await prisma.conversation.findFirst({
+    where: { id: input.conversationId, workspaceId: input.workspaceId },
+    select: { id: true, contactId: true },
+  });
+  if (!conversation) return { ok: false, error: "Conversation not found." };
+
+  const storageKeys = await prisma.$transaction(async (tx) => {
+    const attachments = await tx.attachment.findMany({
+      where: {
+        workspaceId: input.workspaceId,
+        OR: [{ conversationId: conversation.id }, { message: { conversationId: conversation.id } }],
+      },
+      select: { id: true, storageKey: true },
+    });
+    await tx.attachment.deleteMany({ where: { id: { in: attachments.map((a) => a.id) } } });
+    await tx.emailDelivery.updateMany({
+      where: { workspaceId: input.workspaceId, conversationId: conversation.id },
+      data: { conversationId: null, fromAddress: null, toAddress: null, subject: null, reason: null },
+    });
+    const removed = await tx.conversation.deleteMany({
+      where: { id: conversation.id, workspaceId: input.workspaceId },
+    });
+    if (removed.count === 0) return null;
+    await tx.contact.deleteMany({
+      where: { id: conversation.contactId, workspaceId: input.workspaceId, conversations: { none: {} } },
+    });
+    return attachments.map((a) => a.storageKey);
+  });
+  if (storageKeys === null) return { ok: false, error: "Conversation not found." };
+
+  // After commit: a failed file delete leaves an unreferenced file, never a
+  // row pointing at nothing. Logged by key only, so it can be cleaned up.
+  const storage = getAttachmentStorage();
+  for (const key of storageKeys) {
+    await storage.delete(key).catch((error: unknown) => {
+      console.warn(
+        `[attachments] file delete failed key=${key}:`,
+        error instanceof Error ? error.message : error,
+      );
+    });
+  }
+  notifyConversationEvent({ conversationId: conversation.id, workspaceId: input.workspaceId, kind: "status" });
   return { ok: true };
 }
 

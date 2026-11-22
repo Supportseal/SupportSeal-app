@@ -1,7 +1,7 @@
 import { PRIVATE_NO_STORE, apiError } from "@/lib/api-errors";
 import { NOT_FOUND_MESSAGE, v1Route } from "@/lib/api/v1-route";
 import { conversationPatchBody, conversationSelect, serializeConversation } from "@/lib/conversation-api";
-import { updateConversation } from "@/lib/conversations";
+import { deleteConversation, updateConversation } from "@/lib/conversations";
 import { parseBody } from "@/lib/product-api";
 
 export const dynamic = "force-dynamic";
@@ -45,5 +45,22 @@ export const PATCH = v1Route<{ conversationId: string }>(
       select: conversationSelect,
     });
     return Response.json(serializeConversation(updated), { headers: PRIVATE_NO_STORE });
+  },
+);
+
+/**
+ * Delete a Conversation for good (FR-API-09, FR-SEC-02): messages, notes,
+ * tags, diagnostics and attachments go with it, and a Contact left without
+ * Conversations is deleted too. Admin-equivalent, so it has its own scope.
+ * An unknown, foreign or already deleted id is the uniform 404.
+ */
+export const DELETE = v1Route<{ conversationId: string }>(
+  { operationId: "deleteConversation", scope: "conversations:delete" },
+  async ({ scope, db, params, auditResource }) => {
+    const conversation = await db.conversation.findUniqueOrThrow({ where: { id: params.conversationId }, select: { id: true } });
+    auditResource("conversation", conversation.id);
+    const result = await deleteConversation({ workspaceId: scope.workspaceId, conversationId: conversation.id });
+    if (!result.ok) return apiError("not_found", NOT_FOUND_MESSAGE);
+    return new Response(null, { status: 204, headers: PRIVATE_NO_STORE });
   },
 );

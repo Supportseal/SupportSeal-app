@@ -121,7 +121,7 @@ describe("openapi.json success contract", () => {
       }
     }
     const statuses = Object.fromEntries(operations.map(({ method, path: route, op }) => [`${method} ${route}`, Object.keys(op.responses).filter((s) => Number(s) < 300)]));
-    expect(statuses, `Success statuses differ from the routes (POST creates 201; the rest answer 200). ${SPEC_FIX}`).toEqual({
+    expect(statuses, `Success statuses differ from the routes (POST creates 201, DELETE answers 204; the rest answer 200). ${SPEC_FIX}`).toEqual({
       "GET /api/products": ["200"],
       "POST /api/products": ["201"],
       "GET /api/products/{id}": ["200"],
@@ -132,6 +132,7 @@ describe("openapi.json success contract", () => {
       "GET /api/v1/conversations/{conversationId}": ["200"],
       "GET /api/v1/conversations/{conversationId}/messages": ["200"],
       "PATCH /api/v1/conversations/{conversationId}": ["200"],
+      "DELETE /api/v1/conversations/{conversationId}": ["204"],
       "POST /api/v1/conversations/{conversationId}/messages": ["201"],
       "GET /api/v1/contacts": ["200"],
       "GET /api/v1/contacts/{contactId}": ["200"],
@@ -154,6 +155,7 @@ describe("openapi.json status codes per operation", () => {
     "GET /api/v1/conversations/{conversationId}": ["200", "401", "403", "404", "429", "500"],
     "GET /api/v1/conversations/{conversationId}/messages": ["200", "400", "401", "403", "404", "429", "500"],
     "PATCH /api/v1/conversations/{conversationId}": ["200", "400", "401", "403", "404", "409", "429", "500"],
+    "DELETE /api/v1/conversations/{conversationId}": ["204", "401", "403", "404", "429", "500"],
     "POST /api/v1/conversations/{conversationId}/messages": ["201", "400", "401", "402", "403", "404", "409", "429", "500"],
     // The list has no id to miss (no 404) but validates its query; the single
     // read takes no query (no 400) and answers unknown ids with the uniform 404.
