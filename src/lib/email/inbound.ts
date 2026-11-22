@@ -6,7 +6,7 @@ import { sendBounce } from "@/lib/email/outbound";
 import { htmlToText } from "@/lib/email/html-text";
 import { LOOP_HEADER, detectInboundLoop, isOwnAddress, type ProductAddresses } from "@/lib/email/loop-guard";
 import { inboundBodyText } from "@/lib/email/quotes";
-import { addCustomerMessage, upsertContact } from "@/lib/conversations";
+import { addCustomerMessage, isEmailBlocked, upsertContact } from "@/lib/conversations";
 import { notifyAllowanceInBackground } from "@/lib/usage-notifications";
 import { allocateTicketNumber, isTicketNumberCollision } from "@/lib/ticket";
 import {
@@ -489,6 +489,14 @@ export async function processInboundEmail(input: {
     return { outcome: "ignored", reason: loopReason.startsWith("mail loop") ? "mail loop" : "auto-response" };
   }
 
+  // Blocked sender (spam control): dropped silently. Never bounced — a
+  // bounce to a forged From is backscatter, and it tells a spammer the
+  // address is read. Before the archived bounce for the same reason.
+  if (await isEmailBlocked(workspaceId, [sender.email, contactSender.email])) {
+    await recordDelivery("IGNORED", null, "sender blocked");
+    return { outcome: "ignored", reason: "sender blocked" };
+  }
+
   if (product.archivedAt) {
     await recordDelivery("REJECTED", null, "product archived — inbound mail is rejected (bounce)");
     await recordBounce(product.id, sender.email, email.subject, "this Product is archived", product);
@@ -524,6 +532,19 @@ export async function processInboundEmail(input: {
     conversation = await prisma.conversation.findFirst({
       where: { id: existing.conversationId, productId: product.id },
     });
+  }
+
+  // A reply into the thread of a blocked Contact from another address
+  // (a visitor email, a forward) is dropped the same way.
+  if (conversation) {
+    const owner = await prisma.contact.findFirst({
+      where: { id: conversation.contactId, workspaceId },
+      select: { blockedAt: true },
+    });
+    if (owner?.blockedAt) {
+      await recordDelivery("IGNORED", null, "sender blocked");
+      return { outcome: "ignored", reason: "sender blocked" };
+    }
   }
 
   // Quoted originals are stripped conservatively (issue #128): the stored

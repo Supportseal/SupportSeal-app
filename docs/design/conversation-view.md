@@ -45,7 +45,9 @@ and pane frame are in `support-inbox.md`.
   Closed (FR-INBOX-02). Next to it, a one-click primary action: "Close"
   when Open or Pending, "Reopen" when Closed. After a change, show a toast
   with Undo.
-- **Overflow `⋯`**: Copy conversation link, Copy Conversation ID, and
+- **Overflow `⋯`**: Copy conversation link, Block sender / Unblock sender
+  (every role; a toast with Undo, and while it holds a red "Sender blocked"
+  bar under the header with an Unblock button — D14, D14a), and
   Delete conversation (FR-SEC-02; **Admins only**, per the maintainer; Agents don't
   see the item and the server rejects the request). Delete uses a `Dialog`
   (`components/ui/dialog.tsx`) confirmation that states attachments are

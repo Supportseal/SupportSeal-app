@@ -173,6 +173,7 @@ tokens get `products:write`, `conversations:reply` and `conversations:write` (in
 | `conversations:assign` | Assign (after the assignment schema, AA4) | `conversations:read` |
 | `conversations:delete` | Delete a Conversation and its attachments (Admin-equivalent, FR-ACC-01) | `conversations:read` |
 | `contacts:read` | List/get Contacts | n/a |
+| `contacts:write` | Block or unblock a sender (`PATCH /contacts/{id}`, D14a) | `contacts:read` |
 | `contacts:delete` | Delete a Contact (FR-SEC-02) | `contacts:read` |
 | `saved-replies:read` / `saved-replies:write` | List/get; create/edit/delete | write implies read |
 | `attachments:read` | Fetch attachment metadata and content | also implied by `conversations:read` |
@@ -205,6 +206,7 @@ is in [openapi-draft.json](openapi-draft.json).
 | `deleteConversation` | `DELETE /conversations/{id}` | `conversations:delete` | n/a (idempotent by nature) | Delete (Admin) |
 | `listTags` | `GET /tags` | `conversations:read` | n/a | Tag picker |
 | `listContacts` / `getContact` | `GET /contacts`, `/contacts/{id}` | `contacts:read` | n/a | Contact panel |
+| `updateContact` | `PATCH /contacts/{id}` | `contacts:write` | optional | Block sender (D14a) |
 | `deleteContact` | `DELETE /contacts/{id}` | `contacts:delete` | n/a | FR-SEC-02 |
 | `listSavedReplies`, `getSavedReply`, `createSavedReply`, `updateSavedReply`, `deleteSavedReply` | `/saved-replies`, `/saved-replies/{id}` | `saved-replies:*` | create | Saved replies page |
 | `getAttachment` / `getAttachmentContent` | `GET /attachments/{id}`, `/attachments/{id}/content` | `attachments:read` (also implied by `conversations:read`) | n/a | Attachment download |

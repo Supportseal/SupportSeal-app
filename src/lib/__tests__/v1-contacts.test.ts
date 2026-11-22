@@ -74,7 +74,7 @@ describe("GET /api/v1/contacts", () => {
     const body = await response.json();
     const rows = await alphaRows();
     expect(body).toEqual({
-      items: rows.map((row) => ({ id: row.id, name: row.name, email: row.email, createdAt: row.createdAt.toISOString() })),
+      items: rows.map((row) => ({ id: row.id, name: row.name, email: row.email, blocked: false, createdAt: row.createdAt.toISOString() })),
       nextCursor: null,
     });
   });
@@ -97,7 +97,7 @@ describe("GET /api/v1/contacts", () => {
     // The filter lower-cases the way upsertContact stores.
     const page = await (await list(alphaReader, "?email=Reader-3@Example.TEST")).json();
     expect(page).toEqual({
-      items: [{ id: expected.id, name: expected.name, email: "reader-3@example.test", createdAt: expected.createdAt.toISOString() }],
+      items: [{ id: expected.id, name: expected.name, email: "reader-3@example.test", blocked: false, createdAt: expected.createdAt.toISOString() }],
       nextCursor: null,
     });
   });
@@ -325,6 +325,7 @@ describe("GET /api/v1/contacts/{contactId}", () => {
       id: contact.id,
       name: contact.name,
       email: contact.email,
+      blocked: false,
       createdAt: contact.createdAt.toISOString(),
     });
   });

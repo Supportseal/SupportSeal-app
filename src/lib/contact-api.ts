@@ -28,14 +28,22 @@ type ContactRow = {
   id: string;
   name: string | null;
   email: string | null;
+  blockedAt: Date | null;
   createdAt: Date;
 };
+
+/** The columns `serializeContact` needs, for every Contact query the API runs. */
+export const contactSelect = { id: true, name: true, email: true, blockedAt: true, createdAt: true } as const;
+
+/** `PATCH /api/v1/contacts/{id}` (spam control): block or unblock the sender. */
+export const contactPatchBody = z.strictObject({ blocked: z.boolean() });
 
 export function serializeContact(contact: ContactRow) {
   return {
     id: contact.id,
     name: contact.name,
     email: contact.email,
+    blocked: contact.blockedAt !== null,
     createdAt: contact.createdAt.toISOString(),
   };
 }

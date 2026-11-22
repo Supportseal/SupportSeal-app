@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { AttachmentError, storeAttachment, validateAttachment } from "@/lib/attachments";
+import { isVisitorBlocked } from "@/lib/conversations";
 import {
   isWidgetOriginAllowed,
   loadWidgetProduct,
@@ -57,6 +58,20 @@ export async function POST(request: NextRequest) {
       type: file.type,
       data: new Uint8Array(await file.arrayBuffer()),
     });
+    // A blocked sender (D14) sees a normal upload but nothing is stored;
+    // the message it would be attached to is dropped as well.
+    if (
+      await isVisitorBlocked({
+        workspaceId: product.workspaceId,
+        visitorId: visitor.visitorId,
+        email: visitor.email,
+        conversationId: visitor.conversationId,
+      })
+    ) {
+      return NextResponse.json({
+        attachment: { id: crypto.randomUUID(), filename: validated.filename, contentType: validated.contentType, size: validated.data.byteLength },
+      });
+    }
     const stored = await storeAttachment({
       workspaceId: product.workspaceId,
       productId: product.id,

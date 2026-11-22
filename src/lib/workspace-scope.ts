@@ -62,7 +62,7 @@ export const TENANT_MODELS = {
   ApiToken: { kind: "direct", refs: { createdById: "User" } },
   ApiAuditLog: { kind: "direct", refs: { tokenId: "ApiToken" } },
   IdempotencyKey: { kind: "direct", refs: { tokenId: "ApiToken" } },
-  ChatVisitor: { kind: "via", path: ["product"], refs: { productId: "Product", conversationId: "Conversation" } },
+  ChatVisitor: { kind: "via", path: ["product"], refs: { productId: "Product", conversationId: "Conversation", blockedContactId: "Contact" } },
   WidgetHostSignal: { kind: "via", path: ["product"], refs: { productId: "Product" } },
   ProductDomain: { kind: "via", path: ["product"], refs: { productId: "Product" } },
   ProductMailDomain: { kind: "via", path: ["product"], refs: { productId: "Product" } },

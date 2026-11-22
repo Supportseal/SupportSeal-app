@@ -126,6 +126,12 @@ export async function POST(request: NextRequest) {
     diagnostics: payload.diagnostics,
     userAgent: request.headers.get("user-agent") ?? "",
   });
+  if (!result.ok && result.dropped) {
+    // Blocked visitor (spam control): a normal-looking 200 with the thread
+    // as it was; the message is not stored.
+    const thread = await visitorListMessages({ product, visitor });
+    return NextResponse.json({ thread });
+  }
   if (!result.ok) {
     // Free plan cutoff: the panel switches to its "chat unavailable" notice.
     return NextResponse.json({ error: result.error }, { status: result.paused ? 402 : 400 });

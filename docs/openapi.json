@@ -1269,12 +1269,14 @@
                       "id": "a91c3e5f-7d02-4b68-8f14-2e6a0c9d3b75",
                       "name": "Dana Fisher",
                       "email": "dana@example.test",
+                      "blocked": false,
                       "createdAt": "2026-10-28T09:41:00.000Z"
                     },
                     {
                       "id": "c47d1a9e-5b36-4f82-9d0c-7e2a8b4d1f63",
                       "name": null,
                       "email": null,
+                      "blocked": false,
                       "createdAt": "2026-10-30T14:05:00.000Z"
                     }
                   ],
@@ -1376,6 +1378,7 @@
                   "id": "a91c3e5f-7d02-4b68-8f14-2e6a0c9d3b75",
                   "name": "Dana Fisher",
                   "email": "dana@example.test",
+                  "blocked": false,
                   "createdAt": "2026-10-28T09:41:00.000Z"
                 }
               }
@@ -1397,6 +1400,98 @@
             "$ref": "#/components/responses/InternalError"
           }
         }
+      },
+      "patch": {
+        "operationId": "updateContact",
+        "tags": [
+          "Contacts"
+        ],
+        "summary": "Block or unblock a sender",
+        "x-required-scope": "contacts:write",
+        "parameters": [
+          {
+            "name": "contactId",
+            "in": "path",
+            "required": true,
+            "description": "Contact id.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContactPatch"
+              },
+              "examples": {
+                "block": {
+                  "summary": "Block a spammer",
+                  "value": {
+                    "blocked": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The Contact after the change.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Contact"
+                },
+                "example": {
+                  "id": "a91c3e5f-7d02-4b68-8f14-2e6a0c9d3b75",
+                  "name": "Dana Fisher",
+                  "email": "dana@example.test",
+                  "blocked": true,
+                  "createdAt": "2026-10-28T09:41:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/InsufficientScope"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/IdempotencyConflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "description": "Blocks (`true`) or unblocks (`false`) the sender, like the dashboard's Block sender. From then on, new email from the Contact's address, contact form posts with it and widget messages from the visitors in its Conversations are dropped silently: no bounce, no error, nothing in the inbox. Existing Conversations are not changed. Setting the current value again answers 200 and changes nothing. Unblocking a Contact that has no Conversation left deletes it, so no personal data is kept without a reason; the answer is then its last state, and later reads answer 404. `Idempotency-Key` is optional.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/api/v1/tags": {
@@ -2237,6 +2332,10 @@
             ],
             "description": "The Contact's address as the Workspace accepted it (widget capture, contact form or inbound email), stored lower-cased; null for an anonymous chat visitor who has not left one yet. Acceptance is deliberately permissive so real customer addresses are never refused, and inbound senders are stored as parsed: treat the value as an opaque string, not a strictly-shaped mailbox. Unique within the Workspace."
           },
+          "blocked": {
+            "type": "boolean",
+            "description": "True when an agent blocked this sender: their new email, form and widget messages are dropped silently, without a bounce or an error. Existing Conversations stay."
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -2247,6 +2346,7 @@
           "id",
           "name",
           "email",
+          "blocked",
           "createdAt"
         ]
       },
@@ -2313,6 +2413,19 @@
           "items",
           "nextCursor"
         ]
+      },
+      "ContactPatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "blocked"
+        ],
+        "properties": {
+          "blocked": {
+            "type": "boolean",
+            "description": "true blocks the sender, false lifts the block."
+          }
+        }
       }
     },
     "responses": {

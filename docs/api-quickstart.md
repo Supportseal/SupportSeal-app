@@ -557,6 +557,7 @@ curl -sS "$SUPPORTSEAL_URL/api/v1/contacts?email=Dana@Example.TEST" \
       "id": "a91c3e5f-7d02-4b68-8f14-2e6a0c9d3b75",
       "name": "Dana Fisher",
       "email": "dana@example.test",
+      "blocked": false,
       "createdAt": "2026-10-28T09:41:00.000Z"
     }
   ],
@@ -591,6 +592,7 @@ curl -sS "$SUPPORTSEAL_URL/api/v1/contacts/$CONTACT_ID" \
   "id": "a91c3e5f-7d02-4b68-8f14-2e6a0c9d3b75",
   "name": "Dana Fisher",
   "email": "dana@example.test",
+  "blocked": false,
   "createdAt": "2026-10-28T09:41:00.000Z"
 }
 ```
@@ -602,7 +604,21 @@ endpoint and the email filter, so reusing it with a different filter is a
 `400 invalid_cursor`. To see the person's Conversations, filter the inbox
 list by `contactId` (step 7).
 
-## 9. Delete a conversation
+## 9. Block a spammer
+
+`PATCH` a Contact with `blocked` to stop a sender. This needs the
+`contacts:write` scope, which dashboard-created tokens do not carry yet:
+
+```sh
+curl -sS -X PATCH "$SUPPORTSEAL_URL/api/v1/contacts/$CONTACT_ID" \
+  -H "Authorization: Bearer $SUPPORTSEAL_TOKEN" -H "Content-Type: application/json" -d '{"blocked":true}'
+```
+
+The answer is the Contact with `"blocked": true`. From then on their email,
+contact form posts and widget messages are dropped silently: no bounce, no
+error, nothing in the inbox. `{"blocked":false}` lifts the block.
+
+## 10. Delete a conversation
 
 Spam and test threads can be deleted for good. This needs a token with the
 `conversations:delete` scope, which dashboard-created tokens do not carry
