@@ -482,9 +482,16 @@ export async function setVisitorEmail(input: {
   const conversation = conversationId
     ? await prisma.conversation.findUnique({
         where: { id: conversationId },
-        select: { id: true, workspaceId: true, contactId: true },
+        select: { id: true, workspaceId: true, contactId: true, contact: { select: { blockedAt: true } } },
       })
     : null;
+  const visitorRow = await prisma.chatVisitor.findUnique({
+    where: { id: input.visitor.visitorId },
+    select: { blockedAt: true },
+  });
+  // A blocked sender must not be able to move the blocked Contact off its
+  // email (which would lift the block for that address).
+  const blocked = visitorRow?.blockedAt != null || conversation?.contact.blockedAt != null;
   await prisma.$transaction(async (tx) => {
     // lastSeenAt rides along: one visitor write per email capture.
     await tx.chatVisitor.update({
@@ -501,7 +508,7 @@ export async function setVisitorEmail(input: {
       where: { workspaceId: conversation.workspaceId, email },
       select: { id: true },
     });
-    if (!existing) {
+    if (!existing && !blocked) {
       await tx.contact.update({
         where: { id: conversation.contactId },
         data: { email },

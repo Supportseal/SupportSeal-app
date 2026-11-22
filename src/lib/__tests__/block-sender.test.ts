@@ -8,6 +8,7 @@ import {
   createVisitorSession,
   loadFormProduct,
   loadWidgetProduct,
+  setVisitorEmail,
   visitorListMessages,
   visitorSendMessage,
 } from "@/lib/widget";
@@ -170,6 +171,23 @@ describe("blocked widget visitors", () => {
       blockedContactId: null,
     });
     expect((await visitorSendMessage({ product, visitor: session, body: "Real question" })).ok).toBe(true);
+  });
+
+  it("never lets a blocked visitor move the blocked Contact to a new email", async () => {
+    const product = (await loadWidgetProduct("pk_blocktest"))!;
+    const { session } = await createVisitorSession(product, "https://acme.test");
+    session.email = "mover@spam.test";
+    const sent = await visitorSendMessage({ product, visitor: session, body: "Hello" });
+    if (!sent.ok) throw new Error(sent.error);
+    session.conversationId = sent.conversationId;
+    const conversation = await db.prisma.conversation.findUniqueOrThrow({ where: { id: sent.conversationId } });
+    await setContactBlocked({ workspaceId, contactId: conversation.contactId, blocked: true });
+
+    expect(await setVisitorEmail({ visitor: session, email: "fresh@spam.test" })).toMatchObject({ ok: true });
+
+    expect((await db.prisma.contact.findUniqueOrThrow({ where: { id: conversation.contactId } })).email).toBe("mover@spam.test");
+    expect(await isEmailBlocked(workspaceId, ["mover@spam.test"])).toBe(true);
+    expect((await db.prisma.chatVisitor.findUniqueOrThrow({ where: { id: session.visitorId } })).email).toBe("fresh@spam.test");
   });
 
   it("drops a visitor who gives a blocked email address", async () => {
