@@ -56,12 +56,25 @@ export default async function ContactsPage({
 
       {items.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border p-8 text-center">
-          <p className="font-medium text-heading">{q ? "No contacts match" : "No contacts yet"}</p>
-          <p className="mt-1 text-sm text-muted">
-            {q
-              ? "Try part of a name or an email address."
-              : "A contact appears here once a customer leaves a name or email in chat, sends an email or uses your contact form."}
-          </p>
+          {page > 1 ? (
+            <>
+              <p className="font-medium text-heading">No contacts on this page</p>
+              <p className="mt-1 text-sm text-muted">
+                <Link href={pageHref(q, 1)} className="text-primary hover:underline">
+                  Back to the first page
+                </Link>
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="font-medium text-heading">{q ? "No contacts match" : "No contacts yet"}</p>
+              <p className="mt-1 text-sm text-muted">
+                {q
+                  ? "Try part of a name or an email address."
+                  : "A contact appears here once a customer leaves a name or email in chat, sends an email or uses your contact form."}
+              </p>
+            </>
+          )}
         </div>
       ) : (
         <div className="rounded-lg border border-border">
