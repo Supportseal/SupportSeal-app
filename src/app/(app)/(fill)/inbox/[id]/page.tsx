@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 
+import { listEarlierConversations } from "@/lib/contacts";
 import { countFailedOutboundDeliveries, getConversationDetail, listTags } from "@/lib/conversations";
 import { orderContextForDisplay } from "@/lib/dev-context";
 import { hasExpiredSnapshotsForConversation, listSnapshotsForConversation } from "@/lib/diagnostics/store";
@@ -27,12 +28,18 @@ export default async function ConversationPage({
   if (!conversation) notFound();
 
   // A reply is offered when it is All-products or includes this Product.
-  const [savedReplies, snapshots, hasExpired, products, repliesPaused] = await Promise.all([
+  const [savedReplies, snapshots, hasExpired, products, repliesPaused, earlier] = await Promise.all([
     listSavedRepliesForProduct(ctx.workspace.id, conversation.product.id),
     listSnapshotsForConversation(ctx.workspace.id, conversation.id),
     hasExpiredSnapshotsForConversation(ctx.workspace.id, conversation.id),
     listActiveProducts(ctx.workspace.id),
     isServicePaused(ctx.workspace.id),
+    listEarlierConversations({
+      workspaceId: ctx.workspace.id,
+      contactId: conversation.contact.id,
+      productId: conversation.product.id,
+      excludeConversationId: conversation.id,
+    }),
   ]);
 
   return (
@@ -48,6 +55,7 @@ export default async function ConversationPage({
           id: conversation.contact.id,
           name: conversation.contact.name,
           email: conversation.contact.email,
+          blocked: conversation.contact.blockedAt !== null,
         },
         visitorEmail: conversation.chatVisitors[0]?.email ?? null,
         product: {
@@ -57,6 +65,7 @@ export default async function ConversationPage({
         },
         productArchived: conversation.product.archivedAt !== null,
         tags: conversation.tags.map((t) => ({ id: t.tagId, name: t.tag.name })),
+        earlier,
         messages: conversation.messages.map((message) => ({
           id: message.id,
           kind: message.kind,
@@ -86,6 +95,7 @@ export default async function ConversationPage({
           : []
       }
       failedDeliveryCount={failedDeliveries}
+      canDelete={ctx.role === "ADMIN"}
       repliesPaused={repliesPaused}
       devContext={{
         identifiedUserId: conversation.chatVisitors[0]?.externalUserId ?? null,

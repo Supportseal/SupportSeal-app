@@ -84,6 +84,7 @@
                       "archived": false,
                       "primaryColor": "#7367f0",
                       "supportEmail": "help@acme.example",
+                      "greeting": null,
                       "domains": [
                         "acme.example",
                         "www.acme.example"
@@ -181,6 +182,7 @@
                   "archived": false,
                   "primaryColor": "#7367f0",
                   "supportEmail": "help@acme.example",
+                  "greeting": null,
                   "domains": [
                     "acme.example",
                     "www.acme.example"
@@ -260,6 +262,7 @@
                   "archived": false,
                   "primaryColor": "#7367f0",
                   "supportEmail": "help@acme.example",
+                  "greeting": null,
                   "domains": [
                     "acme.example",
                     "www.acme.example"
@@ -358,6 +361,7 @@
                   "archived": false,
                   "primaryColor": "#7367f0",
                   "supportEmail": "help@acme.example",
+                  "greeting": null,
                   "domains": [
                     "acme.example",
                     "www.acme.example"
@@ -437,6 +441,7 @@
                   "archived": false,
                   "primaryColor": "#7367f0",
                   "supportEmail": "help@acme.example",
+                  "greeting": null,
                   "domains": [
                     "acme.example",
                     "www.acme.example"
@@ -899,6 +904,57 @@
             "bearerAuth": []
           }
         ]
+      },
+      "delete": {
+        "operationId": "deleteConversation",
+        "tags": [
+          "Conversations"
+        ],
+        "summary": "Delete a Conversation for good",
+        "x-required-scope": "conversations:delete",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "in": "path",
+            "required": true,
+            "description": "Conversation id. An id from another Workspace answers exactly like an unknown id (404).",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted. Nothing is returned.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/InsufficientScope"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "description": "Deletes the Conversation with its messages, notes, tags, diagnostics and attachment files. A Contact left with no other Conversation is deleted too. The ticket number is never reused. This cannot be undone. Deleting the same id again answers 404, like any unknown id, so a retry after a lost response is safe to treat 404 as done.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/api/v1/conversations/{conversationId}/messages": {
@@ -1183,6 +1239,15 @@
               "type": "string",
               "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"
             }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Only Contacts whose name or email contains this text, case-insensitive (the dashboard's contacts search). Combines with `email`.",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
           }
         ],
         "responses": {
@@ -1204,12 +1269,14 @@
                       "id": "a91c3e5f-7d02-4b68-8f14-2e6a0c9d3b75",
                       "name": "Dana Fisher",
                       "email": "dana@example.test",
+                      "blocked": false,
                       "createdAt": "2026-10-28T09:41:00.000Z"
                     },
                     {
                       "id": "c47d1a9e-5b36-4f82-9d0c-7e2a8b4d1f63",
                       "name": null,
                       "email": null,
+                      "blocked": false,
                       "createdAt": "2026-10-30T14:05:00.000Z"
                     }
                   ],
@@ -1311,6 +1378,7 @@
                   "id": "a91c3e5f-7d02-4b68-8f14-2e6a0c9d3b75",
                   "name": "Dana Fisher",
                   "email": "dana@example.test",
+                  "blocked": false,
                   "createdAt": "2026-10-28T09:41:00.000Z"
                 }
               }
@@ -1332,6 +1400,98 @@
             "$ref": "#/components/responses/InternalError"
           }
         }
+      },
+      "patch": {
+        "operationId": "updateContact",
+        "tags": [
+          "Contacts"
+        ],
+        "summary": "Block or unblock a sender",
+        "x-required-scope": "contacts:write",
+        "parameters": [
+          {
+            "name": "contactId",
+            "in": "path",
+            "required": true,
+            "description": "Contact id.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContactPatch"
+              },
+              "examples": {
+                "block": {
+                  "summary": "Block a spammer",
+                  "value": {
+                    "blocked": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The Contact after the change.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Contact"
+                },
+                "example": {
+                  "id": "a91c3e5f-7d02-4b68-8f14-2e6a0c9d3b75",
+                  "name": "Dana Fisher",
+                  "email": "dana@example.test",
+                  "blocked": true,
+                  "createdAt": "2026-10-28T09:41:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/InsufficientScope"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/IdempotencyConflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "description": "Blocks (`true`) or unblocks (`false`) the sender, like the dashboard's Block sender. From then on, new email from the Contact's address, contact form posts with it and widget messages from the visitors in its Conversations are dropped silently: no bounce, no error, nothing in the inbox. Existing Conversations are not changed. Setting the current value again answers 200 and changes nothing. Unblocking a Contact that has no Conversation left deletes it, so no personal data is kept without a reason; the answer is then its last state, and later reads answer 404. `Idempotency-Key` is optional.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/api/v1/tags": {
@@ -1496,6 +1656,7 @@
           "archived",
           "primaryColor",
           "supportEmail",
+          "greeting",
           "domains",
           "widgetKey",
           "formKey"
@@ -1526,6 +1687,14 @@
             ],
             "maxLength": 254,
             "description": "The Product's public support address, lower-cased, or `null` when none is set. The same field as the dashboard's Support email setting: shown to visitors and used by the mail-loop guard, never a send target or Reply-To."
+          },
+          "greeting": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 240,
+            "description": "The widget greeting visitors see in a new chat before anyone has written (above the message form while the team is away), or `null` for the built-in greeting. The same field as the Widget tab's Greeting setting. Plain text: it is shown as typed, with line breaks kept and no links or formatting."
           },
           "domains": {
             "type": "array",
@@ -1618,6 +1787,13 @@
               "null"
             ],
             "description": "Set the public support address with the dashboard's rules (see `CreateProductRequest.supportEmail`). Blank or `null` removes it; omit the field to leave it as is."
+          },
+          "greeting": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Set the widget greeting with the dashboard's rules: normalised to NFC with line breaks as LF and outer whitespace trimmed, then at most 240 characters (Unicode code points) on at most 3 lines; control characters other than line breaks answer `400 invalid_request` (field `greeting`), as does text over a limit (never truncated). Blank or `null` restores the built-in greeting; omit the field to leave it as is. A fresh widget load shows the new value; open chats keep the old one."
           },
           "addDomains": {
             "type": "array",
@@ -2156,6 +2332,10 @@
             ],
             "description": "The Contact's address as the Workspace accepted it (widget capture, contact form or inbound email), stored lower-cased; null for an anonymous chat visitor who has not left one yet. Acceptance is deliberately permissive so real customer addresses are never refused, and inbound senders are stored as parsed: treat the value as an opaque string, not a strictly-shaped mailbox. Unique within the Workspace."
           },
+          "blocked": {
+            "type": "boolean",
+            "description": "True when an agent blocked this sender: their new email, form and widget messages are dropped silently, without a bounce or an error. Existing Conversations stay."
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -2166,6 +2346,7 @@
           "id",
           "name",
           "email",
+          "blocked",
           "createdAt"
         ]
       },
@@ -2232,6 +2413,19 @@
           "items",
           "nextCursor"
         ]
+      },
+      "ContactPatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "blocked"
+        ],
+        "properties": {
+          "blocked": {
+            "type": "boolean",
+            "description": "true blocks the sender, false lifts the block."
+          }
+        }
       }
     },
     "responses": {

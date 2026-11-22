@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 
 import { prisma } from "@/lib/prisma";
+import { trackDashboardStream } from "@/lib/dashboard-presence";
 import { realtimeDbPollEnabled, subscribeToConversationEvents } from "@/lib/events";
 import { getPrimaryMembership } from "@/lib/workspace";
 import { getSessionUser } from "@/lib/session";
@@ -40,6 +41,8 @@ export async function GET(request: NextRequest) {
       };
 
       send("ready", { workspaceId });
+      // An open dashboard suppresses new-message emails (agent-alerts.md).
+      const untrack = trackDashboardStream(membership.id);
 
       const unsubscribe = subscribeToConversationEvents((event) => {
         if (event.workspaceId === workspaceId) {
@@ -101,6 +104,7 @@ export async function GET(request: NextRequest) {
         clearInterval(heartbeat);
         if (dbTick) clearInterval(dbTick);
         unsubscribe();
+        untrack();
         try {
           controller.close();
         } catch {

@@ -84,7 +84,9 @@ Only `name` is required. `primaryColor` defaults to `#2563eb` and accepts `#rgb`
 or `#rrggbb`. `supportEmail` is the public address your customers write to, with
 the dashboard's rules: trimmed, lower-cased, never the Product's generated
 forwarding address. Blank or `null` stores none; send `{"supportEmail":null}` in a
-`PATCH` later to remove it.
+`PATCH` later to remove it. `greeting` (`PATCH` only) is the plain-text greeting
+the widget shows in a new chat: at most 240 characters on 3 lines; blank or
+`null` restores the built-in one.
 
 ```sh
 # responses carry keys; only write them to a private file
@@ -112,6 +114,7 @@ on.
   "archived": false,
   "primaryColor": "#7367f0",
   "supportEmail": null,
+  "greeting": null,
   "domains": [],
   "widgetKey": "pk_AbCdEfGhIjKlMnOpQrStUvWxYz012345",
   "formKey": "fk_ZyXwVuTsRqPoNmLkJiHgFeDcBa987654"
@@ -145,6 +148,7 @@ curl --fail-with-body -sS -X PATCH "$SUPPORTSEAL_URL/api/products/$PRODUCT_ID" \
   "archived": false,
   "primaryColor": "#7367f0",
   "supportEmail": null,
+  "greeting": null,
   "domains": ["acme.example", "www.acme.example"],
   "widgetKey": "pk_AbCdEfGhIjKlMnOpQrStUvWxYz012345",
   "formKey": "fk_ZyXwVuTsRqPoNmLkJiHgFeDcBa987654"
@@ -553,6 +557,7 @@ curl -sS "$SUPPORTSEAL_URL/api/v1/contacts?email=Dana@Example.TEST" \
       "id": "a91c3e5f-7d02-4b68-8f14-2e6a0c9d3b75",
       "name": "Dana Fisher",
       "email": "dana@example.test",
+      "blocked": false,
       "createdAt": "2026-10-28T09:41:00.000Z"
     }
   ],
@@ -587,6 +592,7 @@ curl -sS "$SUPPORTSEAL_URL/api/v1/contacts/$CONTACT_ID" \
   "id": "a91c3e5f-7d02-4b68-8f14-2e6a0c9d3b75",
   "name": "Dana Fisher",
   "email": "dana@example.test",
+  "blocked": false,
   "createdAt": "2026-10-28T09:41:00.000Z"
 }
 ```
@@ -597,6 +603,36 @@ every other list, oldest first; a cursor is signed over the Workspace, this
 endpoint and the email filter, so reusing it with a different filter is a
 `400 invalid_cursor`. To see the person's Conversations, filter the inbox
 list by `contactId` (step 7).
+
+## 9. Block a spammer
+
+`PATCH` a Contact with `blocked` to stop a sender. This needs the
+`contacts:write` scope, which dashboard-created tokens do not carry yet:
+
+```sh
+curl -sS -X PATCH "$SUPPORTSEAL_URL/api/v1/contacts/$CONTACT_ID" \
+  -H "Authorization: Bearer $SUPPORTSEAL_TOKEN" -H "Content-Type: application/json" -d '{"blocked":true}'
+```
+
+The answer is the Contact with `"blocked": true`. From then on their email,
+contact form posts and widget messages are dropped silently: no bounce, no
+error, nothing in the inbox. `{"blocked":false}` lifts the block.
+
+## 10. Delete a conversation
+
+Spam and test threads can be deleted for good. This needs a token with the
+`conversations:delete` scope, which dashboard-created tokens do not carry
+yet (it is Admin-equivalent and waits for the scope picker):
+
+```sh
+curl -sS -o /dev/null -w '%{http_code}\n' -X DELETE "$SUPPORTSEAL_URL/api/v1/conversations/$CONVERSATION_ID" \
+  -H "Authorization: Bearer $SUPPORTSEAL_TOKEN"
+```
+
+`204` means it is gone, with its messages, notes, tags and attachments; a
+Contact left with no other Conversation goes too. It cannot be undone, and
+the ticket number is never reused. Deleting the same id again answers `404
+not_found`, so a retry after a lost response can treat `404` as done.
 
 ## Errors
 

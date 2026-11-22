@@ -373,50 +373,6 @@
         }
       }
     },
-    "/api/v1/conversations/{conversationId}": {
-      "delete": {
-        "operationId": "deleteConversation",
-        "tags": [
-          "Conversations"
-        ],
-        "summary": "Delete a Conversation and its attachments",
-        "x-required-scope": "conversations:delete",
-        "parameters": [
-          {
-            "name": "conversationId",
-            "in": "path",
-            "required": true,
-            "description": "Conversation id. An id from another Workspace answers exactly like an unknown id (404).",
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Deleted. Deleting again answers 404.",
-            "headers": {
-              "Cache-Control": {
-                "$ref": "#/components/headers/CacheControl"
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/InsufficientScope"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/RateLimited"
-          }
-        }
-      }
-    },
     "/api/v1/conversations/{conversationId}/assignee": {
       "put": {
         "operationId": "setAssignee",

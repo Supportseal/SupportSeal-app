@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { verifyWidgetTestToken } from "@/lib/onboarding";
 import { loadWidgetProduct } from "@/lib/widget";
+import { parseGreeting } from "@/lib/widget-greeting";
 
 export const metadata: Metadata = {
   title: "Widget preview",
@@ -18,14 +19,15 @@ export const dynamic = "force-dynamic";
  * trusted by the widget origin gate, so no allowlist entry is needed.
  *
  * Query: ?key=pk_…&availability=LIVE|AWAY&embed=1 (embed trims the chrome
- * for the Product settings iframe).
+ * for the Product settings iframe). In preview mode `greeting` shows an
+ * unsaved draft greeting (the Widget tab); without it the saved one shows.
  */
 export default async function WidgetPreviewPage({
   searchParams,
 }: {
-  searchParams: Promise<{ key?: string; availability?: string; embed?: string; previewOnly?: string; name?: string; color?: string; testToken?: string }>;
+  searchParams: Promise<{ key?: string; availability?: string; embed?: string; previewOnly?: string; name?: string; color?: string; greeting?: string; testToken?: string }>;
 }) {
-  const { key, availability, embed, previewOnly, name, color, testToken } = await searchParams;
+  const { key, availability, embed, previewOnly, name, color, greeting, testToken } = await searchParams;
   const product = key ? await loadWidgetProduct(key) : null;
   const away = availability === "AWAY";
   if (previewOnly === "1") {
@@ -126,8 +128,21 @@ export default async function WidgetPreviewPage({
         data-test-token={testToken}
         data-name={product.name}
         data-color={product.primaryColor}
+        data-greeting={testToken ? undefined : previewGreeting(greeting, product.greeting)}
         data-availability={away ? "AWAY" : "LIVE"}
       />
     </main>
   );
+}
+
+/**
+ * The greeting the preview shows: the Widget tab's draft when it sent one
+ * (blank = the built-in greeting, as saving would), else the saved value.
+ * Only valid drafts are shown, so the preview never displays text the
+ * real widget could not receive.
+ */
+function previewGreeting(draft: string | undefined, saved: string | null): string | undefined {
+  if (draft === undefined) return saved ?? undefined;
+  const parsed = parseGreeting(draft);
+  return parsed.ok ? (parsed.greeting ?? undefined) : (saved ?? undefined);
 }

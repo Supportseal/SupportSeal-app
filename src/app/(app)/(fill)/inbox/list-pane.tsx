@@ -28,6 +28,7 @@ import {
 import { InboxListClient } from "@/lib/inbox-list-client";
 import { connectInboxStream } from "@/lib/inbox-stream-client";
 import { broadcastNotifyKick } from "@/lib/notifications/client";
+import { visitorLabel } from "@/lib/contact-label";
 
 import { setStatusAction } from "./actions";
 
@@ -66,11 +67,6 @@ function inboxListQuery(filters: { status: string; product: string; q: string; c
   return `/api/inbox?${params.toString()}`;
 }
 
-export function visitorLabel(contact: { id: string; email: string | null; name: string | null }) {
-  if (contact.name?.trim()) return contact.name.trim();
-  if (contact.email) return contact.email;
-  return `Visitor ${(contact.id.replace(/[^a-z0-9]/gi, "").slice(-4) || "0000").toUpperCase()}`;
-}
 
 /** Compact list timestamp: "now", "12m", "3h", "Tue", "27 Oct". */
 function relativeTime(iso: string) {

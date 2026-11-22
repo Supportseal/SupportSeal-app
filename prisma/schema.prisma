@@ -172,6 +172,11 @@ model Membership {
   /// midnight into the next day, end = start is the whole day.
   businessHoursTimeZone String?
   businessHours         Json?
+  /// New-message email alerts (docs/design/agent-alerts.md): each member's
+  /// own choice, on by default. Sent only while the member has no dashboard
+  /// open and the message is still unread and unanswered.
+  emailOnNewConversation Boolean @default(true)
+  emailOnCustomerReply   Boolean @default(true)
   createdAt   DateTime       @default(now())
 
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -239,6 +244,9 @@ model Product {
   /// `escalationAfterMinutes`.
   escalationEnabled      Boolean   @default(true)
   escalationAfterMinutes Int       @default(20)
+  /// Custom widget greeting (docs/design/branding.md, BQ4): plain text shown
+  /// in a fresh widget thread; null keeps the built-in greeting.
+  greeting             String?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
@@ -280,6 +288,12 @@ model ChatVisitor {
   createdAt      DateTime  @default(now())
   lastSeenAt     DateTime  @default(now())
   devContext     Json?
+  /// Set when an agent blocked this visitor (spam control): their widget
+  /// messages are dropped silently. Survives the Conversation's deletion.
+  blockedAt      DateTime?
+  /// The Contact whose block set blockedAt, so unblocking still finds this
+  /// row after the Conversation is deleted (conversationId is then null).
+  blockedContactId String?
 
   product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
   conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
@@ -359,6 +373,10 @@ model Contact {
   workspaceId String
   email       String?
   name        String?
+  /// Set when an agent blocked this sender (spam control): new email, form
+  /// and widget messages from them are dropped silently. A blocked Contact
+  /// is kept when its last Conversation is deleted, so the block holds.
+  blockedAt   DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
@@ -442,6 +460,9 @@ model Message {
   /// rows that predate the column, internal notes, and agent replies whose
   /// routing decision has not run (or crashed) — never backfilled by guessing.
   channel        ConversationChannel?
+  /// Set once by the agent alert sweep when it claims this CUSTOMER Message
+  /// (docs/design/agent-alerts.md); the atomic claim makes alerts at-most-once.
+  agentAlertedAt DateTime?
   createdAt      DateTime    @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -452,6 +473,8 @@ model Message {
   readReceipts MessageReadReceipt[]
 
   @@index([conversationId, createdAt])
+  /// Agent alert sweep: unclaimed CUSTOMER Messages in a recent window.
+  @@index([kind, agentAlertedAt, createdAt])
   @@map("messages")
 }
 

@@ -84,7 +84,7 @@ type Escalation = {
  * UTC send time. Empty Messages are skipped; per-Message and total caps end
  * with a count of what was left out.
  */
-function renderThread(messages: Escalation["messages"]): string[] {
+export function renderCustomerThread(messages: Escalation["messages"]): string[] {
   const blocks: string[] = [];
   const bodies = messages.map((m) => ({ at: m.createdAt, body: m.body.trim() })).filter((m) => m.body);
   let chars = 0;
@@ -114,7 +114,7 @@ export function escalationEmail(input: Escalation, now: Date): { subject: string
       `From: ${who}`,
       `Received: ${input.createdAt.toUTCString()}`,
       ``,
-      ...renderThread(input.messages),
+      ...renderCustomerThread(input.messages),
       `Reply in the dashboard: ${appConfig.url}/inbox/${input.id}`,
       ``,
       `You are receiving this because you are an admin of this Workspace. Change the wait time, or turn these alerts off, in the Product's Email settings.`,

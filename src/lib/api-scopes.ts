@@ -12,6 +12,7 @@ export const API_SCOPES = {
   "conversations:assign": ["conversations:read"],
   "conversations:delete": ["conversations:read"],
   "contacts:read": [],
+  "contacts:write": ["contacts:read"],
   "contacts:delete": ["contacts:read"],
   "saved-replies:read": [],
   "saved-replies:write": ["saved-replies:read"],

@@ -1,11 +1,16 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
 import { format, isSameDay } from "date-fns";
 import {
   IconArrowLeft,
   IconChevronDown,
+  IconBan,
+  IconDots,
+  IconLink,
+  IconTrash,
   IconLock,
   IconMail,
   IconMessage2,
@@ -18,6 +23,15 @@ import { cn } from "@/lib/cn";
 import { ProductChip } from "@/components/product-identity";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -55,8 +69,17 @@ import {
 } from "@/lib/inbox-advance";
 import { connectInboxStream } from "@/lib/inbox-stream-client";
 import { broadcastNotifyKick } from "@/lib/notifications/client";
-import { visitorLabel } from "../list-pane";
-import { addTagAction, removeTagAction, sendMessageAction, setStatusAction } from "../actions";
+import { visitorLabel } from "@/lib/contact-label";
+import type { ConversationHistoryItem } from "@/lib/contacts";
+import { ConversationHistoryList } from "@/components/conversation-history-list";
+import {
+  addTagAction,
+  deleteConversationAction,
+  removeTagAction,
+  sendMessageAction,
+  setSenderBlockedAction,
+  setStatusAction,
+} from "../actions";
 
 type Message = {
   id: string;
@@ -76,13 +99,16 @@ export type ConversationViewData = {
   channel: "CHAT" | "EMAIL";
   subject: string | null;
   createdAt: string;
-  contact: { id: string; name: string | null; email: string | null };
+  /** blocked: new messages from this sender are dropped silently (spam control). */
+  contact: { id: string; name: string | null; email: string | null; blocked?: boolean };
   /** Email the chat visitor entered; may differ from the contact's (takeover guard). */
   visitorEmail: string | null;
   product: { id: string; name: string; primaryColor: string };
   productArchived: boolean;
   tags: { id: string; name: string }[];
   messages: Message[];
+  /** The contact's other conversations in this Product (FR-INBOX-03), newest first. */
+  earlier: { items: ConversationHistoryItem[]; total: number };
 };
 
 export type DevContextProp = {
@@ -133,6 +159,7 @@ export function ConversationView({
   diagnostics,
   failedDeliveryCount = 0,
   repliesPaused = false,
+  canDelete = false,
 }: {
   conversation: ConversationViewData;
   availableTags: { id: string; name: string }[];
@@ -146,6 +173,8 @@ export function ConversationView({
   failedDeliveryCount?: number;
   /** Free plan cutoff (src/lib/service-pause.ts): replies refused, notes still work. */
   repliesPaused?: boolean;
+  /** Admins only (D6): shows "Delete conversation" in the header menu. */
+  canDelete?: boolean;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -173,6 +202,8 @@ export function ConversationView({
   // drop it so returning (Undo, Back) never replays the exit.
   if (leavingId !== null && leavingId !== conversation.id) setLeavingId(null);
   const leaving = leavingId === conversation.id;
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [openSnapshot, setOpenSnapshot] = useState<DiagSnapshotView | null>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const lastLength = conversation.messages.length;
@@ -377,6 +408,64 @@ export function ConversationView({
     startTransition(() => router.refresh());
   }
 
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/inbox/${conversation.id}`);
+      toast("Link copied");
+    } catch {
+      toast.error("Couldn't copy the link.");
+    }
+  }
+
+  function setBlocked(blocked: boolean) {
+    startTransition(async () => {
+      const result = await setSenderBlockedAction({
+        conversationId: conversation.id,
+        contactId: conversation.contact.id,
+        blocked,
+      }).catch(() => ({ error: "Couldn't update the sender. Check your connection and try again." }));
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast(blocked ? `${contactLabel} is blocked` : `${contactLabel} is unblocked`, {
+        id: "sender-blocked",
+        description: blocked ? "New messages from this sender are dropped without telling them." : undefined,
+        action: {
+          label: "Undo",
+          onClick: () => {
+            void setSenderBlockedAction({
+              conversationId: conversation.id,
+              contactId: conversation.contact.id,
+              blocked: !blocked,
+            }).then((undone) => {
+              if (undone.error) toast.error(undone.error);
+              router.refresh();
+            });
+          },
+        },
+      });
+      router.refresh();
+    });
+  }
+
+  async function confirmDelete() {
+    setDeleting(true);
+    const result = await deleteConversationAction({ conversationId: conversation.id }).catch(() => ({
+      error: "Couldn't delete the conversation. Check your connection and try again.",
+    }));
+    setDeleting(false);
+    if (result.error) {
+      toast.error(result.error);
+      return;
+    }
+    setDeleteOpen(false);
+    toast(`${formatTicketRef(conversation.ticketNumber)} deleted`);
+    const query = searchParams.size ? `?${searchParams.toString()}` : "";
+    router.push(`/inbox${query}`);
+    router.refresh();
+  }
+
   function changeStatus(status: "OPEN" | "PENDING" | "CLOSED") {
     const previous = conversation.status;
     // Closing moves on to the next conversation in the tab's order (#199)
@@ -469,9 +558,11 @@ export function ConversationView({
               <span className="shrink-0 tabular-nums" data-testid="ticket-ref">
                 {formatTicketRef(conversation.ticketNumber)}
               </span>
+
               <span className="truncate sm:hidden">· {conversation.product.name}</span>
             </span>
           </div>
+
           <ProductChip
             name={conversation.product.name}
             color={conversation.product.primaryColor}
@@ -504,6 +595,29 @@ export function ConversationView({
                 Reopen
               </Button>
             )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="text" color="secondary" size="sm" iconOnly aria-label="More actions">
+                  <IconDots className="size-5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => void copyLink()}>
+                  <IconLink className="size-4" />
+                  Copy conversation link
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setBlocked(!conversation.contact.blocked)} disabled={pending}>
+                  <IconBan className="size-4" />
+                  {conversation.contact.blocked ? "Unblock sender" : "Block sender"}
+                </DropdownMenuItem>
+                {canDelete ? (
+                  <DropdownMenuItem className="text-danger" onSelect={() => setDeleteOpen(true)}>
+                    <IconTrash className="size-4" />
+                    Delete conversation
+                  </DropdownMenuItem>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button
               variant="text"
               color="secondary"
@@ -518,6 +632,18 @@ export function ConversationView({
           </div>
         </header>
 
+        {conversation.contact.blocked ? (
+          <div
+            className="flex items-center gap-2 border-b border-border bg-danger-label px-4 py-1.5 text-sm text-danger"
+            data-testid="sender-blocked"
+          >
+            <IconBan className="size-4 shrink-0" aria-hidden />
+            <span className="min-w-0 flex-1">Sender blocked. New messages from them are dropped without telling them.</span>
+            <Button variant="text" color="danger" size="sm" onClick={() => setBlocked(false)} disabled={pending}>
+              Unblock
+            </Button>
+          </div>
+        ) : null}
         {failedDeliveryCount > 0 ? (
           <p className="border-b border-border bg-danger-label px-4 py-2 text-sm text-danger">
             {failedDeliveryCount} email {failedDeliveryCount === 1 ? "reply" : "replies"} could not be
@@ -843,6 +969,31 @@ export function ConversationView({
         }}
       />
 
+      {canDelete ? (
+        <Dialog open={deleteOpen} onOpenChange={(open) => !deleting && setDeleteOpen(open)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete {formatTicketRef(conversation.ticketNumber)}?</DialogTitle>
+              <DialogDescription>
+                The conversation with {contactLabel}, its messages, notes and attachments are deleted
+                for everyone. This cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button type="button" variant="outline" color="secondary" disabled={deleting}>
+                  Cancel
+                </Button>
+              </DialogClose>
+              <Button type="button" color="danger" onClick={() => void confirmDelete()} disabled={deleting}>
+                {deleting ? <Spinner className="size-4" /> : null}
+                Delete conversation
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      ) : null}
+
       <SaveReplyModal
         key={saveReplySession}
         open={saveReplyOpen}
@@ -1019,7 +1170,35 @@ function ContextPanel({
             ) : null}
           </p>
         ) : null}
+        <Link
+          href={`/contacts/${conversation.contact.id}`}
+          className="mt-1.5 inline-block text-xs text-primary hover:underline"
+        >
+          View contact
+        </Link>
       </section>
+
+      {conversation.earlier.total > 0 ? (
+        <section aria-labelledby="earlier-conversations">
+          <h3
+            id="earlier-conversations"
+            className="text-[0.6875rem] font-medium uppercase tracking-[0.08em] text-muted"
+          >
+            Earlier conversations ({conversation.earlier.total})
+          </h3>
+          <div className="mt-1.5">
+            <ConversationHistoryList items={conversation.earlier.items} showProduct={false} compact />
+          </div>
+          {conversation.earlier.total > conversation.earlier.items.length ? (
+            <Link
+              href={`/contacts/${conversation.contact.id}`}
+              className="mt-1 inline-block text-xs text-primary hover:underline"
+            >
+              See all on the contact page
+            </Link>
+          ) : null}
+        </section>
+      ) : null}
 
       <ContextSection
         productName={conversation.product.name}

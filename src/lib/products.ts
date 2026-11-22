@@ -10,6 +10,7 @@ import {
   ESCALATION_MIN_MINUTES,
   isValidEscalationMinutes,
 } from "@/lib/escalation";
+import { parseGreeting } from "@/lib/widget-greeting";
 import { normalizeDomain, wwwSibling } from "@/lib/domain";
 import type { MembershipRole, WorkspaceContext } from "@/lib/workspace";
 
@@ -30,6 +31,7 @@ export type ProductWithDomains = {
   diagnosticsEnabledAt: Date | null;
   escalationEnabled: boolean;
   escalationAfterMinutes: number;
+  greeting: string | null;
   createdAt: Date;
   domains: { id: string; domain: string }[];
 };
@@ -215,6 +217,7 @@ function toProductWithDomains(product: {
   diagnosticsEnabledAt: Date | null;
   escalationEnabled: boolean;
   escalationAfterMinutes: number;
+  greeting: string | null;
   createdAt: Date;
   domains: { id: string; domain: string }[];
 }): ProductWithDomains {
@@ -514,10 +517,17 @@ export async function patchProduct(input: {
   includeSiblings?: boolean;
   /** Public support address, validated like the dashboard's; blank or null removes it, undefined leaves it. */
   supportEmail?: string | null;
+  /** Widget greeting (docs/design/branding.md); blank or null restores the built-in one, undefined leaves it. */
+  greeting?: string | null;
 }): Promise<{ ok: true; product: ProductWithDomains } | ProductFailure> {
   if (input.ctx.role !== "ADMIN") return fail("forbidden", ADMIN_ONLY);
 
-  const data: { name?: string; primaryColor?: string; supportEmail?: string | null } = {};
+  const data: { name?: string; primaryColor?: string; supportEmail?: string | null; greeting?: string | null } = {};
+  if (input.greeting !== undefined) {
+    const greeting = parseGreeting(input.greeting);
+    if (!greeting.ok) return fail("invalid", greeting.error, "greeting");
+    data.greeting = greeting.greeting;
+  }
   if (input.name !== undefined) {
     const name = parseProductName(input.name);
     if (!name.ok) return name;

@@ -1,10 +1,12 @@
 import { notifyConversationEvent } from "@/lib/events";
 import { linkAttachmentToMessage } from "@/lib/attachments";
+import { getAttachmentStorage } from "@/lib/attachment-storage";
 import { sweepAutoCloseLazily } from "@/lib/autoclose";
 import { sweepGraceRemindersLazily } from "@/lib/grace-reminders";
 import { attachSnapshotInTransaction, purgeExpiredForProduct } from "@/lib/diagnostics/store";
 import type { NormalizedSnapshot } from "@/lib/diagnostics/snapshot";
 import type { Prisma } from "@/generated/prisma/client";
+import { armAgentAlertTimer, sweepAgentAlertsLazily } from "@/lib/agent-alerts";
 import { armEscalationTimer, sweepEscalationsLazily } from "@/lib/escalation";
 import { MAX_TAG_NAME_LENGTH } from "@/lib/conversation-api";
 import { prisma } from "@/lib/prisma";
@@ -207,7 +209,9 @@ export async function createConversationWithFirstMessage(input: {
       ),
     );
   }
+  armAgentAlertTimer(outcome.conversation.id);
   sweepEscalationsLazily();
+  sweepAgentAlertsLazily();
   sweepAutoCloseLazily();
   sweepGraceRemindersLazily();
   return {
@@ -328,7 +332,9 @@ export async function addCustomerMessage(input: {
       new Date(conversation.createdAt.getTime() + conversation.product.escalationAfterMinutes * 60_000),
     );
   }
+  armAgentAlertTimer(conversation.id);
   sweepEscalationsLazily();
+  sweepAgentAlertsLazily();
   sweepAutoCloseLazily();
   sweepGraceRemindersLazily();
   if (diagnostics?.status === "attached") {
@@ -515,6 +521,67 @@ export async function updateConversation(input: {
       kind: "status",
     });
   }
+  return { ok: true };
+}
+
+/**
+ * Delete a Conversation for good (FR-SEC-02, D6: Admins and
+ * `conversations:delete` tokens; callers check the role). Messages, tags,
+ * read receipts and diagnostics cascade; attachment rows go in the same
+ * transaction and their files right after it. Email ledger rows keep only
+ * their provider ids, so a retried inbound webhook still deduplicates instead
+ * of recreating the thread, but no address or subject survives. A Contact
+ * left with no Conversation is deleted too, so no personal data is orphaned,
+ * unless it is blocked: then its email is what keeps the block in force.
+ * The ticket number is never handed out again (FR-INBOX-06).
+ */
+export async function deleteConversation(input: {
+  workspaceId: string;
+  conversationId: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const conversation = await prisma.conversation.findFirst({
+    where: { id: input.conversationId, workspaceId: input.workspaceId },
+    select: { id: true, contactId: true },
+  });
+  if (!conversation) return { ok: false, error: "Conversation not found." };
+
+  const storageKeys = await prisma.$transaction(async (tx) => {
+    const attachments = await tx.attachment.findMany({
+      where: {
+        workspaceId: input.workspaceId,
+        OR: [{ conversationId: conversation.id }, { message: { conversationId: conversation.id } }],
+      },
+      select: { id: true, storageKey: true },
+    });
+    await tx.attachment.deleteMany({ where: { id: { in: attachments.map((a) => a.id) } } });
+    await tx.emailDelivery.updateMany({
+      where: { workspaceId: input.workspaceId, conversationId: conversation.id },
+      data: { conversationId: null, fromAddress: null, toAddress: null, subject: null, reason: null },
+    });
+    const removed = await tx.conversation.deleteMany({
+      where: { id: conversation.id, workspaceId: input.workspaceId },
+    });
+    if (removed.count === 0) return null;
+    await tx.contact.deleteMany({
+      // A blocked Contact stays, or deleting the spam would lift the block.
+      where: { id: conversation.contactId, workspaceId: input.workspaceId, blockedAt: null, conversations: { none: {} } },
+    });
+    return attachments.map((a) => a.storageKey);
+  });
+  if (storageKeys === null) return { ok: false, error: "Conversation not found." };
+
+  // After commit: a failed file delete leaves an unreferenced file, never a
+  // row pointing at nothing. Logged by key only, so it can be cleaned up.
+  const storage = getAttachmentStorage();
+  for (const key of storageKeys) {
+    await storage.delete(key).catch((error: unknown) => {
+      console.warn(
+        `[attachments] file delete failed key=${key}:`,
+        error instanceof Error ? error.message : error,
+      );
+    });
+  }
+  notifyConversationEvent({ conversationId: conversation.id, workspaceId: input.workspaceId, kind: "status" });
   return { ok: true };
 }
 
@@ -723,6 +790,90 @@ export async function untagConversation(input: {
 }
 
 // --- Contacts ----------------------------------------------------------------
+
+/**
+ * Block or unblock a sender (spam control). Blocking marks the Contact and
+ * every widget visitor that wrote in one of its Conversations; from then on
+ * their email, form and widget messages are dropped silently (no bounce, no
+ * error), see `isEmailBlocked` and `isVisitorBlocked`. Idempotent: blocking
+ * twice keeps the first time.
+ */
+export async function setContactBlocked(input: {
+  workspaceId: string;
+  contactId: string;
+  blocked: boolean;
+}): Promise<{ ok: true; deleted?: true } | { ok: false; error: string }> {
+  const contact = await prisma.contact.findFirst({
+    where: { id: input.contactId, workspaceId: input.workspaceId },
+    select: { id: true, blockedAt: true },
+  });
+  if (!contact) return { ok: false, error: "Contact not found." };
+  const blockedAt = input.blocked ? (contact.blockedAt ?? new Date()) : null;
+  await prisma.$transaction([
+    prisma.contact.updateMany({
+      where: { id: contact.id, workspaceId: input.workspaceId },
+      data: { blockedAt },
+    }),
+    // By Conversation, and by the recorded Contact for visitors whose
+    // Conversation was deleted after the block (conversationId is null).
+    prisma.chatVisitor.updateMany({
+      where: {
+        product: { workspaceId: input.workspaceId },
+        OR: [
+          { conversation: { contactId: contact.id, workspaceId: input.workspaceId } },
+          { blockedContactId: contact.id },
+        ],
+      },
+      data: { blockedAt, blockedContactId: input.blocked ? contact.id : null },
+    }),
+  ]);
+  if (!input.blocked) {
+    // The block was all that kept a Contact whose Conversations were
+    // deleted meanwhile; without it, the usual cleanup applies (FR-SEC-02).
+    const removed = await prisma.contact.deleteMany({
+      where: { id: contact.id, workspaceId: input.workspaceId, blockedAt: null, conversations: { none: {} } },
+    });
+    if (removed.count > 0) return { ok: true, deleted: true };
+  }
+  return { ok: true };
+}
+
+/** True when a blocked Contact of this Workspace has one of these addresses. */
+export async function isEmailBlocked(workspaceId: string, emails: Array<string | null | undefined>): Promise<boolean> {
+  const list = [...new Set(emails.map((e) => e?.trim().toLowerCase()).filter((e): e is string => Boolean(e)))];
+  if (list.length === 0) return false;
+  const hit = await prisma.contact.findFirst({
+    where: { workspaceId, email: { in: list }, blockedAt: { not: null } },
+    select: { id: true },
+  });
+  return hit !== null;
+}
+
+/**
+ * A widget visitor is blocked when its own row is (this survives deleting
+ * the Conversation), when its Conversation's Contact is, or when the email
+ * it gave belongs to a blocked Contact.
+ */
+export async function isVisitorBlocked(input: {
+  workspaceId: string;
+  visitorId: string;
+  email: string | null;
+  conversationId: string | null;
+}): Promise<boolean> {
+  const visitor = await prisma.chatVisitor.findFirst({
+    where: { id: input.visitorId, product: { workspaceId: input.workspaceId } },
+    select: { blockedAt: true },
+  });
+  if (visitor?.blockedAt) return true;
+  if (input.conversationId) {
+    const conversation = await prisma.conversation.findFirst({
+      where: { id: input.conversationId, workspaceId: input.workspaceId },
+      select: { contact: { select: { blockedAt: true } } },
+    });
+    if (conversation?.contact.blockedAt) return true;
+  }
+  return isEmailBlocked(input.workspaceId, [input.email]);
+}
 
 export async function listContacts(workspaceId: string) {
   return prisma.contact.findMany({

@@ -252,6 +252,7 @@ describe("PENDING inactivity auto-close sweep", () => {
         identitySecret: null,
         diagnosticsEnabledAt: null,
         supportEmail: null,
+        greeting: null,
       },
       visitor: {
         visitorId: visitor.id,

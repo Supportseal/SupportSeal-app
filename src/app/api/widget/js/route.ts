@@ -91,6 +91,7 @@ const LOADER_JS = String.raw`
       config = {
         name: script.getAttribute('data-name') || 'Support',
         color: script.getAttribute('data-color') || '#2563eb',
+        greeting: script.getAttribute('data-greeting'),
         availability: script.getAttribute('data-availability') === 'AWAY' ? 'AWAY' : 'LIVE'
       };
       render();
@@ -186,6 +187,7 @@ const LOADER_JS = String.raw`
       (previewMode
         ? '&preview=1&name=' + encodeURIComponent(config.name) +
           '&color=' + encodeURIComponent(config.color) +
+          (config.greeting ? '&greeting=' + encodeURIComponent(config.greeting) : '') +
           '&availability=' + encodeURIComponent(config.availability)
         : '');
     frame.setAttribute('allow', 'clipboard-write; autoplay');

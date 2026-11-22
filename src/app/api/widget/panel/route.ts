@@ -127,6 +127,8 @@ const PANEL_HTML = `<!doctype html>
   .retry { margin-left: auto; padding: 2px 10px; border: 1px solid currentColor; border-radius: 999px; background: none; color: inherit; font-size: 12px; font-weight: 600; }
   #thread { flex: 1; overflow-y: auto; padding: 16px 16px 12px; display: flex; flex-direction: column; gap: 2px; overscroll-behavior: contain; }
   .welcome { margin: auto; text-align: center; color: var(--muted); font-size: 13.5px; padding: 24px 12px; }
+  .greeting { white-space: pre-line; overflow-wrap: anywhere; }
+  #awayGreeting { color: var(--heading); }
   .welcome .avatar { margin: 0 auto 10px; width: 48px; height: 48px; font-size: 20px; background: var(--accent); color: var(--on-accent); }
   .day { align-self: stretch; display: flex; align-items: center; gap: 10px; margin: 12px 0 4px; font-size: 11.5px; font-weight: 500; color: var(--muted); }
   .day::before, .day::after { content: ""; flex: 1; height: 1px; background: var(--line); }
@@ -212,6 +214,7 @@ const PANEL_HTML = `<!doctype html>
   <div class="banner" id="banner" role="status">We can't reach support right now. <button class="retry" id="retryBtn" type="button">Retry</button></div>
   <div id="thread" role="log" aria-live="polite"></div>
   <form id="away" style="display:none" novalidate>
+    <p class="greeting" id="awayGreeting" dir="auto" hidden></p>
     <div>
       <label for="email">Email</label>
       <input class="field" id="email" type="email" name="email" autocomplete="email" required aria-describedby="awayHint">
@@ -623,6 +626,12 @@ ${WIDGET_SOUND_JS}
     document.getElementById('title').textContent = data.name;
     document.getElementById('avatar').textContent = initial();
     var away = data.availability === 'AWAY';
+    // Custom greeting (docs/design/branding.md): plain text via textContent,
+    // so markup in it stays literal. Away shows it above the form; without
+    // one the away form keeps its V1 look.
+    var awayGreeting = document.getElementById('awayGreeting');
+    awayGreeting.textContent = greetingText() || '';
+    awayGreeting.hidden = !greetingText();
     // Optional per-Product support address (display only; textContent keeps it inert).
     if (data.supportEmail) document.getElementById('awaySupport').textContent = 'Prefer email? Write to ' + data.supportEmail + '.';
     renderStatus();
@@ -672,6 +681,10 @@ ${WIDGET_SOUND_JS}
     thread.appendChild(card);
   }
 
+  function greetingText() {
+    return config && typeof config.greeting === 'string' && config.greeting.trim() ? config.greeting : null;
+  }
+
   function initial() {
     var name = (config && config.name) || '';
     return name ? name.charAt(0).toUpperCase() : '?';
@@ -700,7 +713,10 @@ ${WIDGET_SOUND_JS}
       mark.setAttribute('aria-hidden', 'true');
       mark.textContent = initial();
       var p = document.createElement('p');
-      p.textContent = 'Ask us anything, we\\u2019re here.';
+      p.className = 'greeting';
+      p.id = 'greeting';
+      p.dir = 'auto';
+      p.textContent = greetingText() || 'Ask us anything, we\\u2019re here.';
       welcome.appendChild(mark);
       welcome.appendChild(p);
       thread.appendChild(welcome);
@@ -929,6 +945,7 @@ ${WIDGET_SOUND_JS}
       applyConfig({
         name: params.get('name') || 'Support',
         color: params.get('color') || '#2563eb',
+        greeting: params.get('greeting'),
         availability: params.get('availability') === 'AWAY' ? 'AWAY' : 'LIVE'
       });
       render();

@@ -14,6 +14,7 @@ export function serializeProduct(product: ProductWithDomains) {
     archived: product.archivedAt !== null,
     primaryColor: product.primaryColor,
     supportEmail: product.supportEmail,
+    greeting: product.greeting,
     domains: product.domains.map((d) => d.domain),
     widgetKey: product.widgetPublicKey,
     formKey: product.formPublicKey,
@@ -57,6 +58,8 @@ export const patchBody = z
     name: z.string().optional(),
     primaryColor: colour.optional(),
     supportEmail: supportEmail.optional(),
+    // Length/line/control rules are the dashboard's (`parseGreeting`, run by the core); blank or null restores the built-in greeting.
+    greeting: z.string().nullable().optional(),
     addDomains: domainList.optional(),
     removeDomains: domainList.optional(),
     includeSiblings: z.boolean().optional(),
@@ -66,9 +69,10 @@ export const patchBody = z
       body.name !== undefined ||
       body.primaryColor !== undefined ||
       body.supportEmail !== undefined ||
+      body.greeting !== undefined ||
       Boolean(body.addDomains?.length) ||
       Boolean(body.removeDomains?.length),
-    { message: "Send at least one of: name, primaryColor, supportEmail, addDomains (non-empty), removeDomains (non-empty)." },
+    { message: "Send at least one of: name, primaryColor, supportEmail, greeting, addDomains (non-empty), removeDomains (non-empty)." },
   );
 
 export type ParsedBody<T> = { ok: true; body: T } | { ok: false; response: NextResponse };

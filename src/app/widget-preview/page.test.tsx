@@ -23,6 +23,7 @@ const product: WidgetProduct = {
   identitySecret: null,
   diagnosticsEnabledAt: null,
   supportEmail: null,
+  greeting: null,
 };
 
 describe("widget preview page", () => {
@@ -66,5 +67,20 @@ describe("widget preview page", () => {
 
     expect(markup).toContain("Live preview");
     expect(markup).toContain('data-preview="1"');
+  });
+  it("shows the Widget tab's draft greeting in preview mode, else the saved one", async () => {
+    vi.mocked(loadWidgetProduct).mockResolvedValue({ ...product, greeting: "Saved hello" });
+    const render = async (greeting?: string) =>
+      renderToStaticMarkup(
+        await WidgetPreviewPage({
+          searchParams: Promise.resolve({ key: product.widgetPublicKey, embed: "1", ...(greeting === undefined ? {} : { greeting }) }),
+        }),
+      );
+
+    expect(await render()).toContain('data-greeting="Saved hello"');
+    expect(await render("<b>Draft</b>\nline")).toContain('data-greeting="&lt;b&gt;Draft&lt;/b&gt;\nline"');
+    // Blank previews the built-in greeting; an invalid draft keeps the saved one.
+    expect(await render("  ")).not.toContain("data-greeting");
+    expect(await render("1\n2\n3\n4")).toContain('data-greeting="Saved hello"');
   });
 });

@@ -74,7 +74,7 @@ describe("GET /api/v1/contacts", () => {
     const body = await response.json();
     const rows = await alphaRows();
     expect(body).toEqual({
-      items: rows.map((row) => ({ id: row.id, name: row.name, email: row.email, createdAt: row.createdAt.toISOString() })),
+      items: rows.map((row) => ({ id: row.id, name: row.name, email: row.email, blocked: false, createdAt: row.createdAt.toISOString() })),
       nextCursor: null,
     });
   });
@@ -97,7 +97,7 @@ describe("GET /api/v1/contacts", () => {
     // The filter lower-cases the way upsertContact stores.
     const page = await (await list(alphaReader, "?email=Reader-3@Example.TEST")).json();
     expect(page).toEqual({
-      items: [{ id: expected.id, name: expected.name, email: "reader-3@example.test", createdAt: expected.createdAt.toISOString() }],
+      items: [{ id: expected.id, name: expected.name, email: "reader-3@example.test", blocked: false, createdAt: expected.createdAt.toISOString() }],
       nextCursor: null,
     });
   });
@@ -120,6 +120,32 @@ describe("GET /api/v1/contacts", () => {
     const page = await list(alphaReader, "?email=nobody-here@example.test");
     expect(page.status).toBe(200);
     expect(await page.json()).toEqual({ items: [], nextCursor: null });
+  });
+
+  it("searches part of a name or email, case-insensitive, within this Workspace only", async () => {
+    const byName = await (await list(alphaReader, "?q=READER%205")).json();
+    expect(byName.items.map((item: { email: string | null }) => item.email)).toEqual(["reader-5@example.test"]);
+    const byEmail = await (await list(alphaReader, "?q=reader-7%40")).json();
+    expect(byEmail.items.map((item: { email: string | null }) => item.email)).toEqual(["reader-7@example.test"]);
+    // Beta's seeded customer address never answers Alpha's search.
+    const foreign = await (await list(alphaReader, "?q=customer-beta")).json();
+    expect(foreign).toEqual({ items: [], nextCursor: null });
+    // A whitespace-only term is no filter.
+    const blank = await (await list(alphaReader, "?q=%20%20&limit=100")).json();
+    expect(blank.items.length).toBe((await alphaRows()).length);
+  });
+
+  it("pages a search with a cursor bound to the term", async () => {
+    const first = await (await list(alphaReader, "?q=reader&limit=4")).json();
+    expect(first.items).toHaveLength(4);
+    expect(first.nextCursor).not.toBeNull();
+    const next = await list(alphaReader, `?q=reader&limit=4&cursor=${encodeURIComponent(first.nextCursor)}`);
+    expect(next.status).toBe(200);
+    // Case is not part of the filter, so the cursor still verifies.
+    const recased = await list(alphaReader, `?q=READER&limit=4&cursor=${encodeURIComponent(first.nextCursor)}`);
+    expect(recased.status).toBe(200);
+    const other = await list(alphaReader, `?q=readers&limit=4&cursor=${encodeURIComponent(first.nextCursor)}`);
+    expect(other.status).toBe(400);
   });
 
   it("finds a stored sender longer than the widget's 254-character bound", async () => {
@@ -299,6 +325,7 @@ describe("GET /api/v1/contacts/{contactId}", () => {
       id: contact.id,
       name: contact.name,
       email: contact.email,
+      blocked: false,
       createdAt: contact.createdAt.toISOString(),
     });
   });
