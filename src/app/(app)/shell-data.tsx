@@ -51,7 +51,8 @@ export async function Shell({
       user={{ id: ctx.user.id, name: ctx.user.name, email: ctx.user.email }}
       workspaceId={ctx.workspace.id}
       role={ctx.role}
-      availability={availability}
+      availability={availability.mode}
+      effectiveAvailability={availability.effective}
       onAvailabilityChange={setAvailabilityAction}
       mode={mode}
       products={sortSidebarProducts(

@@ -12,7 +12,8 @@ import { addProductDomain, archiveProduct, rotateProductWidgetKey } from "@/lib/
 import { allocateTicketNumber } from "@/lib/ticket";
 import { markCustomerMessagesRead } from "@/lib/unread";
 import { getAvailabilityForProduct, loadFormProduct, loadWidgetProduct } from "@/lib/widget";
-import { setAvailability, type WorkspaceContext } from "@/lib/workspace";
+import { DEFAULT_WEEKLY_HOURS } from "@/lib/business-hours";
+import { saveBusinessHours, setAvailability, type WorkspaceContext } from "@/lib/workspace";
 import { GET as notificationsFeed } from "@/app/api/inbox/notifications/route";
 import { GET as unreadCounts } from "@/app/api/inbox/unread/route";
 
@@ -107,6 +108,46 @@ describe("product lookup cache", () => {
     expect(await getAvailabilityForProduct(workspaceId)).toBe("LIVE");
   });
 
+  it("follows business hours on AUTO and sees saved hours at once", async () => {
+    setProductLookupCacheEnabled(true);
+    const { ctx } = await seedProduct("cache-hours@example.com", "pk_cache_hours");
+    const workspaceId = ctx.workspace.id;
+    expect((await setAvailability({ workspaceId, actorRole: "ADMIN", availability: "AUTO" })).ok).toBe(true);
+    // Nobody has hours yet: Away.
+    expect(await getAvailabilityForProduct(workspaceId)).toBe("AWAY");
+    // Every day, all day (equal start and end): Live whenever the test runs.
+    const always = Array.from({ length: 7 }, () => ({ start: 0, end: 0 }));
+    expect((await saveBusinessHours({ workspaceId, userId: ctx.user.id, timeZone: "UTC", hours: always })).ok).toBe(true);
+    expect(await getAvailabilityForProduct(workspaceId)).toBe("LIVE");
+    // Clearing the hours is seen at once too.
+    expect((await saveBusinessHours({ workspaceId, userId: ctx.user.id, timeZone: "UTC", hours: null })).ok).toBe(true);
+    expect(await getAvailabilityForProduct(workspaceId)).toBe("AWAY");
+    // A manual override ignores the schedules.
+    expect((await saveBusinessHours({ workspaceId, userId: ctx.user.id, timeZone: "UTC", hours: DEFAULT_WEEKLY_HOURS })).ok).toBe(true);
+    expect((await setAvailability({ workspaceId, actorRole: "ADMIN", availability: "LIVE" })).ok).toBe(true);
+    expect(await getAvailabilityForProduct(workspaceId)).toBe("LIVE");
+  });
+
+  it("validates business hours and refuses non-members", async () => {
+    const { ctx } = await seedProduct("hours-validate@example.com", "pk_hours_validate");
+    const base = { workspaceId: ctx.workspace.id, userId: ctx.user.id };
+    expect(await saveBusinessHours({ ...base, timeZone: "Mars/Olympus", hours: DEFAULT_WEEKLY_HOURS })).toEqual({
+      ok: false,
+      error: "Choose a valid time zone.",
+    });
+    const badMinute = [{ start: 540, end: 1440 }, null, null, null, null, null, null];
+    expect((await saveBusinessHours({ ...base, timeZone: "UTC", hours: badMinute })).ok).toBe(false);
+    // Another Workspace's id with this user: no membership row, nothing written.
+    const other = await seedProduct("hours-other@example.com", "pk_hours_other");
+    expect(
+      (await saveBusinessHours({ workspaceId: other.ctx.workspace.id, userId: ctx.user.id, timeZone: "UTC", hours: DEFAULT_WEEKLY_HOURS })).ok,
+    ).toBe(false);
+    const otherMember = await db.prisma.membership.findFirstOrThrow({ where: { workspaceId: other.ctx.workspace.id } });
+    expect(otherMember.businessHoursTimeZone).toBeNull();
+    // Agents may not choose AUTO either.
+    expect((await setAvailability({ workspaceId: ctx.workspace.id, actorRole: "AGENT", availability: "AUTO" })).ok).toBe(false);
+  });
+
   // The cache is only invalidated by products.ts; a Product or domain write
   // anywhere else in the app would be served stale for up to the TTL.
   it("every Product and ProductDomain write lives in products.ts", () => {
@@ -142,6 +183,29 @@ describe("product lookup cache", () => {
         } else if (/\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name)) {
           const source = readFileSync(path, "utf8");
           if (/\.workspace\.(update|updateMany|upsert)\b/.test(source) && /\bavailability\s*:/.test(source)) {
+            offenders.push(relative(root, path));
+          }
+        }
+      }
+    };
+    walk(root);
+    expect(offenders).toEqual([join("lib", "workspace.ts")]);
+  });
+});
+
+// AUTO availability caches member hours; saveBusinessHours is their only writer.
+describe("business hours writes", () => {
+  it("every business hours write lives in workspace.ts", () => {
+    const root = join(process.cwd(), "src");
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const path = join(dir, name);
+        if (statSync(path).isDirectory()) {
+          if (name !== "__tests__" && name !== "generated" && name !== "test") walk(path);
+        } else if (/\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name)) {
+          const source = readFileSync(path, "utf8");
+          if (/\.membership\.(update|updateMany|upsert)\b/.test(source) && /\bbusinessHours(TimeZone)?\s*:/.test(source)) {
             offenders.push(relative(root, path));
           }
         }

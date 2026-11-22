@@ -50,9 +50,11 @@ last row only applies to multi-process deployments.
 
 - **Workspace availability is cached with the Product lookups.** Every
   widget boot reads the Workspace's Live/Away availability; it is cached
-  under `availability:<workspaceId>` in the same cache, and `setAvailability`
-  (the only writer, `src/lib/workspace.ts`) clears it. A test fails if an
-  availability write appears anywhere else. The pause check already had its
+  under `availability:<workspaceId>` in the same cache. In Auto the entry
+  also holds the members' business hours (the clock is applied per request).
+  Its two writers, `setAvailability` and `saveBusinessHours`
+  (`src/lib/workspace.ts`), clear it. Tests fail if an availability or
+  business-hours write appears anywhere else. The pause check already had its
   own short "not paused" cache (`src/lib/service-pause.ts`).
 - **Visitor rows are created on first use.** The panel boots with
   `x-ss-defer-session: 1`: a browser with a valid visitor session resumes it

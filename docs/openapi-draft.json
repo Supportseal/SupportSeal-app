@@ -96,7 +96,7 @@
         "tags": [
           "Workspace"
         ],
-        "summary": "Set support availability (Live/Away)",
+        "summary": "Set support availability (Live, Away or Auto from business hours)",
         "x-required-scope": "workspace:write",
         "parameters": [
           {
@@ -1468,7 +1468,8 @@
           "availability": {
             "enum": [
               "LIVE",
-              "AWAY"
+              "AWAY",
+              "AUTO"
             ]
           }
         },
@@ -1485,7 +1486,8 @@
           "availability": {
             "enum": [
               "LIVE",
-              "AWAY"
+              "AWAY",
+              "AUTO"
             ]
           }
         },

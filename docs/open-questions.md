@@ -17,7 +17,7 @@ design review list.
 
 | # | Question | The maintainer's answer | Recorded in |
 | --- | --- | --- | --- |
-| D1 | Away mode scope | **Resolved:** one Workspace-wide Live/Away setting, not per Product | FR-CHAT-04; `design/app-shell.md`, `chat-widget.md` |
+| D1 | Away mode scope | **Resolved:** one Workspace-wide Live/Away setting, not per Product. Since 2026-11-22 it can also be Auto, driven by per-member business hours (see "Business hours" below) | FR-CHAT-04; `design/app-shell.md`, `chat-widget.md` |
 | D2 | Email to an archived Product | **Resolved:** it bounces | FR-PROD-01; `design/product-settings.md`, `support-inbox.md` |
 | D3 | Reply to a Closed Conversation | **Resolved:** a customer or agent reply reopens the same Conversation (a customer reply also moves a Pending one back to Open, see Attention model below); no new Conversation; it is counted once ever for billing (also resolves question 2 below) | FR-INBOX-02, FR-USE-01, architecture.md; `design/support-inbox.md`, `conversation-view.md`, `chat-widget.md` |
 | D6 | Who deletes Conversations and Products | **Resolved:** Admins only | FR-ACC-01; `design/conversation-view.md`, `product-settings.md` |
@@ -515,6 +515,22 @@ seeing". Two linked changes follow.
 | --- | --- | --- |
 | AQ1 | What does the title prefix count? | **Maintainer-overridable default:** OPEN Conversations of the Workspace, the same definition as the inbox Open tab (not per agent). Previously: the signed-in agent's unread customer Messages in OPEN and PENDING Conversations (FR-INBOX-04), a different unit and scope from the inbox's Conversation counts, which made the two disagree by design; the title also refreshed only on focus/visibility/mark-read/a bounded poll, so a new chat did not move it. The title now also refreshes from the existing inbox event stream. Per-agent unread Messages and read receipts are unchanged and remain for read tracking. To revert, count `getUnreadCount` in the title again (`src/components/layout/unread-title.tsx`). |
 | AQ2 | Does a customer reply move a Pending Conversation back to Open? | **Maintainer-decided (2026-11-07):** yes — "else I won't ever see it". Any customer Message (widget visitor or inbound email, through `addCustomerMessage`) leaves the Conversation Open: Open stays Open, Pending becomes Open, Closed becomes Open as before (`closedAt` clears only when it was Closed). Agent replies still set Pending (FR-API-04/08 unchanged). The auto-close sweep only closes Pending Conversations, so a replied-to one is no longer a candidate. |
+
+## Business hours (2026-11-22)
+
+The maintainer asked (2026-11-22) for business hours "configurable per user.
+When one of the users for a product is in business hours then online."
+Products have no member list of their own, so every Workspace member serves
+every Product.
+
+| # | Question | Position |
+| --- | --- | --- |
+| BH1 | Whose hours count? | **Resolved (2026-11-22):** each member sets their own weekly hours in their own time zone (Settings → Business hours). A Product's widget is Live while at least one member is inside their hours. |
+| BH2 | How does the manual switch coexist? | **Resolved (2026-11-22):** the Workspace setting gains a third value, Auto. Live and Away stay manual and win until an Admin changes them; only Auto follows business hours. Existing Workspaces stay on their manual value. Admins only, as D1a. |
+| BH3 | Members without hours | **Default:** they never count, so Auto with nobody's hours set shows Away. The settings page and the header say what Auto resolves to now. |
+| BH4 | Schedule shape | **Default:** one interval per weekday, minutes after midnight; end before start runs past midnight into the next day, equal start and end is the whole day. No holidays or exceptions (use manual Away). |
+| BH5 | When does an open widget notice a change? | **Default:** like a manual switch today, at the next widget boot (page load); no push to already-open panels. A message sent after hours to a panel that still shows Live is a normal chat and is covered by the unanswered-request escalation email. |
+| BH6 | API | **Default:** `setAvailability` accepts `AUTO` and `getWorkspace` reports it (draft contract). A member's own hours are personal account settings, exempt from API parity like other account management; an agent reads the effect through availability. |
 
 ## Refunds and disputes (issue #23, 2026-11-11)
 

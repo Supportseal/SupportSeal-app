@@ -38,12 +38,14 @@ export function Header({
   user,
   workspaceId,
   availability,
+  effectiveAvailability,
   isAdmin,
   onAvailabilityChange,
 }: {
   user: HeaderUser;
   workspaceId: string;
   availability: Availability;
+  effectiveAvailability?: "LIVE" | "AWAY";
   isAdmin: boolean;
   onAvailabilityChange: (next: Availability) => Promise<unknown>;
 }) {
@@ -112,6 +114,7 @@ export function Header({
       <div className="ms-auto flex items-center gap-1">
         <AvailabilityControl
           availability={shownAvailability}
+          effective={effectiveAvailability}
           isAdmin={isAdmin}
           pending={pending}
           onChange={(next) =>

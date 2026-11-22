@@ -3,6 +3,14 @@ import { createHash, randomBytes } from "node:crypto";
 import { redirect } from "next/navigation";
 
 import { PLANS, planForWorkspace, type WorkspacePlanValue } from "@/config/pricing";
+import { getWorkspaceAvailability } from "@/lib/availability";
+import {
+  isValidTimeZone,
+  parseWeeklyHours,
+  type AvailabilityMode,
+  type WeeklyHours,
+} from "@/lib/business-hours";
+import { Prisma } from "@/generated/prisma/client";
 import { isHostedMode } from "@/lib/hosting";
 import { prisma } from "@/lib/prisma";
 import { invalidateProductLookups } from "@/lib/product-lookup-cache";
@@ -338,28 +346,75 @@ export async function listMembers(workspaceId: string) {
   });
 }
 
-/** Workspace-wide support availability (one Live/Away for all Products). */
-export async function getAvailability(workspaceId: string): Promise<"LIVE" | "AWAY"> {
-  const workspace = await prisma.workspace.findUnique({
-    where: { id: workspaceId },
-    select: { availability: true },
-  });
-  return workspace?.availability ?? "LIVE";
+/**
+ * Workspace-wide support availability (one setting for all Products): the
+ * chosen mode and, for AUTO, what business hours make it right now.
+ */
+export async function getAvailability(
+  workspaceId: string,
+): Promise<{ mode: AvailabilityMode; effective: "LIVE" | "AWAY" }> {
+  return getWorkspaceAvailability(workspaceId);
 }
 
 export async function setAvailability(input: {
   workspaceId: string;
   actorRole: MembershipRole;
-  availability: "LIVE" | "AWAY";
+  availability: AvailabilityMode;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   if (input.actorRole !== "ADMIN") {
     return { ok: false, error: "Only Workspace admins can change support availability." };
+  }
+  if (!["LIVE", "AWAY", "AUTO"].includes(input.availability)) {
+    return { ok: false, error: "Unknown availability." };
   }
   await prisma.workspace.update({
     where: { id: input.workspaceId },
     data: { availability: input.availability },
   });
   // The widget caches availability (getAvailabilityForProduct).
+  invalidateProductLookups();
+  return { ok: true };
+}
+
+/** The signed-in member's own business hours; null fields = not set. */
+export async function getBusinessHours(input: {
+  workspaceId: string;
+  userId: string;
+}): Promise<{ timeZone: string | null; hours: WeeklyHours | null }> {
+  const membership = await prisma.membership.findUnique({
+    where: { userId_workspaceId: { userId: input.userId, workspaceId: input.workspaceId } },
+    select: { businessHoursTimeZone: true, businessHours: true },
+  });
+  const hours = parseWeeklyHours(membership?.businessHours);
+  return { timeZone: hours ? (membership?.businessHoursTimeZone ?? null) : null, hours };
+}
+
+/**
+ * Saves (or, with `hours: null`, clears) the member's own business hours.
+ * Members edit only their own row: the membership is looked up by the
+ * signed-in user and the Workspace together, never by a client-supplied id.
+ */
+export async function saveBusinessHours(input: {
+  workspaceId: string;
+  userId: string;
+  timeZone: string;
+  hours: WeeklyHours | null;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  let data: { businessHoursTimeZone: string | null; businessHours: WeeklyHours | typeof Prisma.DbNull };
+  if (input.hours === null) {
+    data = { businessHoursTimeZone: null, businessHours: Prisma.DbNull };
+  } else {
+    if (!isValidTimeZone(input.timeZone)) return { ok: false, error: "Choose a valid time zone." };
+    const hours = parseWeeklyHours(input.hours);
+    if (!hours) return { ok: false, error: "Enter a start and end time for each day you work." };
+    data = { businessHoursTimeZone: input.timeZone, businessHours: hours };
+  }
+  const updated = await prisma.membership.updateMany({
+    where: { userId: input.userId, workspaceId: input.workspaceId },
+    data,
+  });
+  if (updated.count === 0) return { ok: false, error: "You are not a member of this Workspace." };
+  // AUTO availability reads these hours through the widget cache.
   invalidateProductLookups();
   return { ok: true };
 }
