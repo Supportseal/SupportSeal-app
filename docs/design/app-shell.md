@@ -94,7 +94,13 @@ plus the label "Live" (success) or "Away" (warning).
 - **Agents** see the same status as a non-interactive element with the
   tooltip "Only admins can change availability".
 - The status updates live for every signed-in user when an Admin changes it.
-- There are no schedules or per-Product overrides in V1.
+- **Auto** (2026-11-22, `docs/open-questions.md` BH1–BH6): Admins see a
+  three-option segmented control, Live / Auto / Away. Auto follows the
+  members' business hours (Settings → Business hours): Live while at least
+  one member is inside their hours, Away otherwise. Next to the control a
+  small "Live now" / "Away now" link (from `md`) says what Auto resolves to
+  and opens the hours page; Agents see "Live (auto)" or "Away (auto)".
+- There are no per-Product overrides.
 
 ### Global search (Ctrl/Cmd+K)
 

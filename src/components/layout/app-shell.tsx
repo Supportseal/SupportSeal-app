@@ -21,6 +21,7 @@ function Shell({
   role,
   products,
   availability,
+  effectiveAvailability,
   onAvailabilityChange,
   mode = "page",
   checklist,
@@ -32,6 +33,8 @@ function Shell({
   role: "ADMIN" | "AGENT";
   products: SidebarProduct[];
   availability: Availability;
+  /** What the widget shows now; differs from `availability` only in AUTO. */
+  effectiveAvailability?: "LIVE" | "AWAY";
   onAvailabilityChange: (next: Availability) => Promise<unknown>;
   mode?: "page" | "fill";
   checklist?: SetupChecklist | null;
@@ -71,6 +74,7 @@ function Shell({
           user={user}
           workspaceId={workspaceId}
           availability={availability}
+          effectiveAvailability={effectiveAvailability}
           isAdmin={role === "ADMIN"}
           onAvailabilityChange={onAvailabilityChange}
         />

@@ -78,9 +78,13 @@ model Verification {
 
 // --- Workspace (tenant boundary) ------------------------------------------
 
+/// LIVE and AWAY are manual: the widget shows that state until an Admin
+/// changes it. AUTO follows the members' business hours: Live while at least
+/// one member is inside their hours, Away otherwise (src/lib/business-hours.ts).
 enum WorkspaceAvailability {
   LIVE
   AWAY
+  AUTO
 }
 
 enum WorkspacePlan {
@@ -160,6 +164,14 @@ model Membership {
   userId      String
   workspaceId String
   role        MembershipRole
+  /// The member's own business hours (src/lib/business-hours.ts), used when
+  /// the Workspace availability is AUTO. Null = not set: the member never
+  /// counts as available. `businessHours` is a 7-entry weekly schedule,
+  /// Monday first, each `null` or `{ start, end }` in minutes after midnight
+  /// in `businessHoursTimeZone` (an IANA zone); end < start runs past
+  /// midnight into the next day, end = start is the whole day.
+  businessHoursTimeZone String?
+  businessHours         Json?
   createdAt   DateTime       @default(now())
 
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)

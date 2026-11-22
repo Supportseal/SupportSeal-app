@@ -14,6 +14,7 @@ import {
 } from "@/lib/dev-context";
 import { prisma } from "@/lib/prisma";
 import { cachedProductLookup } from "@/lib/product-lookup-cache";
+import { getCachedEffectiveAvailability } from "@/lib/availability";
 import { isServicePaused, SERVICE_PAUSED_CODE } from "@/lib/service-pause";
 import { notifyAllowanceInBackground } from "@/lib/usage-notifications";
 import { allocateTicketNumber, formatTicketRef } from "@/lib/ticket";
@@ -863,17 +864,10 @@ export function widgetRequestOriginOk(
 }
 
 /**
- * Workspace Live/Away for the widget's config and session boot. Cached
- * briefly in memory like the Product lookups (product-lookup-cache.ts):
- * `setAvailability` in workspace.ts, the only writer, clears the cache.
+ * Workspace Live/Away for the widget's config and session boot: the manual
+ * setting, or in AUTO whether any member is inside their business hours
+ * (src/lib/availability.ts, cached briefly).
  */
 export async function getAvailabilityForProduct(workspaceId: string): Promise<"LIVE" | "AWAY"> {
-  const cached = await cachedProductLookup(`availability:${workspaceId}`, async () => {
-    const workspace = await prisma.workspace.findUnique({
-      where: { id: workspaceId },
-      select: { availability: true },
-    });
-    return workspace?.availability ?? null;
-  });
-  return cached ?? "LIVE";
+  return getCachedEffectiveAvailability(workspaceId);
 }
