@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 
+import { sweepAgentAlerts } from "@/lib/agent-alerts";
 import { sweepEscalations } from "@/lib/escalation";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +15,8 @@ function digest(value: string): Buffer {
  * in-app lazy sweep and timers work without it, but a scheduler hitting this
  * every minute gives tight latency on a quiet server. Disabled (404) unless
  * CRON_SECRET is set; authenticate with `Authorization: Bearer <secret>`.
+ * Also runs the agent new-message alert sweep (docs/design/agent-alerts.md),
+ * reported under `agentAlerts`.
  */
 export async function POST(request: NextRequest) {
   const secret = process.env.CRON_SECRET?.trim();
@@ -25,7 +28,9 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    return NextResponse.json(await sweepEscalations());
+    const escalations = await sweepEscalations();
+    const agentAlerts = await sweepAgentAlerts();
+    return NextResponse.json({ ...escalations, agentAlerts });
   } catch (error) {
     console.error("escalation sweep failed:", error);
     return NextResponse.json({ error: "sweep failed" }, { status: 500 });

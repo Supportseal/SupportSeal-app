@@ -160,6 +160,11 @@ model Membership {
   userId      String
   workspaceId String
   role        MembershipRole
+  /// New-message email alerts (docs/design/agent-alerts.md): each member's
+  /// own choice, on by default. Sent only while the member has no dashboard
+  /// open and the message is still unread and unanswered.
+  emailOnNewConversation Boolean @default(true)
+  emailOnCustomerReply   Boolean @default(true)
   createdAt   DateTime       @default(now())
 
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -430,6 +435,9 @@ model Message {
   /// rows that predate the column, internal notes, and agent replies whose
   /// routing decision has not run (or crashed) — never backfilled by guessing.
   channel        ConversationChannel?
+  /// Set once by the agent alert sweep when it claims this CUSTOMER Message
+  /// (docs/design/agent-alerts.md); the atomic claim makes alerts at-most-once.
+  agentAlertedAt DateTime?
   createdAt      DateTime    @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -440,6 +448,8 @@ model Message {
   readReceipts MessageReadReceipt[]
 
   @@index([conversationId, createdAt])
+  /// Agent alert sweep: unclaimed CUSTOMER Messages in a recent window.
+  @@index([kind, agentAlertedAt, createdAt])
   @@map("messages")
 }
 
