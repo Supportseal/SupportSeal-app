@@ -84,7 +84,9 @@ Only `name` is required. `primaryColor` defaults to `#2563eb` and accepts `#rgb`
 or `#rrggbb`. `supportEmail` is the public address your customers write to, with
 the dashboard's rules: trimmed, lower-cased, never the Product's generated
 forwarding address. Blank or `null` stores none; send `{"supportEmail":null}` in a
-`PATCH` later to remove it.
+`PATCH` later to remove it. `greeting` (`PATCH` only) is the plain-text greeting
+the widget shows in a new chat: at most 240 characters on 3 lines; blank or
+`null` restores the built-in one.
 
 ```sh
 # responses carry keys; only write them to a private file
@@ -112,6 +114,7 @@ on.
   "archived": false,
   "primaryColor": "#7367f0",
   "supportEmail": null,
+  "greeting": null,
   "domains": [],
   "widgetKey": "pk_AbCdEfGhIjKlMnOpQrStUvWxYz012345",
   "formKey": "fk_ZyXwVuTsRqPoNmLkJiHgFeDcBa987654"
@@ -145,6 +148,7 @@ curl --fail-with-body -sS -X PATCH "$SUPPORTSEAL_URL/api/products/$PRODUCT_ID" \
   "archived": false,
   "primaryColor": "#7367f0",
   "supportEmail": null,
+  "greeting": null,
   "domains": ["acme.example", "www.acme.example"],
   "widgetKey": "pk_AbCdEfGhIjKlMnOpQrStUvWxYz012345",
   "formKey": "fk_ZyXwVuTsRqPoNmLkJiHgFeDcBa987654"

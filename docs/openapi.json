@@ -84,6 +84,7 @@
                       "archived": false,
                       "primaryColor": "#7367f0",
                       "supportEmail": "help@acme.example",
+                      "greeting": null,
                       "domains": [
                         "acme.example",
                         "www.acme.example"
@@ -181,6 +182,7 @@
                   "archived": false,
                   "primaryColor": "#7367f0",
                   "supportEmail": "help@acme.example",
+                  "greeting": null,
                   "domains": [
                     "acme.example",
                     "www.acme.example"
@@ -260,6 +262,7 @@
                   "archived": false,
                   "primaryColor": "#7367f0",
                   "supportEmail": "help@acme.example",
+                  "greeting": null,
                   "domains": [
                     "acme.example",
                     "www.acme.example"
@@ -358,6 +361,7 @@
                   "archived": false,
                   "primaryColor": "#7367f0",
                   "supportEmail": "help@acme.example",
+                  "greeting": null,
                   "domains": [
                     "acme.example",
                     "www.acme.example"
@@ -437,6 +441,7 @@
                   "archived": false,
                   "primaryColor": "#7367f0",
                   "supportEmail": "help@acme.example",
+                  "greeting": null,
                   "domains": [
                     "acme.example",
                     "www.acme.example"
@@ -1547,6 +1552,7 @@
           "archived",
           "primaryColor",
           "supportEmail",
+          "greeting",
           "domains",
           "widgetKey",
           "formKey"
@@ -1577,6 +1583,14 @@
             ],
             "maxLength": 254,
             "description": "The Product's public support address, lower-cased, or `null` when none is set. The same field as the dashboard's Support email setting: shown to visitors and used by the mail-loop guard, never a send target or Reply-To."
+          },
+          "greeting": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 240,
+            "description": "The widget greeting visitors see in a new chat before anyone has written (above the message form while the team is away), or `null` for the built-in greeting. The same field as the Widget tab's Greeting setting. Plain text: it is shown as typed, with line breaks kept and no links or formatting."
           },
           "domains": {
             "type": "array",
@@ -1669,6 +1683,13 @@
               "null"
             ],
             "description": "Set the public support address with the dashboard's rules (see `CreateProductRequest.supportEmail`). Blank or `null` removes it; omit the field to leave it as is."
+          },
+          "greeting": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Set the widget greeting with the dashboard's rules: normalised to NFC with line breaks as LF and outer whitespace trimmed, then at most 240 characters (Unicode code points) on at most 3 lines; control characters other than line breaks answer `400 invalid_request` (field `greeting`), as does text over a limit (never truncated). Blank or `null` restores the built-in greeting; omit the field to leave it as is. A fresh widget load shows the new value; open chats keep the old one."
           },
           "addDomains": {
             "type": "array",

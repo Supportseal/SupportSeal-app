@@ -13,6 +13,7 @@ import {
   rotateProductWidgetKey,
   setProductDiagnostics,
   setProductEscalation,
+  patchProduct,
   setProductSupportEmail,
   updateProduct,
 } from "@/lib/products";
@@ -236,4 +237,31 @@ export async function setSupportEmailAction(
   if (!result.ok) return { error: result.error };
   revalidatePath(`/settings/products/${productId}`);
   return {};
+}
+
+export type GreetingFormState = {
+  error?: string;
+  /** The stored value after a successful save (null = built-in greeting). */
+  saved?: { greeting: string | null };
+};
+
+/**
+ * Custom widget greeting (docs/design/branding.md): Admin-only, same rules
+ * as the Workspace API's `PATCH /api/products/{id}` `greeting` field (it
+ * runs the same core). Blank restores the built-in greeting.
+ */
+export async function setGreetingAction(
+  _prev: GreetingFormState,
+  formData: FormData,
+): Promise<GreetingFormState> {
+  const ctx = await requireWorkspace("/settings/products");
+  const productId = String(formData.get("productId") ?? "");
+  const result = await patchProduct({
+    ctx,
+    productId,
+    greeting: String(formData.get("greeting") ?? ""),
+  });
+  if (!result.ok) return { error: result.error };
+  revalidatePath(`/settings/products/${productId}`);
+  return { saved: { greeting: result.product.greeting } };
 }

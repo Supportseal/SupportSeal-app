@@ -82,6 +82,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       name: product.name,
       color: product.primaryColor,
+      greeting: product.greeting,
       ...(product.supportEmail ? { supportEmail: product.supportEmail } : {}),
       session: { email: existing.email, name: existing.name },
       availability,
@@ -102,6 +103,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       name: product.name,
       color: product.primaryColor,
+      greeting: product.greeting,
       ...(product.supportEmail ? { supportEmail: product.supportEmail } : {}),
       session: null,
       availability,
@@ -125,6 +127,7 @@ export async function POST(request: NextRequest) {
   const response = NextResponse.json({
     name: product.name,
     color: product.primaryColor,
+    greeting: product.greeting,
     ...(product.supportEmail ? { supportEmail: product.supportEmail } : {}),
     // The token is echoed once so the panel can persist it in its
     // partitioned sessionStorage — the fallback when third-party cookies
