@@ -36,6 +36,8 @@ export type WidgetProduct = {
   domains: string[];
   diagnosticsEnabledAt: Date | null;
   supportEmail: string | null;
+  /** Custom widget greeting (docs/design/branding.md); null = built-in. */
+  greeting: string | null;
   /** Issue #20: server-only identity signing secret; null = never allocated. */
   identitySecret: string | null;
 };
@@ -69,6 +71,7 @@ async function queryWidgetProduct(widgetKey: string): Promise<WidgetProduct | nu
     domains: Object.freeze(product.domains.map((d) => d.domain)) as string[],
     diagnosticsEnabledAt: product.diagnosticsEnabledAt,
     supportEmail: product.supportEmail,
+    greeting: product.greeting,
     identitySecret: product.identitySecret,
   });
 }

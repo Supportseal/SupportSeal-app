@@ -99,8 +99,8 @@ preview mode used by onboarding and Product settings.
 ### Live (support available; FR-CHAT-02, FR-CHAT-03)
 
 - First open, no Conversation: an empty thread with a neutral one-line
-  prompt, "Ask us anything, we're here." (fixed copy; custom greetings are
-  V2), and the composer focused on desktop (not on mobile, to avoid popping
+  prompt, "Ask us anything, we're here." (the default; a Product's custom
+  greeting replaces it, see [branding.md](branding.md)), and the composer focused on desktop (not on mobile, to avoid popping
   the keyboard).
 - Composer: auto-growing textarea (1–5 lines, 16px font so iOS doesn't
   zoom). Enter sends, Shift+Enter inserts a newline (chat convention;

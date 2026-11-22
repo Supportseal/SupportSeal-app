@@ -57,6 +57,7 @@ export async function GET(request: NextRequest) {
     {
       name: product.name,
       color: product.primaryColor,
+      greeting: product.greeting,
       availability,
       // Absent means off: disabled Products run no capture code.
       ...(product.diagnosticsEnabledAt ? { diagnostics: true } : {}),

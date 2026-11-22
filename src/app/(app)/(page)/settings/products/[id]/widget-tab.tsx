@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { IconExternalLink } from "@tabler/icons-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { appConfig } from "@/lib/config";
+import { GreetingCard } from "./greeting-card";
 import { WidgetSnippet } from "./widget-snippet";
 
 type PreviewProduct = {
@@ -13,6 +14,7 @@ type PreviewProduct = {
   name: string;
   primaryColor: string;
   widgetPublicKey: string;
+  greeting: string | null;
   archived: boolean;
   isAdmin: boolean;
 };
@@ -21,12 +23,21 @@ type PreviewProduct = {
  * Widget tab (docs/design/product-settings.md): embed snippet plus the real
  * widget in preview mode with a Live/Away toggle. The toggle only changes
  * the preview — real availability is the Workspace-wide header control.
+ * The greeting draft feeds the preview before it is saved.
  */
 export function WidgetTab({ product }: { product: PreviewProduct }) {
   const [availability, setAvailability] = useState<"LIVE" | "AWAY">("LIVE");
+  const [savedGreeting, setSavedGreeting] = useState(product.greeting);
+  const [greetingDraft, setGreetingDraft] = useState(product.greeting ?? "");
+  // The preview reloads its iframe for a new greeting, so wait for a pause in typing.
+  const [previewGreeting, setPreviewGreeting] = useState(greetingDraft);
+  useEffect(() => {
+    const timer = setTimeout(() => setPreviewGreeting(greetingDraft), 500);
+    return () => clearTimeout(timer);
+  }, [greetingDraft]);
 
   const embedSnippet = `<script\n  async\n  src="${appConfig.url}/widget.js"\n  data-key="${product.widgetPublicKey}"\n></script>`;
-  const previewUrl = `/widget-preview?key=${encodeURIComponent(product.widgetPublicKey)}&availability=${availability}&embed=1`;
+  const previewUrl = `/widget-preview?key=${encodeURIComponent(product.widgetPublicKey)}&availability=${availability}&greeting=${encodeURIComponent(previewGreeting)}&embed=1`;
 
   return (
     <div className="space-y-6">
@@ -35,6 +46,18 @@ export function WidgetTab({ product }: { product: PreviewProduct }) {
           This Product is archived: the widget no longer loads on customer sites.
         </p>
       ) : null}
+
+      <GreetingCard
+        productId={product.id}
+        saved={savedGreeting}
+        draft={greetingDraft}
+        onDraftChange={setGreetingDraft}
+        onSaved={(greeting) => {
+          setSavedGreeting(greeting);
+          setGreetingDraft(greeting ?? "");
+        }}
+        isAdmin={product.isAdmin}
+      />
 
       <Card>
         <CardContent className="p-6 space-y-4">
@@ -74,7 +97,7 @@ export function WidgetTab({ product }: { product: PreviewProduct }) {
           </div>
           <div className="overflow-hidden rounded-lg border border-border">
             <iframe
-              key={availability}
+              key={`${availability}:${previewGreeting}`}
               src={previewUrl}
               title={`${product.name} widget preview`}
               className="h-[480px] w-full border-0 bg-body-bg"
