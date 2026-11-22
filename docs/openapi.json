@@ -899,6 +899,57 @@
             "bearerAuth": []
           }
         ]
+      },
+      "delete": {
+        "operationId": "deleteConversation",
+        "tags": [
+          "Conversations"
+        ],
+        "summary": "Delete a Conversation for good",
+        "x-required-scope": "conversations:delete",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "in": "path",
+            "required": true,
+            "description": "Conversation id. An id from another Workspace answers exactly like an unknown id (404).",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted. Nothing is returned.",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/InsufficientScope"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "description": "Deletes the Conversation with its messages, notes, tags, diagnostics and attachment files. A Contact left with no other Conversation is deleted too. The ticket number is never reused. This cannot be undone. Deleting the same id again answers 404, like any unknown id, so a retry after a lost response is safe to treat 404 as done.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/api/v1/conversations/{conversationId}/messages": {

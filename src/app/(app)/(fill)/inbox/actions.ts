@@ -7,6 +7,7 @@ import { deliverAgentReplyIfRouted } from "@/lib/email/routing";
 
 import {
   addAgentMessage,
+  deleteConversation,
   setConversationStatus,
   tagConversation,
   untagConversation,
@@ -118,4 +119,14 @@ export async function saveReplyFromComposerAction(input: {
   });
   revalidatePath("/saved-replies");
   return result.ok ? {} : { error: result.error };
+}
+
+/** Delete a Conversation for good (FR-SEC-02). Admins only (D6); Agents never see the menu item. */
+export async function deleteConversationAction(input: { conversationId: string }): Promise<{ error?: string }> {
+  const ctx = await requireWorkspace(`/inbox/${input.conversationId}`);
+  if (ctx.role !== "ADMIN") return { error: "Only Workspace admins can delete conversations." };
+  const result = await deleteConversation({ workspaceId: ctx.workspace.id, conversationId: input.conversationId });
+  if (!result.ok) return { error: result.error };
+  revalidatePath("/inbox");
+  return {};
 }

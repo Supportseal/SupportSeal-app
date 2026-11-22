@@ -598,6 +598,22 @@ endpoint and the email filter, so reusing it with a different filter is a
 `400 invalid_cursor`. To see the person's Conversations, filter the inbox
 list by `contactId` (step 7).
 
+## 9. Delete a conversation
+
+Spam and test threads can be deleted for good. This needs a token with the
+`conversations:delete` scope, which dashboard-created tokens do not carry
+yet (it is Admin-equivalent and waits for the scope picker):
+
+```sh
+curl -sS -o /dev/null -w '%{http_code}\n' -X DELETE "$SUPPORTSEAL_URL/api/v1/conversations/$CONVERSATION_ID" \
+  -H "Authorization: Bearer $SUPPORTSEAL_TOKEN"
+```
+
+`204` means it is gone, with its messages, notes, tags and attachments; a
+Contact left with no other Conversation goes too. It cannot be undone, and
+the ticket number is never reused. Deleting the same id again answers `404
+not_found`, so a retry after a lost response can treat `404` as done.
+
 ## Errors
 
 Every failure from the API has one JSON shape. Branch on `code`, never on
