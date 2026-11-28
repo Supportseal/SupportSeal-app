@@ -533,9 +533,16 @@ describe("comped Workspaces stay on Pro (HOSTED_COMPED_PRO_WORKSPACE_IDS)", () =
     expect(row.freePlanPausedAt).toBeNull();
   });
 
-  it("un-listing a linked Workspace reverts it to Free on the next sync", async () => {
+  it("un-listing a linked Workspace reverts it to Free on the next sync and read", async () => {
     const workspace = await seedWorkspace("PRO", "cus_compu", null);
+    process.env.HOSTED_COMPED_PRO_WORKSPACE_IDS = workspace.id;
     stripe.customers.set("cus_compu", [{ id: "sub_compu", status: "canceled" }]);
+    await syncCustomerBilling("cus_compu");
+    expect(await reconcileWorkspacePlan(workspace.id)).toBe("PRO"); // caches the raw Stripe state
+    expect((await state(workspace.id)).plan).toBe("PRO");
+
+    delete process.env.HOSTED_COMPED_PRO_WORKSPACE_IDS;
+    expect(await reconcileWorkspacePlan(workspace.id)).toBe("FREE");
     await syncCustomerBilling("cus_compu");
     const row = await prisma.workspace.findUniqueOrThrow({ where: { id: workspace.id } });
     expect(row.plan).toBe("FREE");
