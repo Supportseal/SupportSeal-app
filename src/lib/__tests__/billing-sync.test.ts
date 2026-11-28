@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createTestUser, startTestDb, stopTestDb, type TestDb } from "@/test/integration-db";
 import { fakeStripe } from "@/test/stripe-fake";
@@ -501,5 +501,98 @@ describe("refunds and disputes revoke the current payment (issue #23)", () => {
     // the read path keeps the stored plan instead of writing a guess
     resetSubscriptionResyncCacheForTest();
     expect(await reconcileWorkspacePlan(workspace.id)).toBe("PRO");
+  });
+});
+
+describe("comped Workspaces stay on Pro (HOSTED_COMPED_PRO_WORKSPACE_IDS)", () => {
+  afterEach(() => {
+    delete process.env.HOSTED_COMPED_PRO_WORKSPACE_IDS;
+  });
+
+  it("a cached Free Stripe state confirms a comped Pro row without another Stripe read", async () => {
+    const workspace = await seedWorkspace("PRO", "cus_compc", "sub_compc");
+    process.env.HOSTED_COMPED_PRO_WORKSPACE_IDS = workspace.id;
+    stripe.customers.set("cus_compc", [{ id: "sub_compc", status: "active" }]);
+    stripe.charges.set("cus_compc", [{ id: "ch_compc", refunded: true }]);
+
+    expect(await reconcileWorkspacePlan(workspace.id)).toBe("PRO");
+    const reads = stripe.calls.length;
+    expect(await reconcileWorkspacePlan(workspace.id)).toBe("PRO");
+    expect(stripe.calls.length).toBe(reads);
+  });
+
+  it("a webhook sync lifts a linked comped Free Workspace and clears its pause", async () => {
+    const workspace = await seedWorkspace("FREE", "cus_compw", null);
+    await prisma.workspace.update({ where: { id: workspace.id }, data: { freePlanPausedAt: new Date() } });
+    process.env.HOSTED_COMPED_PRO_WORKSPACE_IDS = workspace.id;
+    stripe.customers.set("cus_compw", [{ id: "sub_compw", status: "canceled" }]);
+
+    await syncCustomerBilling("cus_compw");
+    const row = await prisma.workspace.findUniqueOrThrow({ where: { id: workspace.id } });
+    expect(row.plan).toBe("PRO");
+    expect(row.freePlanPausedAt).toBeNull();
+  });
+
+  it("un-listing a linked Workspace reverts it to Free on the next sync and read", async () => {
+    const workspace = await seedWorkspace("PRO", "cus_compu", null);
+    process.env.HOSTED_COMPED_PRO_WORKSPACE_IDS = workspace.id;
+    stripe.customers.set("cus_compu", [{ id: "sub_compu", status: "canceled" }]);
+    await syncCustomerBilling("cus_compu");
+    expect(await reconcileWorkspacePlan(workspace.id)).toBe("PRO"); // caches the raw Stripe state
+    expect((await state(workspace.id)).plan).toBe("PRO");
+
+    delete process.env.HOSTED_COMPED_PRO_WORKSPACE_IDS;
+    expect(await reconcileWorkspacePlan(workspace.id)).toBe("FREE");
+    await syncCustomerBilling("cus_compu");
+    const row = await prisma.workspace.findUniqueOrThrow({ where: { id: workspace.id } });
+    expect(row.plan).toBe("FREE");
+    expect(row.freePlanSince).not.toBeNull();
+  });
+
+  it("a full refund keeps a comped Workspace on Pro", async () => {
+    const workspace = await seedWorkspace("PRO", "cus_comp", "sub_comp");
+    process.env.HOSTED_COMPED_PRO_WORKSPACE_IDS = ` other-id , ${workspace.id}`;
+    stripe.customers.set("cus_comp", [{ id: "sub_comp", status: "active" }]);
+    stripe.charges.set("cus_comp", [{ id: "ch_comp", refunded: true }]);
+
+    expect(await syncCustomerBilling("cus_comp")).toBe(workspace.id);
+    expect((await state(workspace.id)).plan).toBe("PRO");
+    resetSubscriptionResyncCacheForTest();
+    expect(await reconcileWorkspacePlan(workspace.id)).toBe("PRO");
+  });
+
+  it("a canceled subscription keeps a comped Workspace on Pro; a paid Business plan still wins", async () => {
+    const workspace = await seedWorkspace("PRO", "cus_comp2", "sub_comp2");
+    process.env.HOSTED_COMPED_PRO_WORKSPACE_IDS = workspace.id;
+    stripe.customers.set("cus_comp2", [{ id: "sub_comp2", status: "canceled" }]);
+    await syncCustomerBilling("cus_comp2");
+    expect(await state(workspace.id)).toMatchObject({ plan: "PRO", stripeSubscriptionId: null });
+
+    stripe.customers.set("cus_comp2", [
+      { id: "sub_biz", status: "active", price: { id: "price_biz", lookup_key: "supportseal_business_monthly" } },
+    ]);
+    await syncCustomerBilling("cus_comp2");
+    expect((await state(workspace.id)).plan).toBe("BUSINESS");
+  });
+
+  it("lifts a comped Free Workspace with no Stripe customer to Pro and clears the pause", async () => {
+    const workspace = await seedWorkspace("FREE", null);
+    await prisma.workspace.update({ where: { id: workspace.id }, data: { freePlanPausedAt: new Date() } });
+    process.env.HOSTED_COMPED_PRO_WORKSPACE_IDS = workspace.id;
+
+    expect(await reconcileWorkspacePlan(workspace.id)).toBe("PRO");
+    const row = await prisma.workspace.findUniqueOrThrow({ where: { id: workspace.id } });
+    expect(row.plan).toBe("PRO");
+    expect(row.freePlanPausedAt).toBeNull();
+  });
+
+  it("does not comp unlisted Workspaces, and self-hosted ignores the list", async () => {
+    const listed = await seedWorkspace("FREE", null);
+    const unlisted = await seedWorkspace("FREE", null);
+    process.env.HOSTED_COMPED_PRO_WORKSPACE_IDS = listed.id;
+    expect(await reconcileWorkspacePlan(unlisted.id)).toBe("FREE");
+
+    process.env.HOSTED_MODE = "";
+    expect(await reconcileWorkspacePlan(listed.id)).toBe("FREE");
   });
 });

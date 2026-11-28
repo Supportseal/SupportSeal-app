@@ -1,3 +1,4 @@
+import { isCompedWorkspace } from "@/lib/comped";
 import { isHostedMode } from "@/lib/hosting";
 import { type WorkspacePlanValue } from "@/config/pricing";
 import { prisma } from "@/lib/prisma";
@@ -98,6 +99,11 @@ function deriveBilling(
   };
 }
 
+/** A comped Workspace (src/lib/comped.ts) never drops below Pro. */
+function withComp(workspaceId: string, billing: CustomerBilling): CustomerBilling {
+  return billing.plan === "FREE" && isCompedWorkspace(workspaceId) ? { ...billing, plan: "PRO" } : billing;
+}
+
 function matchesRow(
   billing: CustomerBilling,
   workspace: { plan: Plan; stripeSubscriptionId: string | null },
@@ -137,15 +143,28 @@ export async function reconcileWorkspacePlan(
   workspaceId: string,
   options: { fresh?: boolean } = {},
 ): Promise<Plan> {
-  const workspace = await prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId } });
-  if (!isHostedMode() || !stripeSecret()) return workspace.plan;
+  let workspace = await prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId } });
+  if (!isHostedMode()) return workspace.plan;
+  // A comped Workspace is lifted to Pro even with no Stripe customer at all.
+  if (workspace.plan === "FREE" && isCompedWorkspace(workspace.id)) {
+    const lifted = await prisma.workspace.updateMany({
+      where: { id: workspace.id, plan: "FREE" },
+      data: { plan: "PRO", freePlanPausedAt: null },
+    });
+    // Losing the race means another write landed first: continue from it.
+    workspace =
+      lifted.count > 0
+        ? { ...workspace, plan: "PRO", freePlanPausedAt: null }
+        : await prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId } });
+  }
+  if (!stripeSecret()) return workspace.plan;
   const customerId = workspace.stripeCustomerId;
   if (!customerId) return resolveFromCheckoutSession(workspace, options.fresh === true);
 
   const epoch = webhookEpoch;
   const cached = options.fresh ? undefined : billingCache.get(customerId);
   let billing: CustomerBilling | undefined =
-    cached && Date.now() - cached.fetchedAt < RESYNC_CACHE_TTL_MS ? cached.billing : undefined;
+    cached && Date.now() - cached.fetchedAt < RESYNC_CACHE_TTL_MS ? withComp(workspace.id, cached.billing) : undefined;
   // A cached status may only confirm the row. If it disagrees, it may predate
   // a write by another instance (the in-process epoch can't see those), so
   // only a fresh Stripe read is allowed to change the row.
@@ -157,6 +176,7 @@ export async function reconcileWorkspacePlan(
     if (epoch !== webhookEpoch) return workspace.plan;
     billing = fetched;
     billingCache.set(customerId, { fetchedAt: Date.now(), billing });
+    billing = withComp(workspace.id, billing);
   }
 
   if (matchesRow(billing, workspace)) {
@@ -272,8 +292,10 @@ async function syncFromStripe(customerId: string): Promise<string | null> {
       where: { stripeCustomerId: customerId },
       select: { id: true, plan: true, stripeSubscriptionId: true },
     });
-    const billing = await fetchBilling(customerId);
-    if ("error" in billing) throw new Error(`Stripe subscription sync failed: ${billing.error}`);
+    const fetched = await fetchBilling(customerId);
+    if ("error" in fetched) throw new Error(`Stripe subscription sync failed: ${fetched.error}`);
+    // The comp is keyed only on an already-linked row.
+    const billing = linked ? withComp(linked.id, fetched) : fetched;
     const state = {
       plan: billing.plan,
       stripeSubscriptionId: billing.subscriptionId,
