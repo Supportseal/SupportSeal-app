@@ -151,7 +151,11 @@ export async function reconcileWorkspacePlan(
       where: { id: workspace.id, plan: "FREE" },
       data: { plan: "PRO", freePlanPausedAt: null },
     });
-    if (lifted.count > 0) workspace = { ...workspace, plan: "PRO", freePlanPausedAt: null };
+    // Losing the race means another write landed first: continue from it.
+    workspace =
+      lifted.count > 0
+        ? { ...workspace, plan: "PRO", freePlanPausedAt: null }
+        : await prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId } });
   }
   if (!stripeSecret()) return workspace.plan;
   const customerId = workspace.stripeCustomerId;
