@@ -7,6 +7,12 @@ import { isHostedMode } from "@/lib/hosting";
  * writes a comped Workspace below Pro, so a refund, a dispute or a canceled
  * subscription leaves it on Pro; a paid Business plan still wins.
  * Self-hosted ignores the list (there is no billing to override).
+ *
+ * Limits: the comp is stored as an ordinary `plan = PRO`. Removing a
+ * Workspace from the list reverts it on the next sync only when it has a
+ * Stripe customer; one without a customer stays Pro until its row is set
+ * back by hand. A comped Workspace also cannot start a Business checkout
+ * (it already counts as subscribed).
  */
 export function isCompedWorkspace(workspaceId: string): boolean {
   if (!isHostedMode()) return false;

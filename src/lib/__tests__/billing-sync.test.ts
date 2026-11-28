@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createTestUser, startTestDb, stopTestDb, type TestDb } from "@/test/integration-db";
 import { fakeStripe } from "@/test/stripe-fake";
@@ -505,8 +505,41 @@ describe("refunds and disputes revoke the current payment (issue #23)", () => {
 });
 
 describe("comped Workspaces stay on Pro (HOSTED_COMPED_PRO_WORKSPACE_IDS)", () => {
-  afterAll(() => {
+  afterEach(() => {
     delete process.env.HOSTED_COMPED_PRO_WORKSPACE_IDS;
+  });
+
+  it("a cached Free Stripe state confirms a comped Pro row without another Stripe read", async () => {
+    const workspace = await seedWorkspace("PRO", "cus_compc", "sub_compc");
+    process.env.HOSTED_COMPED_PRO_WORKSPACE_IDS = workspace.id;
+    stripe.customers.set("cus_compc", [{ id: "sub_compc", status: "active" }]);
+    stripe.charges.set("cus_compc", [{ id: "ch_compc", refunded: true }]);
+
+    expect(await reconcileWorkspacePlan(workspace.id)).toBe("PRO");
+    const reads = stripe.calls.length;
+    expect(await reconcileWorkspacePlan(workspace.id)).toBe("PRO");
+    expect(stripe.calls.length).toBe(reads);
+  });
+
+  it("a webhook sync lifts a linked comped Free Workspace and clears its pause", async () => {
+    const workspace = await seedWorkspace("FREE", "cus_compw", null);
+    await prisma.workspace.update({ where: { id: workspace.id }, data: { freePlanPausedAt: new Date() } });
+    process.env.HOSTED_COMPED_PRO_WORKSPACE_IDS = workspace.id;
+    stripe.customers.set("cus_compw", [{ id: "sub_compw", status: "canceled" }]);
+
+    await syncCustomerBilling("cus_compw");
+    const row = await prisma.workspace.findUniqueOrThrow({ where: { id: workspace.id } });
+    expect(row.plan).toBe("PRO");
+    expect(row.freePlanPausedAt).toBeNull();
+  });
+
+  it("un-listing a linked Workspace reverts it to Free on the next sync", async () => {
+    const workspace = await seedWorkspace("PRO", "cus_compu", null);
+    stripe.customers.set("cus_compu", [{ id: "sub_compu", status: "canceled" }]);
+    await syncCustomerBilling("cus_compu");
+    const row = await prisma.workspace.findUniqueOrThrow({ where: { id: workspace.id } });
+    expect(row.plan).toBe("FREE");
+    expect(row.freePlanSince).not.toBeNull();
   });
 
   it("a full refund keeps a comped Workspace on Pro", async () => {

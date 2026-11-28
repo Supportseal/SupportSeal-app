@@ -290,8 +290,8 @@ async function syncFromStripe(customerId: string): Promise<string | null> {
     });
     const fetched = await fetchBilling(customerId);
     if ("error" in fetched) throw new Error(`Stripe subscription sync failed: ${fetched.error}`);
-    const compedId = linked?.id ?? fetched.workspaceId;
-    const billing = compedId ? withComp(compedId, fetched) : fetched;
+    // The comp is keyed only on an already-linked row.
+    const billing = linked ? withComp(linked.id, fetched) : fetched;
     const state = {
       plan: billing.plan,
       stripeSubscriptionId: billing.subscriptionId,
@@ -312,9 +312,7 @@ async function syncFromStripe(customerId: string): Promise<string | null> {
     }
     // Only a customer with an entitling subscription is worth linking: a
     // fully canceled one (e.g. deleted in Stripe) must not be resurrected.
-    // The comp floor is ignored here: it keeps a Workspace on Pro, it never
-    // links a customer that has nothing entitling.
-    if (!billing.workspaceId || fetched.plan === "FREE") return null;
+    if (!billing.workspaceId || billing.plan === "FREE") return null;
 
     const claimed = await prisma.workspace.updateMany({
       where: { id: billing.workspaceId, stripeCustomerId: null },
