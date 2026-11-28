@@ -156,6 +156,12 @@ export default async function BillingPage({
             <UpgradePlans options={upgradeOptions} intent={intent} />
           ) : null}
           {stripeCustomerId && ctx.role === "ADMIN" ? <ManageSubscriptionButton /> : null}
+          {ctx.role === "ADMIN" ? (
+            // Support reference, e.g. for HOSTED_COMPED_PRO_WORKSPACE_IDS.
+            <p className="text-xs text-muted">
+              Workspace ID: <span className="font-mono select-all">{ctx.workspace.id}</span>
+            </p>
+          ) : null}
         </CardContent>
       </Card>
     </div>
